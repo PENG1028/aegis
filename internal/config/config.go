@@ -1,0 +1,166 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config represents the full Aegis configuration.
+type Config struct {
+	Proxy          ProxyConfig          `yaml:"proxy"`
+	Store          StoreConfig          `yaml:"store"`
+	Server         ServerConfig         `yaml:"server"`
+	ManagedDomain  ManagedDomainConfig  `yaml:"managed_domain"`
+	Runtime        RuntimeConfig        `yaml:"runtime"`
+}
+
+// ProxyConfig holds proxy adapter settings.
+type ProxyConfig struct {
+	Provider        string `yaml:"provider"`
+	CaddyfilePath   string `yaml:"caddyfile_path"`
+	CaddyBinary     string `yaml:"caddy_binary"`
+	ReloadCommand   string `yaml:"reload_command"`
+	ValidateCommand string `yaml:"validate_command"`
+	BackupDir       string `yaml:"backup_dir"`
+	Email           string `yaml:"email"`
+}
+
+// StoreConfig holds database settings.
+type StoreConfig struct {
+	SQLitePath string `yaml:"sqlite_path"`
+}
+
+// ServerConfig holds HTTP API server settings.
+type ServerConfig struct {
+	Addr       string `yaml:"addr"`
+	AdminToken string `yaml:"admin_token"`
+}
+
+// ManagedDomainConfig holds managed domain settings.
+type ManagedDomainConfig struct {
+	GatewayDomain string `yaml:"gateway_domain"`
+}
+
+// RuntimeConfig holds runtime paths.
+type RuntimeConfig struct {
+	ConfigDir string `yaml:"config_dir"`
+	DataDir   string `yaml:"data_dir"`
+}
+
+// DefaultConfig returns a configuration with development defaults.
+func DefaultConfig() *Config {
+	cwd, _ := os.Getwd()
+	baseDir := filepath.Join(cwd, ".aegis")
+
+	return &Config{
+		Proxy: ProxyConfig{
+			Provider:        "caddy",
+			CaddyfilePath:   filepath.Join(baseDir, "Caddyfile"),
+			CaddyBinary:     "caddy",
+			ReloadCommand:   "",
+			ValidateCommand: "{{caddy_binary}} validate --config {{config_path}}",
+			BackupDir:       filepath.Join(baseDir, "backups"),
+			Email:           "",
+		},
+		Store: StoreConfig{
+			SQLitePath: filepath.Join(baseDir, "aegis.db"),
+		},
+		Server: ServerConfig{
+			Addr:       "127.0.0.1:7380",
+			AdminToken: "change-me",
+		},
+		ManagedDomain: ManagedDomainConfig{
+			GatewayDomain: "",
+		},
+		Runtime: RuntimeConfig{
+			ConfigDir: filepath.Join(baseDir, "config"),
+			DataDir:   baseDir,
+		},
+	}
+}
+
+// ProductionConfig returns a configuration with system paths.
+func ProductionConfig() *Config {
+	return &Config{
+		Proxy: ProxyConfig{
+			Provider:        "caddy",
+			CaddyfilePath:   "/etc/caddy/Caddyfile",
+			CaddyBinary:     "caddy",
+			ReloadCommand:   "systemctl reload caddy",
+			ValidateCommand: "caddy validate --config {{config_path}}",
+			BackupDir:       "/var/lib/aegis/backups",
+			Email:           "",
+		},
+		Store: StoreConfig{
+			SQLitePath: "/var/lib/aegis/aegis.db",
+		},
+		Server: ServerConfig{
+			Addr:       "127.0.0.1:7380",
+			AdminToken: "change-me",
+		},
+		ManagedDomain: ManagedDomainConfig{
+			GatewayDomain: "gateway.example.com",
+		},
+		Runtime: RuntimeConfig{
+			ConfigDir: "/etc/aegis",
+			DataDir:   "/var/lib/aegis",
+		},
+	}
+}
+
+// Load reads a YAML config file and returns a Config.
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config file %s: %w", path, err)
+	}
+
+	cfg := &Config{}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("parse config file %s: %w", path, err)
+	}
+
+	return cfg, nil
+}
+
+// Save writes the config to a YAML file.
+func (c *Config) Save(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create config directory %s: %w", dir, err)
+	}
+
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write config file %s: %w", path, err)
+	}
+	return nil
+}
+
+// ResolveValidateCommand replaces template variables in the validate command.
+func (c *Config) ResolveValidateCommand() string {
+	cmd := c.Proxy.ValidateCommand
+	cmd = replaceVar(cmd, "{{caddy_binary}}", c.Proxy.CaddyBinary)
+	cmd = replaceVar(cmd, "{{config_path}}", c.Proxy.CaddyfilePath)
+	return cmd
+}
+
+func replaceVar(s, old, new string) string {
+	result := ""
+	for i := 0; i < len(s); i++ {
+		if i+len(old) <= len(s) && s[i:i+len(old)] == old {
+			result += new
+			i += len(old) - 1
+		} else {
+			result += string(s[i])
+		}
+	}
+	return result
+}
