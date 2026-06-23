@@ -33,19 +33,23 @@ func GeneratesConfig(exposureType string) bool {
 }
 
 // Exposure represents an external service exposure request.
-// HTTP exposures generate Caddy routes; TCP/UDP/tunnel are record-only.
+// HTTP exposures generate Caddy routes; TCP exposures start listeners.
 type Exposure struct {
 	ID         string    `json:"id"`
+	ProjectID  string    `json:"project_id"`
 	Type       string    `json:"type"`   // http | tcp | udp | tunnel | internal
 	Mode       string    `json:"mode"`   // public | private | internal
-	Host       string    `json:"host"`
-	Port       int       `json:"port"`
-	Path       string    `json:"path"`
+	Host       string    `json:"host"`       // entry host
+	Port       int       `json:"port"`       // entry port
+	Path       string    `json:"path"`       // entry path (HTTP only)
+	TargetHost string    `json:"target_host"` // upstream host
+	TargetPort int       `json:"target_port"` // upstream port
 	ServiceID  string    `json:"service_id"`
 	NodeID     string    `json:"node_id"`
 	OwnerRef   string    `json:"owner_ref"`
 	TargetRef  string    `json:"target_ref"`
-	Status     string    `json:"status"` // pending | active | active_recorded | disabled | failed
+	AllowPublicTCP bool   `json:"allow_public_tcp"` // admin override for public TCP bind
+	Status     string    `json:"status"` // pending | active | active_recorded | disabled | failed | pending_adapter
 	Message    string    `json:"message"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -53,15 +57,18 @@ type Exposure struct {
 
 // CreateExposureInput is the input for creating an exposure.
 type CreateExposureInput struct {
-	Type      string `json:"type"`
-	Mode      string `json:"mode"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Path      string `json:"path"`
-	ServiceID string `json:"service_id"`
-	NodeID    string `json:"node_id"`
-	OwnerRef  string `json:"owner_ref"`
-	TargetRef string `json:"target_ref"`
+	Type           string `json:"type"`
+	Mode           string `json:"mode"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	Path           string `json:"path"`
+	TargetHost     string `json:"target_host"`
+	TargetPort     int    `json:"target_port"`
+	ServiceID      string `json:"service_id"`
+	NodeID         string `json:"node_id"`
+	OwnerRef       string `json:"owner_ref"`
+	TargetRef      string `json:"target_ref"`
+	AllowPublicTCP bool   `json:"allow_public_tcp"`
 }
 
 // UpdateExposureInput is the input for updating an exposure.

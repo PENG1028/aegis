@@ -18,6 +18,7 @@ import (
 	"aegis/internal/route"
 	"aegis/internal/service"
 	"aegis/internal/store"
+	"aegis/internal/tcp"
 	"aegis/internal/token"
 
 	cli "aegis/internal/cli"
@@ -101,6 +102,8 @@ func main() {
 	routeSvc := route.NewAppService(routeRepo, logSvc)
 	mdSvc := manageddomain.NewAppService(mdRepo, logSvc)
 	exposureSvc := exposure.NewAppService(exposureRepo, logSvc)
+	tcpManager := tcp.NewManager()
+	defer tcpManager.Shutdown()
 	healthSvc := health.NewAppService(healthRepo, serviceRepo, endpointRepo, logSvc)
 
 	// --- Endpoint Resolver ---

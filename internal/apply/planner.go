@@ -51,7 +51,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 	}
 
 	for _, rt := range routes {
-		rc, warns := p.resolveRouteConfig(rt.Domain, rt.ServiceID, rt.TLSEnabled, rt.MaintenanceEnabled, rt.MaintenanceMessage)
+		rc, warns := p.resolveRouteConfig(rt.Domain, rt.PathPrefix, rt.StripPrefix, rt.ServiceID, rt.TLSEnabled, rt.MaintenanceEnabled, rt.MaintenanceMessage)
 		if rc == nil {
 			plan.SkippedCount++
 		} else {
@@ -68,7 +68,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 	}
 
 	for _, md := range mdDomains {
-		rc, warns := p.resolveRouteConfig(md.Domain, md.ServiceID, true, false, "")
+		rc, warns := p.resolveRouteConfig(md.Domain, "", false, md.ServiceID, true, false, "")
 		if rc == nil {
 			plan.SkippedCount++
 		} else {
@@ -89,7 +89,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 		if exp.Port > 0 && exp.Port != 80 && exp.Port != 443 {
 			domain = fmt.Sprintf("%s:%d", exp.Host, exp.Port)
 		}
-		rc, warns := p.resolveRouteConfig(domain, exp.ServiceID, true, false, "")
+		rc, warns := p.resolveRouteConfig(domain, "", false, exp.ServiceID, true, false, "")
 		if rc == nil {
 			plan.SkippedCount++
 		} else {
@@ -104,7 +104,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 
 // resolveRouteConfig resolves a single domain to a RouteConfig with warnings.
 func (p *Planner) resolveRouteConfig(
-	domain string, serviceID string, tlsEnabled bool,
+	domain string, pathPrefix string, stripPrefix bool, serviceID string, tlsEnabled bool,
 	maintenanceEnabled bool, maintenanceMessage string,
 ) (*proxy.RouteConfig, []ApplyWarning) {
 	var warnings []ApplyWarning
@@ -160,13 +160,15 @@ func (p *Planner) resolveRouteConfig(
 
 	return &proxy.RouteConfig{
 		Domain:             domain,
+		PathPrefix:         pathPrefix,
 		Kind:               "reverse_proxy",
 		UpstreamURL:        result.Endpoint.Address,
 		TLSEnabled:          tlsEnabled,
 		MaintenanceEnabled:  maintenanceEnabled,
 		MaintenanceMessage:  maintenanceMessage,
 		Options: proxy.ProxyOptions{
-			EnableGzip: true,
+			EnableGzip:  true,
+			StripPrefix: stripPrefix,
 		},
 	}, warnings
 }

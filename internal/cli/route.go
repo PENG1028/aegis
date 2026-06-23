@@ -31,7 +31,8 @@ func newRouteCommand(svc *route.AppService, serviceSvc *service.AppService, proj
 }
 
 func newRouteAddCommand(svc *route.AppService, serviceSvc *service.AppService) *cobra.Command {
-	var serviceName string
+	var serviceName, pathPrefix string
+	var stripPrefix bool
 
 	cmd := &cobra.Command{
 		Use:   "add <domain>",
@@ -49,8 +50,10 @@ func newRouteAddCommand(svc *route.AppService, serviceSvc *service.AppService) *
 
 			ctx := context.Background()
 			rt, err := svc.CreateRoute(ctx, route.CreateRouteInput{
-				Domain:    args[0],
-				ServiceID: svcID,
+				Domain:      args[0],
+				PathPrefix:  pathPrefix,
+				StripPrefix: stripPrefix,
+				ServiceID:   svcID,
 			})
 			if err != nil {
 				return err
@@ -61,6 +64,8 @@ func newRouteAddCommand(svc *route.AppService, serviceSvc *service.AppService) *
 	}
 
 	cmd.Flags().StringVar(&serviceName, "service", "", "Service name or ID (required)")
+	cmd.Flags().StringVar(&pathPrefix, "path", "", "URL path prefix (must start with /)")
+	cmd.Flags().BoolVar(&stripPrefix, "strip", false, "Strip path prefix when proxying (uses handle_path)")
 	return cmd
 }
 
@@ -81,7 +86,7 @@ func newRouteListCommand(svc *route.AppService) *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, "DOMAIN\tTLS\tMAINTENANCE\tSTATUS")
+			fmt.Fprintln(w, "DOMAIN\tPATH\tTLS\tMAINTENANCE\tSTATUS")
 			for _, r := range routes {
 				tls := "off"
 				if r.TLSEnabled {
@@ -91,8 +96,12 @@ func newRouteListCommand(svc *route.AppService) *cobra.Command {
 				if r.MaintenanceEnabled {
 					maint = "on"
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-					r.Domain, tls, maint, r.Status)
+				path := r.PathPrefix
+				if path == "" {
+					path = "(all)"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					r.Domain, path, tls, maint, r.Status)
 			}
 			w.Flush()
 			return nil
@@ -123,6 +132,8 @@ func newRouteShowCommand(svc *route.AppService) *cobra.Command {
 
 			fmt.Printf("ID:                    %s\n", r.ID)
 			fmt.Printf("Domain:                %s\n", r.Domain)
+			fmt.Printf("Path Prefix:           %s\n", r.PathPrefix)
+			fmt.Printf("Strip Prefix:          %v\n", r.StripPrefix)
 			fmt.Printf("Service ID:            %s\n", r.ServiceID)
 			fmt.Printf("TLS:                   %s\n", tls)
 			fmt.Printf("Status:                %s\n", r.Status)

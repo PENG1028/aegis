@@ -29,19 +29,22 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		return nil, fmt.Errorf("service is required")
 	}
 
-	// Check for duplicate domain
-	existing, err := s.repo.FindByDomain(input.Domain)
-	if err != nil {
-		return nil, fmt.Errorf("check duplicate domain: %w", err)
+	// Validate path_prefix
+	if err := ValidatePathPrefix(input.PathPrefix); err != nil {
+		return nil, fmt.Errorf("invalid path_prefix: %w", err)
 	}
-	if existing != nil {
-		return nil, fmt.Errorf("route for domain %q already exists", input.Domain)
+
+	// Check for duplicate domain+path
+	if err := s.repo.CheckDuplicatePath(input.Domain, input.PathPrefix, ""); err != nil {
+		return nil, err
 	}
 
 	now := time.Now()
 	rt := &Route{
 		ID:                 id.New("rt"),
 		Domain:             input.Domain,
+		PathPrefix:         input.PathPrefix,
+		StripPrefix:        input.StripPrefix,
 		ServiceID:          input.ServiceID,
 		TLSEnabled:          true,
 		Status:              "active",

@@ -19,6 +19,7 @@ type GatewayConfig struct {
 // RouteConfig represents a single route to be proxied.
 type RouteConfig struct {
 	Domain             string
+	PathPrefix         string // empty = domain-only; non-empty = domain + path
 	Kind               string // reverse_proxy | static_site | tcp_proxy | file_hosting
 	UpstreamURL        string
 	RootDir            string

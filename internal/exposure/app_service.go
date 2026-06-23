@@ -47,19 +47,22 @@ func (s *AppService) CreateExposure(ctx context.Context, input CreateExposureInp
 
 	now := time.Now()
 	e := &Exposure{
-		ID:        id.New("exp"),
-		Type:      input.Type,
-		Mode:      input.Mode,
-		Host:      input.Host,
-		Port:      input.Port,
-		Path:      input.Path,
-		ServiceID: input.ServiceID,
-		NodeID:    input.NodeID,
-		OwnerRef:  input.OwnerRef,
-		TargetRef: input.TargetRef,
-		Status:    StatusPending,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:             id.New("exp"),
+		Type:           input.Type,
+		Mode:           input.Mode,
+		Host:           input.Host,
+		Port:           input.Port,
+		Path:           input.Path,
+		TargetHost:     input.TargetHost,
+		TargetPort:     input.TargetPort,
+		ServiceID:      input.ServiceID,
+		NodeID:         input.NodeID,
+		OwnerRef:       input.OwnerRef,
+		TargetRef:      input.TargetRef,
+		AllowPublicTCP: input.AllowPublicTCP,
+		Status:         StatusPending,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	if err := s.repo.Create(e); err != nil {

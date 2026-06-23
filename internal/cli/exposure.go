@@ -30,8 +30,9 @@ func newExposureCommand(expSvc *exposure.AppService, svcSvc *service.AppService)
 }
 
 func newExposureAddCommand(expSvc *exposure.AppService, svcSvc *service.AppService) *cobra.Command {
-	var expType, mode, host, path, nodeID, ownerRef, targetRef string
-	var port int
+	var expType, mode, host, path, nodeID, ownerRef, targetRef, targetHost string
+	var port, targetPort int
+	var allowPublicTCP bool
 
 	cmd := &cobra.Command{
 		Use:   "add <service-name-or-id>",
@@ -55,15 +56,18 @@ func newExposureAddCommand(expSvc *exposure.AppService, svcSvc *service.AppServi
 			}
 
 			e, err := expSvc.CreateExposure(ctx, exposure.CreateExposureInput{
-				Type:      expType,
-				Mode:      mode,
-				Host:      host,
-				Port:      port,
-				Path:      path,
-				ServiceID: svc.ID,
-				NodeID:    nodeID,
-				OwnerRef:  ownerRef,
-				TargetRef: targetRef,
+				Type:           expType,
+				Mode:           mode,
+				Host:           host,
+				Port:           port,
+				Path:           path,
+				TargetHost:     targetHost,
+				TargetPort:     targetPort,
+				ServiceID:      svc.ID,
+				NodeID:         nodeID,
+				OwnerRef:       ownerRef,
+				TargetRef:      targetRef,
+				AllowPublicTCP: allowPublicTCP,
 			})
 			if err != nil {
 				return err
@@ -88,6 +92,9 @@ func newExposureAddCommand(expSvc *exposure.AppService, svcSvc *service.AppServi
 	cmd.Flags().StringVar(&nodeID, "node", "", "Gateway node ID")
 	cmd.Flags().StringVar(&ownerRef, "owner", "", "Owner reference (required)")
 	cmd.Flags().StringVar(&targetRef, "target", "", "Target reference")
+	cmd.Flags().StringVar(&targetHost, "target-host", "", "Target upstream host (TCP required)")
+	cmd.Flags().IntVar(&targetPort, "target-port", 0, "Target upstream port (TCP required)")
+	cmd.Flags().BoolVar(&allowPublicTCP, "allow-public-tcp", false, "Allow public IP TCP binding (requires admin)")
 	return cmd
 }
 

@@ -32,6 +32,16 @@ func AllMigrations() []Migration {
 			Name:    "add_exposures",
 			UpSQL:   migration003,
 		},
+		{
+			Version: "004",
+			Name:    "path_routes",
+			UpSQL:   migration004,
+		},
+		{
+			Version: "005",
+			Name:    "tcp_exposure_fields",
+			UpSQL:   migration005,
+		},
 	}
 }
 
@@ -308,4 +318,43 @@ CREATE INDEX IF NOT EXISTS idx_exposures_service_id ON exposures(service_id);
 CREATE INDEX IF NOT EXISTS idx_exposures_type ON exposures(type);
 CREATE INDEX IF NOT EXISTS idx_exposures_status ON exposures(status);
 CREATE INDEX IF NOT EXISTS idx_exposures_type_status ON exposures(type, status);
+`
+
+// migration004 adds path_prefix and strip_prefix to routes.
+// Recreates routes table to support multiple paths per domain (old UNIQUE on domain only is too restrictive).
+const migration004 = `
+CREATE TABLE IF NOT EXISTS routes_new (
+	id TEXT PRIMARY KEY,
+	domain TEXT NOT NULL,
+	path_prefix TEXT NOT NULL DEFAULT '',
+	strip_prefix INTEGER NOT NULL DEFAULT 0,
+	service_id TEXT NOT NULL,
+	tls_enabled INTEGER NOT NULL DEFAULT 1,
+	status TEXT NOT NULL DEFAULT 'active',
+	maintenance_enabled INTEGER NOT NULL DEFAULT 0,
+	maintenance_message TEXT,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	UNIQUE(domain, path_prefix)
+);
+
+INSERT OR IGNORE INTO routes_new (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, created_at, updated_at)
+	SELECT id, domain, '', 0, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, created_at, updated_at
+	FROM routes;
+
+DROP TABLE routes;
+ALTER TABLE routes_new RENAME TO routes;
+
+CREATE INDEX IF NOT EXISTS idx_routes_domain ON routes(domain);
+CREATE INDEX IF NOT EXISTS idx_routes_domain_path ON routes(domain, path_prefix);
+CREATE INDEX IF NOT EXISTS idx_routes_service_id ON routes(service_id);
+CREATE INDEX IF NOT EXISTS idx_routes_status ON routes(status);
+`
+
+// migration005 adds target_host, target_port, allow_public_tcp, project_id to exposures.
+const migration005 = `
+ALTER TABLE exposures ADD COLUMN target_host TEXT DEFAULT '';
+ALTER TABLE exposures ADD COLUMN target_port INTEGER DEFAULT 0;
+ALTER TABLE exposures ADD COLUMN allow_public_tcp INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE exposures ADD COLUMN project_id TEXT DEFAULT '';
 `
