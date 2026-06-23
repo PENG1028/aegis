@@ -1,6 +1,6 @@
-# Binary
-aegis
-aegis.exe
+# Binary (root only)
+/aegis
+/aegis.exe
 
 # Development data
 .aegis/
