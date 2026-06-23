@@ -66,12 +66,16 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("DELETE /api/managed-domains/{id}", h.DeleteManagedDomain)
 
 	// Config / Apply
+	mux.HandleFunc("GET /api/config/current", h.ConfigCurrent)
 	mux.HandleFunc("GET /api/config/preview", h.ConfigPreview)
 	mux.HandleFunc("GET /api/config/diff", h.ConfigDiff)
 	mux.HandleFunc("POST /api/apply", h.ApplyConfig)
 	mux.HandleFunc("POST /api/apply/dry-run", h.ApplyDryRun)
 	mux.HandleFunc("POST /api/rollback", h.Rollback)
 	mux.HandleFunc("GET /api/apply/history", h.ApplyHistory)
+
+	// Diagnostics
+	mux.HandleFunc("GET /api/diagnostics/export", h.DiagnosticsExport)
 
 	// Health
 	mux.HandleFunc("GET /api/health", h.GetHealth)
@@ -85,4 +89,3 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/settings", h.GetSettings)
 	mux.HandleFunc("PATCH /api/settings", h.UpdateSettings)
 }
-

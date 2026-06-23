@@ -15,14 +15,14 @@ import (
 
 // Services holds all application services for the HTTP API.
 type Services struct {
-	Config       *config.Config
-	Project      *project.AppService
-	Service      *service.AppService
-	EndpointRepo *endpoint.Repository
-	Route        *route.AppService
+	Config        *config.Config
+	Project       *project.AppService
+	Service       *service.AppService
+	EndpointRepo  *endpoint.Repository
+	Route         *route.AppService
 	ManagedDomain *manageddomain.AppService
-	Apply        *apply.AppService
-	Health       *health.AppService
-	Logs         *logs.AppService
-	Auth         *token.AuthMiddleware
+	Apply         *apply.AppService
+	Health        *health.AppService
+	Logs          *logs.AppService
+	Auth          *token.AuthMiddleware
 }

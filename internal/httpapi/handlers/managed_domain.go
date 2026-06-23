@@ -53,17 +53,23 @@ func (h *Handlers) GetManagedDomain(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) VerifyManagedDomain(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	md, err := h.ManagedDomain.VerifyDomain(r.Context(), id)
+	md, result, err := h.ManagedDomain.VerifyDomain(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, managedDomainToMap(*md))
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"id":     md.ID,
+		"domain": md.Domain,
+		"status": md.Status,
+		"checks": result,
+	})
 }
 
 func (h *Handlers) EnableManagedDomain(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	md, err := h.ManagedDomain.EnableDomain(r.Context(), id)
+	force := r.URL.Query().Get("force") == "true"
+	md, err := h.ManagedDomain.EnableDomain(r.Context(), id, force)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

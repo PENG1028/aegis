@@ -6,46 +6,83 @@ import (
 )
 
 func (h *Handlers) ConfigPreview(w http.ResponseWriter, r *http.Request) {
-	preview, err := h.Apply.Preview(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, preview)
-}
-
-func (h *Handlers) ConfigDiff(w http.ResponseWriter, r *http.Request) {
-	preview, err := h.Apply.Preview(r.Context())
+	plan, err := h.Apply.DryRun(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"diff":     preview.RenderedConfig,
-		"warnings": preview.Warnings,
+		"rendered_config":      plan.RenderedConfig,
+		"warnings":             plan.Warnings,
+		"route_count":          plan.RouteCount,
+		"managed_domain_count": plan.ManagedDomainCount,
+		"skipped_count":        plan.SkippedCount,
+	})
+}
+
+func (h *Handlers) ConfigCurrent(w http.ResponseWriter, r *http.Request) {
+	config, err := h.Apply.GetCurrentConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": config,
+	})
+}
+
+func (h *Handlers) ConfigDiff(w http.ResponseWriter, r *http.Request) {
+	current, _ := h.Apply.GetCurrentConfig()
+	plan, err := h.Apply.DryRun(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	diff := generateUnifiedDiff(current, plan.RenderedConfig)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"format":   "unified",
+		"diff":     diff,
+		"warnings": plan.Warnings,
 	})
 }
 
 func (h *Handlers) ApplyConfig(w http.ResponseWriter, r *http.Request) {
-	result, err := h.Apply.Apply(r.Context())
+	plan, err := h.Apply.Apply(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"version":              plan.RenderedConfig[:min(20, len(plan.RenderedConfig))],
+		"warnings":             plan.Warnings,
+		"route_count":          plan.RouteCount,
+		"managed_domain_count": plan.ManagedDomainCount,
+	})
 }
 
 func (h *Handlers) ApplyDryRun(w http.ResponseWriter, r *http.Request) {
-	result, err := h.Apply.DryRun(r.Context())
+	plan, err := h.Apply.DryRun(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"rendered_config":      plan.RenderedConfig,
+		"warnings":             plan.Warnings,
+		"route_count":          plan.RouteCount,
+		"managed_domain_count": plan.ManagedDomainCount,
+		"skipped_count":        plan.SkippedCount,
+	})
 }
 
 func (h *Handlers) Rollback(w http.ResponseWriter, r *http.Request) {
-	if err := h.Apply.Rollback(r.Context()); err != nil {
+	var input struct {
+		Version string `json:"version"`
+	}
+	decodeJSON(r, &input)
+
+	if err := h.Apply.Rollback(r.Context(), input.Version); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -73,5 +110,57 @@ func (h *Handlers) ApplyHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// ensure apply.AppService has Preview method
-var _ = (*apply.AppService).Preview
+func generateUnifiedDiff(current, preview string) string {
+	if current == "" {
+		return "--- (empty)\n+++ preview\n" + preview
+	}
+	if current == preview {
+		return "(no changes)"
+	}
+	lines := "--- current\n+++ preview\n"
+	// Simple line-by-line diff
+	cLines := splitLines(current)
+	pLines := splitLines(preview)
+	maxLen := len(cLines)
+	if len(pLines) > maxLen {
+		maxLen = len(pLines)
+	}
+	for i := 0; i < maxLen; i++ {
+		cLine, pLine := "", ""
+		if i < len(cLines) {
+			cLine = cLines[i]
+		}
+		if i < len(pLines) {
+			pLine = pLines[i]
+		}
+		if cLine != pLine {
+			if cLine != "" {
+				lines += "- " + cLine + "\n"
+			}
+			if pLine != "" {
+				lines += "+ " + pLine + "\n"
+			}
+		}
+	}
+	return lines
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	current := ""
+	for _, ch := range s {
+		if ch == '\n' {
+			lines = append(lines, current)
+			current = ""
+		} else {
+			current += string(ch)
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+// ensure apply.AppService is compatible
+var _ = (*apply.AppService).Plan
