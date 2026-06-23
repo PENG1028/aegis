@@ -1,0 +1,23 @@
+{# Caddyfile template for Aegis #}
+{# This is used by the CaddyAdapter to generate proxy configuration. #}
+
+{# Global options #}
+{{if .Email}}
+{
+    email {{.Email}}
+}
+{{end}}
+
+{# Site blocks #}
+{{range .Routes}}
+{{if .MaintenanceEnabled}}
+{{.Domain}} {
+    respond "{{.MaintenanceMessage}}" 503
+}
+{{else}}
+{{.Domain}} {
+    encode gzip
+    reverse_proxy {{.UpstreamURL}}
+}
+{{end}}
+{{end}}
