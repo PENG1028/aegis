@@ -42,6 +42,16 @@ func AllMigrations() []Migration {
 			Name:    "tcp_exposure_fields",
 			UpSQL:   migration005,
 		},
+		{
+			Version: "006",
+			Name:    "add_listeners",
+			UpSQL:   migration006,
+		},
+		{
+			Version: "007",
+			Name:    "exposure_provider_fields",
+			UpSQL:   migration007,
+		},
 	}
 }
 
@@ -357,4 +367,30 @@ ALTER TABLE exposures ADD COLUMN target_host TEXT DEFAULT '';
 ALTER TABLE exposures ADD COLUMN target_port INTEGER DEFAULT 0;
 ALTER TABLE exposures ADD COLUMN allow_public_tcp INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE exposures ADD COLUMN project_id TEXT DEFAULT '';
+`
+
+// migration006 adds the listeners table.
+const migration006 = `
+CREATE TABLE IF NOT EXISTS listeners (
+	id TEXT PRIMARY KEY,
+	provider TEXT NOT NULL,
+	protocol TEXT NOT NULL,
+	bind_ip TEXT NOT NULL,
+	port INTEGER NOT NULL,
+	status TEXT NOT NULL DEFAULT 'active',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	UNIQUE(bind_ip, port, protocol)
+);
+
+CREATE INDEX IF NOT EXISTS idx_listeners_provider ON listeners(provider);
+CREATE INDEX IF NOT EXISTS idx_listeners_port ON listeners(port);
+`
+
+// migration007 adds provider and listener_id to exposures.
+const migration007 = `
+ALTER TABLE exposures ADD COLUMN provider TEXT DEFAULT '';
+ALTER TABLE exposures ADD COLUMN listener_id TEXT DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_exposures_provider ON exposures(provider);
+CREATE INDEX IF NOT EXISTS idx_exposures_listener_id ON exposures(listener_id);
 `

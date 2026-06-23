@@ -10,6 +10,8 @@ import (
 	"aegis/internal/exposure"
 	"aegis/internal/health"
 	"aegis/internal/httpapi"
+	"aegis/internal/listener"
+	"aegis/internal/provider"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/project"
@@ -91,6 +93,7 @@ func main() {
 	logRepo := logs.NewRepository(db)
 	mdRepo := manageddomain.NewRepository(db)
 	exposureRepo := exposure.NewRepository(db)
+	listenerRepo := listener.NewRepository(db)
 	tokenRepo := token.NewRepository(db)
 
 	// --- Core Services ---
@@ -102,6 +105,13 @@ func main() {
 	routeSvc := route.NewAppService(routeRepo, logSvc)
 	mdSvc := manageddomain.NewAppService(mdRepo, logSvc)
 	exposureSvc := exposure.NewAppService(exposureRepo, logSvc)
+	listenerSvc := listener.NewService(listenerRepo)
+
+	// Register default Caddy listeners
+	if err := listenerSvc.RegisterDefaultListeners(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to register default listeners: %v\n", err)
+	}
+
 	tcpManager := tcp.NewManager()
 	defer tcpManager.Shutdown()
 	healthSvc := health.NewAppService(healthRepo, serviceRepo, endpointRepo, logSvc)
@@ -109,15 +119,15 @@ func main() {
 	// --- Endpoint Resolver ---
 	endpointResolver := endpoint.NewResolver(endpointRepo)
 
-	// --- Proxy Adapter ---
-	var proxyAdapter proxy.ProxyAdapter
-	switch cfg.Proxy.Provider {
-	case "nginx":
-		fmt.Fprintf(os.Stderr, "error: nginx adapter is not implemented yet\n")
-		os.Exit(1)
-	default:
-		proxyAdapter = caddy.NewAdapter(cfg)
-	}
+	// --- Provider Registry ---
+	provRegistry := provider.NewRegistry()
+	caddyHTTP := provider.NewCaddyHTTPProvider(cfg)
+	haproxyTCP := provider.NewHAProxyTCPProvider(cfg)
+	provRegistry.Register(caddyHTTP)
+	provRegistry.Register(haproxyTCP)
+
+	// Keep legacy proxy adapter for backward compat
+	var proxyAdapter proxy.ProxyAdapter = caddy.NewAdapter(cfg)
 
 	// --- Apply Service ---
 	applySvc := apply.NewAppService(
