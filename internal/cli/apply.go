@@ -66,6 +66,7 @@ func newApplyCommand(svc *apply.AppService) *cobra.Command {
 
 	cmd.Flags().Bool("dry-run", false, "Generate and display config without applying")
 	cmd.Flags().Bool("diff", false, "Show diff instead of full config")
+	cmd.Flags().String("provider", "all", "Target provider: caddy, haproxy, or all")
 	cmd.AddCommand(newApplyHistoryCommand(svc))
 
 	return cmd

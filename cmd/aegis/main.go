@@ -104,7 +104,6 @@ func main() {
 	serviceSvc := service.NewAppService(serviceRepo, logSvc)
 	routeSvc := route.NewAppService(routeRepo, logSvc)
 	mdSvc := manageddomain.NewAppService(mdRepo, logSvc)
-	exposureSvc := exposure.NewAppService(exposureRepo, logSvc)
 	listenerSvc := listener.NewService(listenerRepo)
 
 	// Register default Caddy listeners
@@ -125,6 +124,8 @@ func main() {
 	haproxyTCP := provider.NewHAProxyTCPProvider(cfg)
 	provRegistry.Register(caddyHTTP)
 	provRegistry.Register(haproxyTCP)
+
+	exposureSvc := exposure.NewAppService(exposureRepo, logSvc, provRegistry, listenerSvc)
 
 	// Keep legacy proxy adapter for backward compat
 	var proxyAdapter proxy.ProxyAdapter = caddy.NewAdapter(cfg)
@@ -162,6 +163,7 @@ func main() {
 		EndpointRepo:  endpointRepo,
 		ManagedDomain: mdSvc,
 		Exposure:      exposureSvc,
+		ListenerSvc:   listenerSvc,
 		Apply:         applySvc,
 		Health:        healthSvc,
 		Logs:          logSvc,

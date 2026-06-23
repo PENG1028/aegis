@@ -7,21 +7,25 @@ import (
 
 	aerrors "aegis/internal/errors"
 	"aegis/internal/id"
+	"aegis/internal/listener"
 	"aegis/internal/logs"
+	"aegis/internal/provider"
 )
 
 // AppService defines the exposure application service.
 type AppService struct {
-	repo   *Repository
-	logSvc *logs.AppService
+	repo      *Repository
+	logSvc    *logs.AppService
+	provReg   *provider.Registry
+	listenerSvc *listener.Service
 }
 
 // NewAppService creates a new exposure application service.
-func NewAppService(repo *Repository, logSvc *logs.AppService) *AppService {
-	return &AppService{repo: repo, logSvc: logSvc}
+func NewAppService(repo *Repository, logSvc *logs.AppService, provReg *provider.Registry, listenerSvc *listener.Service) *AppService {
+	return &AppService{repo: repo, logSvc: logSvc, provReg: provReg, listenerSvc: listenerSvc}
 }
 
-// CreateExposure creates a new exposure request.
+// CreateExposure creates a new exposure with provider auto-selection and listener conflict check.
 func (s *AppService) CreateExposure(ctx context.Context, input CreateExposureInput) (*Exposure, error) {
 	if input.Type == "" {
 		return nil, fmt.Errorf("exposure type is required")
@@ -33,16 +37,41 @@ func (s *AppService) CreateExposure(ctx context.Context, input CreateExposureInp
 		return nil, fmt.Errorf("owner_ref is required")
 	}
 
-	// Validate type
 	switch input.Type {
 	case TypeHTTP, TypeTCP, TypeUDP, TypeTunnel, TypeInternal:
-		// valid
 	default:
 		return nil, fmt.Errorf("invalid exposure type: %s", input.Type)
 	}
 
 	if input.Mode == "" {
 		input.Mode = ModePrivate
+	}
+
+	// Check listener conflict FIRST (regardless of provider availability)
+	if input.Host != "" && input.Port > 0 {
+		if err := s.listenerSvc.CheckConflict("", input.Type, input.Host, input.Port); err != nil {
+			return nil, err // LISTENER_CONFLICT
+		}
+	}
+
+	// Auto-select provider
+	selectedProvider, provOk := s.provReg.SelectForProtocol(input.Type)
+
+	var provName string
+	var status string
+	var msg string
+
+	if !provOk {
+		provName = ""
+		status = StatusPending
+		msg = fmt.Sprintf("no provider available for protocol %s", input.Type)
+	} else if selectedProvider.Info().Status == "unavailable" {
+		provName = selectedProvider.Info().Name
+		status = "pending_provider"
+		msg = fmt.Sprintf("provider %s is unavailable: %s", provName, selectedProvider.Info().Message)
+	} else {
+		provName = selectedProvider.Info().Name
+		status = StatusPending
 	}
 
 	now := time.Now()
@@ -60,7 +89,9 @@ func (s *AppService) CreateExposure(ctx context.Context, input CreateExposureInp
 		OwnerRef:       input.OwnerRef,
 		TargetRef:      input.TargetRef,
 		AllowPublicTCP: input.AllowPublicTCP,
-		Status:         StatusPending,
+		Provider:       provName,
+		Status:         status,
+		Message:        msg,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -71,13 +102,11 @@ func (s *AppService) CreateExposure(ctx context.Context, input CreateExposureInp
 	}
 
 	s.logSvc.Log(ctx, "exposure.create", "exposure", e.ID, "success",
-		fmt.Sprintf("created %s exposure %s:%d (owner: %s)", e.Type, e.Host, e.Port, e.OwnerRef), "api")
+		fmt.Sprintf("created %s exposure %s:%d (provider: %s, owner: %s)", e.Type, e.Host, e.Port, provName, e.OwnerRef), "api")
 	return e, nil
 }
 
 // ActivateExposure activates a pending exposure.
-// HTTP exposures become active (will generate config).
-// Non-HTTP exposures become active_recorded (record only, no config).
 func (s *AppService) ActivateExposure(ctx context.Context, exposureID string, callerOwnerRef string) (*Exposure, error) {
 	e, err := s.repo.FindByID(exposureID)
 	if err != nil {
@@ -87,13 +116,16 @@ func (s *AppService) ActivateExposure(ctx context.Context, exposureID string, ca
 		return nil, aerrors.NotFound("exposure not found")
 	}
 
-	// Owner check: only the owner (or admin bypass at API layer) can activate
 	if callerOwnerRef != "" && e.OwnerRef != callerOwnerRef {
 		return nil, aerrors.Forbidden("cannot modify exposure owned by " + e.OwnerRef)
 	}
 
 	if e.Status == StatusActive || e.Status == StatusActiveRecorded {
 		return nil, fmt.Errorf("exposure is already active")
+	}
+
+	if e.Status == "pending_provider" {
+		return nil, fmt.Errorf("cannot activate exposure: provider %s is unavailable", e.Provider)
 	}
 
 	if GeneratesConfig(e.Type) {
@@ -123,7 +155,6 @@ func (s *AppService) DisableExposure(ctx context.Context, exposureID string, cal
 	if e == nil {
 		return nil, aerrors.NotFound("exposure not found")
 	}
-
 	if callerOwnerRef != "" && e.OwnerRef != callerOwnerRef {
 		return nil, aerrors.Forbidden("cannot modify exposure owned by " + e.OwnerRef)
 	}
@@ -149,26 +180,15 @@ func (s *AppService) UpdateExposure(ctx context.Context, exposureID string, inpu
 	if e == nil {
 		return nil, aerrors.NotFound("exposure not found")
 	}
-
 	if callerOwnerRef != "" && e.OwnerRef != callerOwnerRef {
 		return nil, aerrors.Forbidden("cannot modify exposure owned by " + e.OwnerRef)
 	}
 
-	if input.Host != nil {
-		e.Host = *input.Host
-	}
-	if input.Port != nil {
-		e.Port = *input.Port
-	}
-	if input.Path != nil {
-		e.Path = *input.Path
-	}
-	if input.Status != nil {
-		e.Status = *input.Status
-	}
-	if input.Message != nil {
-		e.Message = *input.Message
-	}
+	if input.Host != nil { e.Host = *input.Host }
+	if input.Port != nil { e.Port = *input.Port }
+	if input.Path != nil { e.Path = *input.Path }
+	if input.Status != nil { e.Status = *input.Status }
+	if input.Message != nil { e.Message = *input.Message }
 	e.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(e); err != nil {
@@ -179,43 +199,27 @@ func (s *AppService) UpdateExposure(ctx context.Context, exposureID string, inpu
 	return e, nil
 }
 
-// ListExposures returns all exposures.
 func (s *AppService) ListExposures(ctx context.Context) ([]Exposure, error) {
 	exposures, err := s.repo.FindAll()
-	if err != nil {
-		return nil, fmt.Errorf("list exposures: %w", err)
-	}
-	if exposures == nil {
-		exposures = []Exposure{}
-	}
+	if err != nil { return nil, err }
+	if exposures == nil { exposures = []Exposure{} }
 	return exposures, nil
 }
 
-// ListExposuresByOwner returns exposures for an owner.
 func (s *AppService) ListExposuresByOwner(ctx context.Context, ownerRef string) ([]Exposure, error) {
 	exposures, err := s.repo.FindByOwnerRef(ownerRef)
-	if err != nil {
-		return nil, fmt.Errorf("list exposures by owner: %w", err)
-	}
-	if exposures == nil {
-		exposures = []Exposure{}
-	}
+	if err != nil { return nil, err }
+	if exposures == nil { exposures = []Exposure{} }
 	return exposures, nil
 }
 
-// GetExposure returns an exposure by ID.
 func (s *AppService) GetExposure(ctx context.Context, id string) (*Exposure, error) {
 	e, err := s.repo.FindByID(id)
-	if err != nil {
-		return nil, err
-	}
-	if e == nil {
-		return nil, aerrors.NotFound("exposure not found")
-	}
+	if err != nil { return nil, err }
+	if e == nil { return nil, aerrors.NotFound("exposure not found") }
 	return e, nil
 }
 
-// GetStats returns exposure statistics.
 func (s *AppService) GetStats(ctx context.Context) (*Stats, error) {
 	return s.repo.GetStats()
 }

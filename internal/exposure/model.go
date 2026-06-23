@@ -49,7 +49,9 @@ type Exposure struct {
 	OwnerRef   string    `json:"owner_ref"`
 	TargetRef  string    `json:"target_ref"`
 	AllowPublicTCP bool   `json:"allow_public_tcp"` // admin override for public TCP bind
-	Status     string    `json:"status"` // pending | active | active_recorded | disabled | failed | pending_adapter
+	Provider    string    `json:"provider"`     // caddy_http | haproxy_tcp
+	ListenerID  string    `json:"listener_id"`  // bound listener
+	Status     string    `json:"status"` // pending | active | active_recorded | disabled | failed | pending_adapter | pending_provider
 	Message    string    `json:"message"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
