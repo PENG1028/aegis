@@ -6,6 +6,7 @@ import (
 
 	"aegis/internal/apply"
 	"aegis/internal/config"
+	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/health"
@@ -94,6 +95,7 @@ func main() {
 	mdRepo := manageddomain.NewRepository(db)
 	exposureRepo := exposure.NewRepository(db)
 	listenerRepo := listener.NewRepository(db)
+	edgeRepo := edgemux.NewRepository(db)
 	tokenRepo := token.NewRepository(db)
 
 	// --- Core Services ---
@@ -105,10 +107,12 @@ func main() {
 	routeSvc := route.NewAppService(routeRepo, logSvc)
 	mdSvc := manageddomain.NewAppService(mdRepo, logSvc)
 	listenerSvc := listener.NewService(listenerRepo)
+	listenerSvc.SetEdgeMuxMode(true) // Default EdgeMux mode
+	edgeSvc := edgemux.NewAppService(edgeRepo, logSvc)
 
-	// Register default Caddy listeners
-	if err := listenerSvc.RegisterDefaultListeners(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to register default listeners: %v\n", err)
+	// Register EdgeMux default listeners
+	if err := listenerSvc.RegisterDefaults(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to register EdgeMux listeners: %v\n", err)
 	}
 
 	tcpManager := tcp.NewManager()
@@ -164,6 +168,7 @@ func main() {
 		ManagedDomain: mdSvc,
 		Exposure:      exposureSvc,
 		ListenerSvc:   listenerSvc,
+		EdgeSvc:       edgeSvc,
 		Apply:         applySvc,
 		Health:        healthSvc,
 		Logs:          logSvc,

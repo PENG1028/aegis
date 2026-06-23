@@ -2,11 +2,16 @@ package listener
 
 import (
 	"fmt"
+	"net"
+	"os/exec"
+	"strconv"
+	"strings"
 )
 
 // Service provides listener conflict detection and management.
 type Service struct {
-	repo *Repository
+	repo         *Repository
+	edgeMuxMode  bool
 }
 
 // NewService creates a new listener service.
@@ -14,53 +19,66 @@ func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
+// SetEdgeMuxMode enables/disables EdgeMux mode (changes default listeners).
+func (s *Service) SetEdgeMuxMode(enabled bool) {
+	s.edgeMuxMode = enabled
+}
+
+// IsEdgeMuxMode returns whether EdgeMux mode is active.
+func (s *Service) IsEdgeMuxMode() bool {
+	return s.edgeMuxMode
+}
+
 // CheckConflict checks if a bind would conflict with existing listeners.
-// Caddy owns 80/443 by default. HAProxy TCP cannot bind to those ports
-// unless it's in edge_mux mode (not implemented yet).
 func (s *Service) CheckConflict(provider, protocol, bindIP string, port int) error {
-	// Caddy 80/443 protection
-	if provider != "caddy_http" && (port == 80 || port == 443) {
-		existing, err := s.repo.FindByBind(bindIP, port)
-		if err != nil {
-			return err
-		}
-		if existing != nil {
-			return &ConflictError{
-				ExistingListener: *existing,
-				RequestedBind:    bindIP,
-				RequestedPort:    port,
-			}
+	// Special handling for 443 in EdgeMux mode
+	if s.edgeMuxMode && port == 443 && provider != "haproxy_edge_mux" {
+		return &ConflictError{
+			ExistingListener: Listener{Provider: "haproxy_edge_mux", Protocol: "tls_mux", BindIP: "0.0.0.0", Port: 443},
+			RequestedBind:    bindIP,
+			RequestedPort:    port,
 		}
 	}
 
-	// General port conflict check
 	existing, err := s.repo.FindByBind(bindIP, port)
 	if err != nil {
 		return err
 	}
-	if existing != nil && existing.ID != "" {
+	if existing != nil {
 		return &ConflictError{
 			ExistingListener: *existing,
 			RequestedBind:    bindIP,
 			RequestedPort:    port,
 		}
 	}
-
 	return nil
 }
 
-// RegisterDefaultListeners ensures the standard Caddy listeners exist.
-func (s *Service) RegisterDefaultListeners() error {
-	defaults := DefaultListeners()
+// RegisterDefaults registers the appropriate default listeners.
+func (s *Service) RegisterDefaults() error {
+	var defaults []Listener
+	if s.edgeMuxMode {
+		defaults = EdgeMuxDefaults()
+	} else {
+		defaults = DefaultListeners()
+	}
 	for _, d := range defaults {
 		existing, _ := s.repo.FindByBind(d.BindIP, d.Port)
 		if existing == nil {
 			if err := s.repo.Create(&d); err != nil {
-				return fmt.Errorf("register default listener %s: %w", d.ID, err)
+				return fmt.Errorf("register listener %s: %w", d.ID, err)
 			}
 		}
 	}
 	return nil
+}
+
+// RegisterDefaultListeners is the legacy API (non-EdgeMux).
+func (s *Service) RegisterDefaultListeners() error {
+	if s.edgeMuxMode {
+		return s.RegisterDefaults()
+	}
+	return s.RegisterDefaults()
 }
 
 // ListAll returns all registered listeners.
@@ -73,4 +91,58 @@ func (s *Service) ListAll() ([]Listener, error) {
 		listeners = []Listener{}
 	}
 	return listeners, nil
+}
+
+// CheckOSPorts checks actual OS port usage and returns unmanaged listeners.
+func (s *Service) CheckOSPorts() ([]OSPortUsage, error) {
+	var results []OSPortUsage
+
+	// Use netstat or ss to check actual port usage
+	out, err := exec.Command("ss", "-tlnp").Output()
+	if err != nil {
+		out, err = exec.Command("netstat", "-tlnp").Output()
+		if err != nil {
+			return nil, nil // OS check not available — skip
+		}
+	}
+
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if !strings.Contains(line, "LISTEN") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		addr := fields[3]
+		host, portStr, err := net.SplitHostPort(addr)
+		if err != nil {
+			continue
+		}
+		port, _ := strconv.Atoi(portStr)
+		if port == 0 {
+			continue
+		}
+
+		// Check if aegis knows about this port
+		existing, _ := s.repo.FindByBind(host, port)
+		if existing == nil {
+			results = append(results, OSPortUsage{
+				BindIP:  host,
+				Port:    port,
+				Status:  "unmanaged",
+				Message: fmt.Sprintf("port in use by unknown process: %s", line),
+			})
+		}
+	}
+	return results, nil
+}
+
+// OSPortUsage represents an actual OS port binding.
+type OSPortUsage struct {
+	BindIP  string
+	Port    int
+	Status  string
+	Message string
 }

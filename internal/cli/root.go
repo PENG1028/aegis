@@ -3,6 +3,7 @@ package cli
 import (
 	"aegis/internal/apply"
 	"aegis/internal/config"
+	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/health"
@@ -27,6 +28,7 @@ type Services struct {
 	ManagedDomain *manageddomain.AppService
 	Exposure      *exposure.AppService
 	ListenerSvc   *listener.Service
+	EdgeSvc       *edgemux.AppService
 	Apply         *apply.AppService
 	Health        *health.AppService
 	Logs          *logs.AppService
@@ -56,6 +58,7 @@ v0.x — Production-hardened gateway control with HTTP API.`,
 	cmd.AddCommand(newManagedDomainCommand(svcs.ManagedDomain, svcs.Service))
 	cmd.AddCommand(newExposureCommand(svcs.Exposure, svcs.Service))
 	cmd.AddCommand(newListenerCommand(svcs.ListenerSvc))
+	cmd.AddCommand(newEdgeCommand(svcs.EdgeSvc))
 	cmd.AddCommand(newApplyCommand(svcs.Apply))
 	cmd.AddCommand(newValidateCommand(svcs.Apply))
 	cmd.AddCommand(newRollbackCommand(svcs.Apply))

@@ -52,6 +52,11 @@ func AllMigrations() []Migration {
 			Name:    "exposure_provider_fields",
 			UpSQL:   migration007,
 		},
+		{
+			Version: "008",
+			Name:    "edge_mux_rules",
+			UpSQL:   migration008,
+		},
 	}
 }
 
@@ -393,4 +398,26 @@ ALTER TABLE exposures ADD COLUMN provider TEXT DEFAULT '';
 ALTER TABLE exposures ADD COLUMN listener_id TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_exposures_provider ON exposures(provider);
 CREATE INDEX IF NOT EXISTS idx_exposures_listener_id ON exposures(listener_id);
+`
+
+// migration008 adds edge_mux_rules and updates listener schema.
+const migration008 = `
+CREATE TABLE IF NOT EXISTS edge_mux_rules (
+	id TEXT PRIMARY KEY,
+	sni_host TEXT NOT NULL UNIQUE,
+	declared_kind TEXT NOT NULL DEFAULT 'unknown_tls_backend',
+	target_host TEXT NOT NULL,
+	target_port INTEGER NOT NULL,
+	service_id TEXT,
+	status TEXT NOT NULL DEFAULT 'active',
+	message TEXT,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_edge_mux_rules_sni ON edge_mux_rules(sni_host);
+CREATE INDEX IF NOT EXISTS idx_edge_mux_rules_status ON edge_mux_rules(status);
+
+ALTER TABLE listeners ADD COLUMN node_id TEXT DEFAULT '';
+ALTER TABLE listeners ADD COLUMN purpose TEXT DEFAULT '';
 `
