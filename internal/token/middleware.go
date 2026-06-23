@@ -3,14 +3,15 @@ package token
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strings"
 )
 
-// AuthMiddleware provides Bearer token authentication for HTTP API.
+// AuthMiddleware provides Bearer token authentication with scope checking.
 type AuthMiddleware struct {
-	adminToken    string // from config
-	tokenRepo     *Repository
+	adminToken string
+	tokenRepo  *Repository
 }
 
 // NewAuthMiddleware creates a new auth middleware.
@@ -26,12 +27,21 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
 		if token == "" {
-			http.Error(w, `{"error":"missing Authorization header"}`, http.StatusUnauthorized)
+			writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing Authorization header")
 			return
 		}
 
-		if !m.validateToken(token) {
-			http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+		scopes, ok := m.validateTokenWithScopes(token)
+		if !ok {
+			writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token")
+			return
+		}
+
+		// Check scope for this route
+		requiredScope, hasScope := FindMatchingScope(r.Method, r.URL.Path)
+		if hasScope && !HasScope(scopes, requiredScope) {
+			writeAuthError(w, http.StatusForbidden, "FORBIDDEN",
+				"missing required scope: "+requiredScope)
 			return
 		}
 
@@ -39,23 +49,23 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// validateToken validates a token against the admin token or database tokens.
-func (m *AuthMiddleware) validateToken(token string) bool {
-	// First check against admin token from config
+// validateTokenWithScopes validates a token and returns its scopes.
+func (m *AuthMiddleware) validateTokenWithScopes(token string) ([]string, bool) {
+	// Admin token from config: full admin scope
 	if m.adminToken != "" && token == m.adminToken {
-		return true
+		return []string{ScopeAdminAll}, true
 	}
 
-	// Then check against database tokens
+	// Check database tokens
 	if m.tokenRepo != nil {
 		hash := hashToken(token)
 		t, err := m.tokenRepo.FindByTokenHash(hash)
 		if err == nil && t != nil {
-			return true
+			return t.Scopes, true
 		}
 	}
 
-	return false
+	return nil, false
 }
 
 // extractBearerToken extracts the Bearer token from an Authorization header.
@@ -77,4 +87,15 @@ func extractBearerToken(r *http.Request) string {
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])
+}
+
+func writeAuthError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": map[string]interface{}{
+			"code":    code,
+			"message": message,
+		},
+	})
 }

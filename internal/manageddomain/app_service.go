@@ -5,9 +5,19 @@ import (
 	"fmt"
 	"time"
 
+	aerrors "aegis/internal/errors"
 	"aegis/internal/id"
 	"aegis/internal/logs"
 )
+
+// Allowed state transitions.
+var allowedTransitions = map[string][]string{
+	"pending_verification": {"verified", "failed"},
+	"verified":             {"active"},
+	"active":               {"disabled"},
+	"disabled":             {"active"},
+	"failed":               {"pending_verification"},
+}
 
 // AppService defines the managed domain application service.
 type AppService struct {
@@ -20,8 +30,7 @@ func NewAppService(repo *Repository, logSvc *logs.AppService) *AppService {
 	return &AppService{repo: repo, logSvc: logSvc}
 }
 
-// CreateManagedDomain creates a new managed domain.
-// The domain starts in pending_verification status and requires DNS verification.
+// CreateManagedDomain creates a new managed domain in pending_verification status.
 func (s *AppService) CreateManagedDomain(ctx context.Context, input CreateManagedDomainInput) (*ManagedDomain, error) {
 	if input.Domain == "" {
 		return nil, fmt.Errorf("domain is required")
@@ -71,42 +80,98 @@ func (s *AppService) CreateManagedDomain(ctx context.Context, input CreateManage
 	return md, nil
 }
 
-// VerifyDomain performs DNS verification for a managed domain.
-// In v0.x, this is a basic check that marks the domain as verified
-// (actual DNS lookup runs in dns_check.go).
-func (s *AppService) VerifyDomain(ctx context.Context, idOrDomain string) (*ManagedDomain, error) {
+// DNSVerificationResult holds structured DNS check results.
+type DNSVerificationResult struct {
+	TXT   DNSCheck `json:"txt"`
+	CNAME DNSCheck `json:"cname,omitempty"`
+	A     DNSCheck `json:"a,omitempty"`
+	AAAA  DNSCheck `json:"aaaa,omitempty"`
+}
+
+// DNSCheck represents a single DNS record check.
+type DNSCheck struct {
+	Expected string   `json:"expected,omitempty"`
+	Actual   []string `json:"actual"`
+	OK       bool     `json:"ok"`
+	Warning  bool     `json:"warning,omitempty"`
+}
+
+// VerifyDomain performs DNS verification and returns structured results.
+func (s *AppService) VerifyDomain(ctx context.Context, idOrDomain string) (*ManagedDomain, *DNSVerificationResult, error) {
 	md, err := s.getDomain(ctx, idOrDomain)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	if md.Status == "active" || md.Status == "verified" {
-		return md, fmt.Errorf("domain %q is already %s", md.Domain, md.Status)
+	if md.Status == "active" {
+		return nil, nil, aerrors.StateTransitionInvalid(
+			fmt.Sprintf("domain %q is already active; verification not needed", md.Domain))
 	}
 
-	// Perform DNS TXT verification
-	verified, msg := checkDNSTXT(md.VerificationName, md.VerificationValue)
+	result := &DNSVerificationResult{}
+
+	// TXT verification
+	txtVerified, txtMsg, txtRecords := checkDNSTXTWithRecords(md.VerificationName, md.VerificationValue)
+	result.TXT = DNSCheck{
+		Expected: md.VerificationValue,
+		Actual:   txtRecords,
+		OK:       txtVerified,
+	}
+
+	// CNAME check (optional)
+	cnameTarget := md.Domain
+	cnameValue, cnameErr := checkDNSRecordCNAME(cnameTarget)
+	if cnameErr != nil {
+		result.CNAME = DNSCheck{
+			Expected: "(CNAME lookup)",
+			Actual:   []string{},
+			OK:       false,
+			Warning:  true,
+		}
+	} else {
+		result.CNAME = DNSCheck{
+			Expected: "(CNAME lookup)",
+			Actual:   []string{cnameValue},
+			OK:       true,
+			Warning:  false,
+		}
+	}
+
+	// A record check
+	aIPs, _ := lookupIP(md.Domain, "ip4")
+	result.A = DNSCheck{Actual: aIPs, OK: len(aIPs) > 0}
+
+	// AAAA record check
+	aaaaIPs, _ := lookupIP(md.Domain, "ip6")
+	result.AAAA = DNSCheck{Actual: aaaaIPs, OK: len(aaaaIPs) > 0}
+
+	// Determine status
+	newStatus := "failed"
+	msg := fmt.Sprintf("TXT verification: %s", txtMsg)
+	if txtVerified {
+		newStatus = "verified"
+		msg = "TXT record verified successfully"
+	}
+
+	// Enforce state transition
+	if err := s.transitionStatus(md, newStatus); err != nil {
+		return nil, nil, err
+	}
+
 	md.LastCheckMessage = msg
 	md.UpdatedAt = time.Now()
 
-	if verified {
-		md.Status = "verified"
-		s.logSvc.Log(ctx, "managed_domain.verify", "managed_domain", md.ID, "success",
-			fmt.Sprintf("domain %q verified via DNS TXT", md.Domain), "cli")
-	} else {
-		md.Status = "failed"
-		s.logSvc.Log(ctx, "managed_domain.verify", "managed_domain", md.ID, "failed",
-			fmt.Sprintf("domain %q verification failed: %s", md.Domain, msg), "cli")
+	if err := s.repo.Update(md); err != nil {
+		return nil, nil, fmt.Errorf("update managed domain: %w", err)
 	}
 
-	if err := s.repo.Update(md); err != nil {
-		return nil, fmt.Errorf("update managed domain: %w", err)
-	}
-	return md, nil
+	s.logSvc.Log(ctx, "managed_domain.verify", "managed_domain", md.ID, newStatus, msg, "cli")
+	return md, result, nil
 }
 
 // EnableDomain activates a verified managed domain.
-func (s *AppService) EnableDomain(ctx context.Context, idOrDomain string) (*ManagedDomain, error) {
+// Enforces state transition: verified → active.
+func (s *AppService) EnableDomain(ctx context.Context, idOrDomain string, force bool) (*ManagedDomain, error) {
 	md, err := s.getDomain(ctx, idOrDomain)
 	if err != nil {
 		return nil, err
@@ -116,13 +181,23 @@ func (s *AppService) EnableDomain(ctx context.Context, idOrDomain string) (*Mana
 		return nil, fmt.Errorf("domain %q is already active", md.Domain)
 	}
 
-	if md.Status != "verified" {
-		return nil, fmt.Errorf("domain %q must be verified before activation (current: %s)", md.Domain, md.Status)
+	if force {
+		// Force enable: only allowed via admin:* scope (checked at API layer)
+		md.Status = "active"
+		md.UpdatedAt = time.Now()
+		if err := s.repo.Update(md); err != nil {
+			return nil, fmt.Errorf("force enable managed domain: %w", err)
+		}
+		s.logSvc.Log(ctx, "managed_domain.enable", "managed_domain", md.ID, "success",
+			fmt.Sprintf("force-enabled managed domain %q", md.Domain), "api")
+		return md, nil
 	}
 
-	md.Status = "active"
-	md.UpdatedAt = time.Now()
+	if err := s.transitionStatus(md, "active"); err != nil {
+		return nil, err
+	}
 
+	md.UpdatedAt = time.Now()
 	if err := s.repo.Update(md); err != nil {
 		return nil, fmt.Errorf("enable managed domain: %w", err)
 	}
@@ -139,13 +214,11 @@ func (s *AppService) DisableDomain(ctx context.Context, idOrDomain string) (*Man
 		return nil, err
 	}
 
-	if md.Status == "disabled" {
-		return nil, fmt.Errorf("domain %q is already disabled", md.Domain)
+	if err := s.transitionStatus(md, "disabled"); err != nil {
+		return nil, err
 	}
 
-	md.Status = "disabled"
 	md.UpdatedAt = time.Now()
-
 	if err := s.repo.Update(md); err != nil {
 		return nil, fmt.Errorf("disable managed domain: %w", err)
 	}
@@ -170,6 +243,30 @@ func (s *AppService) ListManagedDomains(ctx context.Context) ([]ManagedDomain, e
 // GetManagedDomain finds a managed domain by ID or domain name.
 func (s *AppService) GetManagedDomain(ctx context.Context, idOrDomain string) (*ManagedDomain, error) {
 	return s.getDomain(ctx, idOrDomain)
+}
+
+// transitionStatus validates and applies a state transition.
+func (s *AppService) transitionStatus(md *ManagedDomain, newStatus string) error {
+	if md.Status == newStatus {
+		return nil
+	}
+
+	allowed, ok := allowedTransitions[md.Status]
+	if !ok {
+		return aerrors.StateTransitionInvalid(
+			fmt.Sprintf("unknown current status: %s", md.Status))
+	}
+
+	for _, allowedStatus := range allowed {
+		if allowedStatus == newStatus {
+			md.Status = newStatus
+			return nil
+		}
+	}
+
+	return aerrors.StateTransitionInvalid(
+		fmt.Sprintf("cannot transition %q from %s to %s (allowed: %v)",
+			md.Domain, md.Status, newStatus, allowed))
 }
 
 func (s *AppService) getDomain(ctx context.Context, idOrDomain string) (*ManagedDomain, error) {

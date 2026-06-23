@@ -6,59 +6,79 @@ import (
 	"strings"
 )
 
-// checkDNSTXT performs a basic DNS TXT record check.
-// Checks if the given TXT record name contains the expected value.
-func checkDNSTXT(name, expectedValue string) (bool, string) {
-	// Strip trailing dot if present for cleaner lookup
+// checkDNSTXTWithRecords checks DNS TXT record and returns records found.
+func checkDNSTXTWithRecords(name, expectedValue string) (bool, string, []string) {
 	lookupName := strings.TrimSuffix(name, ".")
 
 	txtRecords, err := net.LookupTXT(lookupName)
 	if err != nil {
-		// DNS lookup failed — this is expected if the record hasn't been set up yet
-		return false, fmt.Sprintf("DNS TXT lookup failed for %s: %v", lookupName, err)
+		return false, fmt.Sprintf("DNS TXT lookup failed: %v", err), nil
 	}
 
 	for _, record := range txtRecords {
 		if record == expectedValue {
-			return true, fmt.Sprintf("TXT record verified: %s = %s", lookupName, expectedValue)
+			return true, fmt.Sprintf("TXT verified: %s = %s", lookupName, expectedValue), txtRecords
 		}
 	}
 
-	return false, fmt.Sprintf("TXT record not found for %s (expected: %s, got: %v)", lookupName, expectedValue, txtRecords)
+	return false, fmt.Sprintf("TXT record mismatch for %s (expected: %s, got: %v)", lookupName, expectedValue, txtRecords), txtRecords
 }
 
-// checkDNSRecord performs a generic DNS record check.
-// Returns the first matching record value or an error.
+// checkDNSRecordCNAME returns the CNAME for a domain.
+func checkDNSRecordCNAME(domain string) (string, error) {
+	cname, err := net.LookupCNAME(domain)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(cname, "."), nil
+}
+
+// lookupIP returns IPs of the specified version for a domain.
+func lookupIP(domain, version string) ([]string, error) {
+	ips, err := net.LookupIP(domain)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []string
+	for _, ip := range ips {
+		isV4 := ip.To4() != nil
+		if (version == "ip4" && isV4) || (version == "ip6" && !isV4) {
+			result = append(result, ip.String())
+		}
+	}
+	return result, nil
+}
+
+// checkDNSTXT performs a basic DNS TXT record check (legacy).
+func checkDNSTXT(name, expectedValue string) (bool, string) {
+	ok, msg, _ := checkDNSTXTWithRecords(name, expectedValue)
+	return ok, msg
+}
+
+// checkDNSRecord performs a generic DNS record check (legacy).
 func checkDNSRecord(domain string, recordType string) (string, error) {
 	switch strings.ToUpper(recordType) {
 	case "A":
-		ips, err := net.LookupIP(domain)
+		ips, err := lookupIP(domain, "ip4")
 		if err != nil {
 			return "", fmt.Errorf("A record lookup failed: %w", err)
 		}
-		for _, ip := range ips {
-			if ipv4 := ip.To4(); ipv4 != nil {
-				return ipv4.String(), nil
-			}
+		if len(ips) == 0 {
+			return "", fmt.Errorf("no A record for %s", domain)
 		}
-		return "", fmt.Errorf("no A record found for %s", domain)
+		return ips[0], nil
 	case "AAAA":
-		ips, err := net.LookupIP(domain)
+		ips, err := lookupIP(domain, "ip6")
 		if err != nil {
 			return "", fmt.Errorf("AAAA record lookup failed: %w", err)
 		}
-		for _, ip := range ips {
-			if ip.To4() == nil {
-				return ip.String(), nil
-			}
+		if len(ips) == 0 {
+			return "", fmt.Errorf("no AAAA record for %s", domain)
 		}
-		return "", fmt.Errorf("no AAAA record found for %s", domain)
+		return ips[0], nil
 	case "CNAME":
-		cname, err := net.LookupCNAME(domain)
-		if err != nil {
-			return "", fmt.Errorf("CNAME lookup failed: %w", err)
-		}
-		return strings.TrimSuffix(cname, "."), nil
+		return checkDNSRecordCNAME(domain)
 	default:
 		return "", fmt.Errorf("unsupported record type: %s", recordType)
 	}
@@ -66,13 +86,13 @@ func checkDNSRecord(domain string, recordType string) (string, error) {
 
 // CheckCNAME checks if the domain has a CNAME pointing to the expected target.
 func CheckCNAME(domain, expectedTarget string) (bool, string) {
-	cname, err := checkDNSRecord(domain, "CNAME")
+	cname, err := checkDNSRecordCNAME(domain)
 	if err != nil {
 		return false, err.Error()
 	}
 
-	expectedTarget = strings.TrimSuffix(expectedTarget, ".")
 	cname = strings.TrimSuffix(cname, ".")
+	expectedTarget = strings.TrimSuffix(expectedTarget, ".")
 
 	if strings.EqualFold(cname, expectedTarget) {
 		return true, fmt.Sprintf("CNAME verified: %s -> %s", domain, cname)
