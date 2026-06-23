@@ -23,7 +23,6 @@ func OpenSQLite(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open sqlite database %s: %w", path, err)
 	}
 
-	// Test connection
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ping sqlite database: %w", err)
@@ -32,13 +31,18 @@ func OpenSQLite(path string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Initialize runs database migrations to set up the schema.
+// Initialize runs versioned database migrations.
 func Initialize(db *sql.DB) error {
-	migrations := GetMigrations()
+	return RunMigrations(db)
+}
+
+// GetMigrations returns the raw SQL statements (legacy API).
+// Deprecated: use AllMigrations() for versioned migrations.
+func GetMigrations() []string {
+	migrations := AllMigrations()
+	sqls := make([]string, len(migrations))
 	for i, m := range migrations {
-		if _, err := db.Exec(m); err != nil {
-			return fmt.Errorf("migration %d failed: %w", i+1, err)
-		}
+		sqls[i] = m.UpSQL
 	}
-	return nil
+	return sqls
 }
