@@ -27,6 +27,11 @@ func AllMigrations() []Migration {
 			Name:    "add_indexes",
 			UpSQL:   migration002,
 		},
+		{
+			Version: "003",
+			Name:    "add_exposures",
+			UpSQL:   migration003,
+		},
 	}
 }
 
@@ -277,4 +282,30 @@ CREATE INDEX IF NOT EXISTS idx_apply_versions_status ON apply_versions(status);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_action ON operation_logs(action);
 CREATE INDEX IF NOT EXISTS idx_api_tokens_token_hash ON api_tokens(token_hash);
+`
+
+// migration003 adds the exposures table.
+const migration003 = `
+CREATE TABLE IF NOT EXISTS exposures (
+	id TEXT PRIMARY KEY,
+	type TEXT NOT NULL,
+	mode TEXT NOT NULL DEFAULT 'private',
+	host TEXT NOT NULL,
+	port INTEGER DEFAULT 0,
+	path TEXT,
+	service_id TEXT NOT NULL,
+	node_id TEXT,
+	owner_ref TEXT NOT NULL,
+	target_ref TEXT,
+	status TEXT NOT NULL DEFAULT 'pending',
+	message TEXT,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_exposures_owner_ref ON exposures(owner_ref);
+CREATE INDEX IF NOT EXISTS idx_exposures_service_id ON exposures(service_id);
+CREATE INDEX IF NOT EXISTS idx_exposures_type ON exposures(type);
+CREATE INDEX IF NOT EXISTS idx_exposures_status ON exposures(status);
+CREATE INDEX IF NOT EXISTS idx_exposures_type_status ON exposures(type, status);
 `

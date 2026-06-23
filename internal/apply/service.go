@@ -8,6 +8,7 @@ import (
 
 	"aegis/internal/config"
 	"aegis/internal/endpoint"
+	"aegis/internal/exposure"
 	"aegis/internal/id"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
@@ -33,6 +34,7 @@ func NewAppService(
 	adapter proxy.ProxyAdapter,
 	routeRepo *route.Repository,
 	mdRepo *manageddomain.Repository,
+	exposureRepo *exposure.Repository,
 	serviceRepo *service.Repository,
 	endpointResolver *endpoint.Resolver,
 	applyRepo *Repository,
@@ -41,7 +43,7 @@ func NewAppService(
 	return &AppService{
 		cfg:         cfg,
 		adapter:     adapter,
-		planner:     NewPlanner(routeRepo, mdRepo, serviceRepo, endpointResolver),
+		planner:     NewPlanner(routeRepo, mdRepo, exposureRepo, serviceRepo, endpointResolver),
 		executor:    NewExecutor(cfg),
 		rollbackSvc: NewRollbackService(applyRepo, cfg),
 		applyRepo:   applyRepo,

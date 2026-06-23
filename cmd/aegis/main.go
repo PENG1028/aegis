@@ -7,6 +7,7 @@ import (
 	"aegis/internal/apply"
 	"aegis/internal/config"
 	"aegis/internal/endpoint"
+	"aegis/internal/exposure"
 	"aegis/internal/health"
 	"aegis/internal/httpapi"
 	"aegis/internal/logs"
@@ -88,6 +89,7 @@ func main() {
 	applyRepo := apply.NewRepository(db)
 	logRepo := logs.NewRepository(db)
 	mdRepo := manageddomain.NewRepository(db)
+	exposureRepo := exposure.NewRepository(db)
 	tokenRepo := token.NewRepository(db)
 
 	// --- Core Services ---
@@ -98,6 +100,7 @@ func main() {
 	serviceSvc := service.NewAppService(serviceRepo, logSvc)
 	routeSvc := route.NewAppService(routeRepo, logSvc)
 	mdSvc := manageddomain.NewAppService(mdRepo, logSvc)
+	exposureSvc := exposure.NewAppService(exposureRepo, logSvc)
 	healthSvc := health.NewAppService(healthRepo, serviceRepo, endpointRepo, logSvc)
 
 	// --- Endpoint Resolver ---
@@ -115,7 +118,7 @@ func main() {
 
 	// --- Apply Service ---
 	applySvc := apply.NewAppService(
-		cfg, proxyAdapter, routeRepo, mdRepo, serviceRepo,
+		cfg, proxyAdapter, routeRepo, mdRepo, exposureRepo, serviceRepo,
 		endpointResolver, applyRepo, logSvc,
 	)
 
@@ -130,6 +133,7 @@ func main() {
 		EndpointRepo:  endpointRepo,
 		Route:         routeSvc,
 		ManagedDomain: mdSvc,
+		Exposure:      exposureSvc,
 		Apply:         applySvc,
 		Health:        healthSvc,
 		Logs:          logSvc,
@@ -144,6 +148,7 @@ func main() {
 		Route:         routeSvc,
 		EndpointRepo:  endpointRepo,
 		ManagedDomain: mdSvc,
+		Exposure:      exposureSvc,
 		Apply:         applySvc,
 		Health:        healthSvc,
 		Logs:          logSvc,

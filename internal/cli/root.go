@@ -4,6 +4,7 @@ import (
 	"aegis/internal/apply"
 	"aegis/internal/config"
 	"aegis/internal/endpoint"
+	"aegis/internal/exposure"
 	"aegis/internal/health"
 	"aegis/internal/httpapi"
 	"aegis/internal/logs"
@@ -23,6 +24,7 @@ type Services struct {
 	Route         *route.AppService
 	EndpointRepo  *endpoint.Repository
 	ManagedDomain *manageddomain.AppService
+	Exposure      *exposure.AppService
 	Apply         *apply.AppService
 	Health        *health.AppService
 	Logs          *logs.AppService
@@ -50,6 +52,7 @@ v0.x — Production-hardened gateway control with HTTP API.`,
 	cmd.AddCommand(newEndpointCommand(svcs.EndpointRepo, svcs.Service, svcs.Logs))
 	cmd.AddCommand(newRouteCommand(svcs.Route, svcs.Service, svcs.Project))
 	cmd.AddCommand(newManagedDomainCommand(svcs.ManagedDomain, svcs.Service))
+	cmd.AddCommand(newExposureCommand(svcs.Exposure, svcs.Service))
 	cmd.AddCommand(newApplyCommand(svcs.Apply))
 	cmd.AddCommand(newValidateCommand(svcs.Apply))
 	cmd.AddCommand(newRollbackCommand(svcs.Apply))

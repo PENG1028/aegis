@@ -2,6 +2,7 @@ package apply
 
 import (
 	"aegis/internal/endpoint"
+	"aegis/internal/exposure"
 	"aegis/internal/manageddomain"
 	"aegis/internal/proxy"
 	"aegis/internal/route"
@@ -9,10 +10,11 @@ import (
 	"fmt"
 )
 
-// Planner builds a GatewayConfig and ApplyPlan from routes and managed domains.
+// Planner builds a GatewayConfig and ApplyPlan from routes, managed domains, and HTTP exposures.
 type Planner struct {
 	routeRepo        *route.Repository
 	mdRepo           *manageddomain.Repository
+	exposureRepo     *exposure.Repository
 	serviceRepo      *service.Repository
 	endpointResolver *endpoint.Resolver
 }
@@ -21,18 +23,20 @@ type Planner struct {
 func NewPlanner(
 	routeRepo *route.Repository,
 	mdRepo *manageddomain.Repository,
+	exposureRepo *exposure.Repository,
 	serviceRepo *service.Repository,
 	endpointResolver *endpoint.Resolver,
 ) *Planner {
 	return &Planner{
 		routeRepo:        routeRepo,
 		mdRepo:           mdRepo,
+		exposureRepo:     exposureRepo,
 		serviceRepo:      serviceRepo,
 		endpointResolver: endpointResolver,
 	}
 }
 
-// Plan builds a full ApplyPlan from routes and managed domains.
+// Plan builds a full ApplyPlan from routes, managed domains, and HTTP exposures.
 func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 	plan := &ApplyPlan{
 		Warnings: []ApplyWarning{},
@@ -40,7 +44,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 
 	var routeConfigs []proxy.RouteConfig
 
-	// Process active routes
+	// Phase 1: Process active routes (internal, admin-managed)
 	routes, err := p.routeRepo.FindActive()
 	if err != nil {
 		return nil, fmt.Errorf("find active routes: %w", err)
@@ -57,7 +61,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 		plan.Warnings = append(plan.Warnings, warns...)
 	}
 
-	// Process active managed domains
+	// Phase 2: Process active managed domains (verified external domains)
 	mdDomains, err := p.mdRepo.FindActive()
 	if err != nil {
 		return nil, fmt.Errorf("find active managed domains: %w", err)
@@ -70,6 +74,26 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 		} else {
 			routeConfigs = append(routeConfigs, *rc)
 			plan.ManagedDomainCount++
+		}
+		plan.Warnings = append(plan.Warnings, warns...)
+	}
+
+	// Phase 3: Process active HTTP exposures (generate config from exposure host/path)
+	httpExposures, err := p.exposureRepo.FindActiveHTTP()
+	if err != nil {
+		return nil, fmt.Errorf("find active http exposures: %w", err)
+	}
+
+	for _, exp := range httpExposures {
+		domain := exp.Host
+		if exp.Port > 0 && exp.Port != 80 && exp.Port != 443 {
+			domain = fmt.Sprintf("%s:%d", exp.Host, exp.Port)
+		}
+		rc, warns := p.resolveRouteConfig(domain, exp.ServiceID, true, false, "")
+		if rc == nil {
+			plan.SkippedCount++
+		} else {
+			routeConfigs = append(routeConfigs, *rc)
 		}
 		plan.Warnings = append(plan.Warnings, warns...)
 	}

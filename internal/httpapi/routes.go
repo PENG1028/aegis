@@ -14,6 +14,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		EndpointRepo:  svcs.EndpointRepo,
 		Route:         svcs.Route,
 		ManagedDomain: svcs.ManagedDomain,
+		Exposure:      svcs.Exposure,
 		Apply:         svcs.Apply,
 		Health:        svcs.Health,
 		Logs:          svcs.Logs,
@@ -73,6 +74,14 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/apply/dry-run", h.ApplyDryRun)
 	mux.HandleFunc("POST /api/rollback", h.Rollback)
 	mux.HandleFunc("GET /api/apply/history", h.ApplyHistory)
+
+	// Exposures
+	mux.HandleFunc("GET /api/exposures", h.ListExposures)
+	mux.HandleFunc("POST /api/exposures", h.CreateExposure)
+	mux.HandleFunc("GET /api/exposures/{id}", h.GetExposure)
+	mux.HandleFunc("PATCH /api/exposures/{id}", h.UpdateExposure)
+	mux.HandleFunc("POST /api/exposures/{id}/activate", h.ActivateExposure)
+	mux.HandleFunc("POST /api/exposures/{id}/disable", h.DisableExposure)
 
 	// Diagnostics
 	mux.HandleFunc("GET /api/diagnostics/export", h.DiagnosticsExport)

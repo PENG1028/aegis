@@ -34,6 +34,9 @@ const (
 	ScopeSettingsRead  = "settings:read"
 	ScopeSettingsWrite = "settings:write"
 
+	ScopeExposureRead  = "exposure:read"
+	ScopeExposureWrite = "exposure:write"
+
 	ScopeAdminAll = "admin:*"
 )
 
@@ -102,6 +105,15 @@ var RequiredScopes = map[string]string{
 	// Settings
 	"GET /api/settings":  ScopeSettingsRead,
 	"PATCH /api/settings": ScopeSettingsWrite,
+
+	// Exposures
+	"GET /api/exposures":      ScopeExposureRead,
+	"POST /api/exposures":     ScopeExposureWrite,
+	"GET /api/exposures/":     ScopeExposureRead,
+	"PATCH /api/exposures/":   ScopeExposureWrite,
+	"POST /api/exposures/activate":  ScopeExposureWrite,
+	"POST /api/exposures/disable":   ScopeExposureWrite,
+	"DELETE /api/exposures/":  ScopeExposureWrite,
 
 	// Diagnostics (needs admin or system+logs+config)
 	"GET /api/diagnostics/": ScopeAdminAll,

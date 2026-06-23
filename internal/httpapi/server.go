@@ -4,6 +4,7 @@ import (
 	"aegis/internal/apply"
 	"aegis/internal/config"
 	"aegis/internal/endpoint"
+	"aegis/internal/exposure"
 	"aegis/internal/health"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
@@ -21,6 +22,7 @@ type Services struct {
 	EndpointRepo  *endpoint.Repository
 	Route         *route.AppService
 	ManagedDomain *manageddomain.AppService
+	Exposure      *exposure.AppService
 	Apply         *apply.AppService
 	Health        *health.AppService
 	Logs          *logs.AppService
