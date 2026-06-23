@@ -17,16 +17,16 @@ import (
 
 // Services holds all application services for CLI commands.
 type Services struct {
-	Config         *config.Config
-	Project        *project.AppService
-	Service        *service.AppService
-	Route          *route.AppService
-	EndpointRepo   *endpoint.Repository
-	ManagedDomain  *manageddomain.AppService
-	Apply          *apply.AppService
-	Health         *health.AppService
-	Logs           *logs.AppService
-	HTTPServices   *httpapi.Services
+	Config        *config.Config
+	Project       *project.AppService
+	Service       *service.AppService
+	Route         *route.AppService
+	EndpointRepo  *endpoint.Repository
+	ManagedDomain *manageddomain.AppService
+	Apply         *apply.AppService
+	Health        *health.AppService
+	Logs          *logs.AppService
+	HTTPServices  *httpapi.Services
 }
 
 // NewRootCommand creates the root aegis CLI command.
@@ -38,7 +38,7 @@ func NewRootCommand(svcs *Services) *cobra.Command {
 It handles Projects, Services, Endpoints, Routes, Managed Domains,
 and safely applies configuration to Caddy (or Nginx in the future).
 
-v0.x — Full gateway control with HTTP API.`,
+v0.x — Production-hardened gateway control with HTTP API.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -53,10 +53,15 @@ v0.x — Full gateway control with HTTP API.`,
 	cmd.AddCommand(newApplyCommand(svcs.Apply))
 	cmd.AddCommand(newValidateCommand(svcs.Apply))
 	cmd.AddCommand(newRollbackCommand(svcs.Apply))
+	cmd.AddCommand(newConfigCommand(svcs.Apply))
 	cmd.AddCommand(newHealthCommand(svcs.Health, svcs.Service))
 	cmd.AddCommand(newMaintenanceCommand(svcs.Route))
 	cmd.AddCommand(newLogsCommand(svcs.Logs))
 	cmd.AddCommand(newSettingsCommand(svcs.Config))
+	cmd.AddCommand(newDiagnosticsCommand(
+		svcs.Config, svcs.Project, svcs.Service, svcs.Route,
+		svcs.ManagedDomain, svcs.Apply, svcs.Health, svcs.Logs,
+	))
 
 	if svcs.HTTPServices != nil {
 		cmd.AddCommand(newServeCommand(svcs.Config, svcs.HTTPServices))

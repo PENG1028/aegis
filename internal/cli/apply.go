@@ -20,33 +20,52 @@ func newApplyCommand(svc *apply.AppService) *cobra.Command {
 			ctx := context.Background()
 
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			showDiff, _ := cmd.Flags().GetBool("diff")
+
 			if dryRun {
-				result, err := svc.DryRun(ctx)
+				plan, err := svc.DryRun(ctx)
 				if err != nil {
 					return err
 				}
-				for _, w := range result.Warnings {
-					fmt.Fprintln(os.Stderr, w)
+				// Print warnings
+				for _, w := range plan.Warnings {
+					fmt.Fprintf(os.Stderr, "[%s] %s: %s\n", w.Severity, w.Code, w.Message)
 				}
-				fmt.Println(result.Config)
+
+				if showDiff {
+					current, _ := svc.GetCurrentConfig()
+					fmt.Println("--- current")
+					fmt.Println("+++ preview")
+					if current != plan.RenderedConfig {
+						fmt.Println(plan.RenderedConfig)
+					} else {
+						fmt.Println("(no changes)")
+					}
+				} else {
+					fmt.Println(plan.RenderedConfig)
+				}
 				return nil
 			}
 
-			result, err := svc.Apply(ctx)
+			plan, err := svc.Apply(ctx)
 			if err != nil {
 				return err
 			}
 
-			for _, w := range result.Warnings {
-				fmt.Fprintln(os.Stderr, w)
+			for _, w := range plan.Warnings {
+				fmt.Fprintf(os.Stderr, "[%s] %s: %s\n", w.Severity, w.Code, w.Message)
 			}
-			fmt.Printf("Applied version %s successfully.\n", result.Version)
+			fmt.Printf("Applied successfully: %d routes, %d managed domains\n",
+				plan.RouteCount, plan.ManagedDomainCount)
+			if plan.SkippedCount > 0 {
+				fmt.Printf("  (%d skipped)\n", plan.SkippedCount)
+			}
 			return nil
 		},
 	}
 
 	cmd.Flags().Bool("dry-run", false, "Generate and display config without applying")
-
+	cmd.Flags().Bool("diff", false, "Show diff instead of full config")
 	cmd.AddCommand(newApplyHistoryCommand(svc))
 
 	return cmd
@@ -101,16 +120,26 @@ func newValidateCommand(svc *apply.AppService) *cobra.Command {
 }
 
 func newRollbackCommand(svc *apply.AppService) *cobra.Command {
-	return &cobra.Command{
+	var version string
+
+	cmd := &cobra.Command{
 		Use:   "rollback",
 		Short: "Rollback to the last successful configuration",
+		Long:  "Rollback to the last successful configuration. Use --version to specify a specific version.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			if err := svc.Rollback(ctx); err != nil {
+			if err := svc.Rollback(ctx, version); err != nil {
 				return err
 			}
-			fmt.Println("Rollback completed.")
+			if version != "" {
+				fmt.Printf("Rolled back to version %s.\n", version)
+			} else {
+				fmt.Println("Rolled back to last successful version.")
+			}
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&version, "version", "", "Rollback to a specific apply version")
+	return cmd
 }

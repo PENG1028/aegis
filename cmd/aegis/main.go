@@ -73,7 +73,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// Run migrations (idempotent)
+	// Run versioned migrations (idempotent)
 	if err := store.Initialize(db); err != nil {
 		fmt.Fprintf(os.Stderr, "error: failed to run migrations: %v\n", err)
 		os.Exit(1)
@@ -119,7 +119,7 @@ func main() {
 		endpointResolver, applyRepo, logSvc,
 	)
 
-	// --- Auth Middleware ---
+	// --- Auth Middleware (with scope checking) ---
 	authMiddleware := token.NewAuthMiddleware(cfg.Server.AdminToken, tokenRepo)
 
 	// --- HTTP API Services ---

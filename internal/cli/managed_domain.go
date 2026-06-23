@@ -87,12 +87,19 @@ func newMDVerifyCommand(mdSvc *manageddomain.AppService) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			md, err := mdSvc.VerifyDomain(ctx, args[0])
+			md, result, err := mdSvc.VerifyDomain(ctx, args[0])
 			if err != nil {
 				return err
 			}
 			fmt.Printf("Domain %q verification: %s\n", md.Domain, md.Status)
-			fmt.Printf("  Message: %s\n", md.LastCheckMessage)
+			if result != nil {
+				fmt.Printf("  TXT:   ok=%v expected=%s actual=%v\n", result.TXT.OK, result.TXT.Expected, result.TXT.Actual)
+				if result.CNAME.OK {
+					fmt.Printf("  CNAME: ok=%v actual=%v\n", result.CNAME.OK, result.CNAME.Actual)
+				}
+				fmt.Printf("  A:     %v\n", result.A.Actual)
+				fmt.Printf("  AAAA:  %v\n", result.AAAA.Actual)
+			}
 			if md.Status == "verified" {
 				fmt.Println()
 				fmt.Printf("Run 'aegis managed-domain enable %s' to activate.\n", md.Domain)
@@ -109,7 +116,7 @@ func newMDEnableCommand(mdSvc *manageddomain.AppService) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			md, err := mdSvc.EnableDomain(ctx, args[0])
+			md, err := mdSvc.EnableDomain(ctx, args[0], false)
 			if err != nil {
 				return err
 			}
