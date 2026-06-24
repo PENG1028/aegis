@@ -121,10 +121,18 @@ func (p *HAProxyEdgeMuxProvider) Reload() error {
 	cmd := exec.Command("systemctl", "reload", "haproxy")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		cmd = exec.Command("haproxy", "-f", p.configPath, "-sf", "$(pidof haproxy)")
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("haproxy reload failed: %s\n%s", err.Error(), string(output))
+		errMsg := string(output)
+		hint := ""
+		if strings.Contains(errMsg, "permission denied") || strings.Contains(errMsg, "Permission denied") ||
+			strings.Contains(errMsg, "Interactive authentication required") {
+			hint = "\nReload failed. Try running 'aegis apply' with sudo or configure service permissions."
+		}
+		// Try haproxy -sf fallback
+		cmd2 := exec.Command("haproxy", "-f", p.configPath, "-sf", "$(pidof haproxy)")
+		out2, err2 := cmd2.CombinedOutput()
+		if err2 != nil {
+			return fmt.Errorf("haproxy reload failed (systemctl): %s\nstderr: %s%s\nhaproxy -sf also failed: %s",
+				err.Error(), errMsg, hint, string(out2))
 		}
 	}
 	_ = output

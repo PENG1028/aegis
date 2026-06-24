@@ -191,11 +191,36 @@ func newEdgeCheckCmd(svc *edgemux.AppService) *cobra.Command {
 			}
 			fmt.Println()
 
-			// 4. ACME/Cert guidance
+			// 4. Certificate diagnostics
 			fmt.Println("[certificate]")
-			fmt.Println("  acme_http_01_possible: true (Caddy owns 0.0.0.0:80)")
-			fmt.Println("  acme_tls_alpn_01: may depend on haproxy passthrough to 8443")
-			fmt.Println("  hint: if cert issuance fails, check HTTP-01 on port 80 or switch to DNS-01")
+			http80 := isPortListening("0.0.0.0", 80)
+			tls443 := isPortListening("0.0.0.0", 443)
+			internal8443 := isPortListening("127.0.0.1", 8443)
+
+			if http80 {
+				fmt.Println("  acme_http_01_possible:          true (port 80 in use)")
+			} else {
+				fmt.Println("  acme_http_01_possible:          WARNING — port 80 not listening, HTTP-01 challenge will FAIL")
+			}
+			if tls443 && http80 {
+				fmt.Println("  acme_tls_alpn_passthrough:       possible (HAProxy 443→Caddy 8443 passthrough)")
+			} else if tls443 {
+				fmt.Println("  acme_tls_alpn_passthrough:       WARNING — 443 active but 80 not, check HTTP-01")
+			} else {
+				fmt.Println("  acme_tls_alpn_passthrough:       WARNING — 443 not active, EdgeMux not running")
+			}
+			if internal8443 {
+				fmt.Println("  caddy_internal_https:            active (127.0.0.1:8443)")
+			} else {
+				fmt.Println("  caddy_internal_https:            WARNING — 127.0.0.1:8443 NOT LISTENING")
+			}
+			fmt.Println()
+			fmt.Println("  cert troubleshooting:")
+			fmt.Println("    caddy logs:  sudo journalctl -u caddy --no-pager -n 50")
+			fmt.Println("    haproxy logs: sudo journalctl -u haproxy --no-pager -n 50")
+			fmt.Println("    HTTP-01:      ensure port 80 is publicly reachable")
+			fmt.Println("    DNS-01:       configure DNS challenge if HTTP-01 fails")
+			fmt.Println("    TLS-ALPN-01:  requires HAProxy passthrough to Caddy 8443")
 			fmt.Println()
 
 			// --runtime: actual port + SNI checks

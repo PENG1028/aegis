@@ -76,7 +76,12 @@ func (a *Adapter) Reload(command string) error {
 	cmd := exec.Command(parts[0], parts[1:]...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("reload failed (cmd: %s): %s\n%s", reloadCmd, err.Error(), string(output))
+		errMsg := string(output)
+		hint := ""
+		if strings.Contains(errMsg, "permission denied") || strings.Contains(errMsg, "Permission denied") {
+			hint = "\nPermission denied. Try running 'aegis apply' with sudo or configure service permissions."
+		}
+		return fmt.Errorf("reload failed (cmd: %s): %s\nstderr: %s%s", reloadCmd, err.Error(), errMsg, hint)
 	}
 	return nil
 }
