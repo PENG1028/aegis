@@ -4,17 +4,19 @@ import "time"
 
 // NodeRecord represents a machine identity in the Aegis cluster.
 type NodeRecord struct {
-	ID         string    `json:"id"`
-	NodeID     string    `json:"node_id"`
-	Hostname   string    `json:"hostname"`
-	LocalIP    string    `json:"local_ip"`    // 127.0.0.1
-	PrivateIP  string    `json:"private_ip"`  // e.g. 10.x, 172.16.x, 192.168.x (optional)
-	PublicIP   string    `json:"public_ip"`   // external IP
-	IsCurrent  bool      `json:"is_current"`
-	IPMigrated bool      `json:"ip_migrated"` // true if IP changed since last registration
-	LastSeen   time.Time `json:"last_seen"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	NodeID          string    `json:"node_id"`
+	Hostname        string    `json:"hostname"`
+	LocalIP         string    `json:"local_ip"`    // 127.0.0.1
+	PrivateIP       string    `json:"private_ip"`  // e.g. 10.x, 172.16.x, 192.168.x (optional)
+	PublicIP        string    `json:"public_ip"`   // external IP
+	IsCurrent       bool      `json:"is_current"`
+	IsLeader        bool      `json:"is_leader"`
+	LeaderElectedAt time.Time `json:"leader_elected_at"`
+	IPMigrated      bool      `json:"ip_migrated"` // true if IP changed since last registration
+	LastSeen        time.Time `json:"last_seen"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // ResolveIP returns the best available IP for the given preference order.

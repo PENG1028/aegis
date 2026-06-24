@@ -67,6 +67,11 @@ func AllMigrations() []Migration {
 			Name:    "add_nodes",
 			UpSQL:   migration010,
 		},
+		{
+			Version: "011",
+			Name:    "node_leader_fields",
+			UpSQL:   migration011,
+		},
 	}
 }
 
@@ -458,4 +463,11 @@ CREATE TABLE IF NOT EXISTS nodes (
 
 CREATE INDEX IF NOT EXISTS idx_nodes_is_current ON nodes(is_current);
 CREATE INDEX IF NOT EXISTS idx_nodes_node_id ON nodes(node_id);
+`
+
+// migration011 adds leader election fields to nodes.
+const migration011 = `
+ALTER TABLE nodes ADD COLUMN is_leader INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE nodes ADD COLUMN leader_elected_at TEXT DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_nodes_is_leader ON nodes(is_leader);
 `
