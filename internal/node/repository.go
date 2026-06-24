@@ -107,13 +107,15 @@ func scanNodes(rows *sql.Rows) ([]NodeRecord, error) {
 		var n NodeRecord
 		var createdAt, updatedAt, lastSeen, leaderAt string
 		var migrated, current, leader int
+		var stateVersion uint64
 		if err := rows.Scan(&n.ID, &n.NodeID, &n.Hostname, &n.LocalIP, &n.PrivateIP, &n.PublicIP,
-			&current, &leader, &leaderAt, &migrated, &lastSeen, &createdAt, &updatedAt); err != nil {
+			&current, &leader, &leaderAt, &migrated, &stateVersion, &lastSeen, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan node: %w", err)
 		}
 		n.IsCurrent = current == 1
 		n.IsLeader = leader == 1
 		if leaderAt != "" { n.LeaderElectedAt, _ = time.Parse(time.RFC3339, leaderAt) }
+		n.StateVersion = stateVersion
 		n.IPMigrated = migrated == 1
 		n.LastSeen, _ = time.Parse(time.RFC3339, lastSeen)
 		n.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)

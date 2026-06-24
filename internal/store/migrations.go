@@ -72,6 +72,11 @@ func AllMigrations() []Migration {
 			Name:    "node_leader_fields",
 			UpSQL:   migration011,
 		},
+		{
+			Version: "012",
+			Name:    "cluster_state_version",
+			UpSQL:   migration012,
+		},
 	}
 }
 
@@ -470,4 +475,15 @@ const migration011 = `
 ALTER TABLE nodes ADD COLUMN is_leader INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE nodes ADD COLUMN leader_elected_at TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_nodes_is_leader ON nodes(is_leader);
+`
+
+// migration012 adds cluster_state table and state_version tracking.
+const migration012 = `
+CREATE TABLE IF NOT EXISTS cluster_state (
+	key TEXT PRIMARY KEY,
+	value INTEGER NOT NULL DEFAULT 0,
+	updated_at TEXT NOT NULL DEFAULT ''
+);
+
+ALTER TABLE nodes ADD COLUMN state_version INTEGER NOT NULL DEFAULT 0;
 `

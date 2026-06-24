@@ -22,6 +22,7 @@ import (
 	"aegis/internal/proxy/caddy"
 	"aegis/internal/route"
 	"aegis/internal/service"
+	"aegis/internal/sync"
 	"aegis/internal/store"
 	"aegis/internal/tcp"
 	"aegis/internal/token"
@@ -129,13 +130,20 @@ func main() {
 	// Cluster leader election
 	leaderSvc := cluster.NewLeaderService(nodeRepo)
 	if leader, err := leaderSvc.GetLeader(); err == nil && leader == nil {
-		// No leader — elect one
 		if elected, err := leaderSvc.ElectLeader(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: leader election failed: %v\n", err)
 		} else {
 			fmt.Fprintf(os.Stderr, "info: elected leader: %s\n", elected.NodeID)
 		}
 	}
+
+	// State version tracking
+	stateVer := cluster.NewStateVersion(db)
+
+	// Reconcile loop (background node sync)
+	reconcileLoop := sync.NewReconcileLoop(nodeRepo, leaderSvc, stateVer)
+	reconcileLoop.Start()
+	defer reconcileLoop.Stop()
 
 	healthSvc := health.NewAppService(healthRepo, serviceRepo, endpointRepo, logSvc)
 
@@ -189,6 +197,9 @@ func main() {
 		Exposure:      exposureSvc,
 		ListenerSvc:   listenerSvc,
 		EdgeSvc:       edgeSvc,
+		LeaderSvc:     leaderSvc,
+		NodeRepo:      nodeRepo,
+		StateVer:      stateVer,
 		Apply:         applySvc,
 		Health:        healthSvc,
 		Logs:          logSvc,

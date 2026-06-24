@@ -11,14 +11,16 @@ import (
 
 // Snapshot captures the full system state at a point in time.
 type Snapshot struct {
-	Version    string              `json:"version"`
-	ExportedAt string              `json:"exported_at"`
-	ConfigHash ConfigHash          `json:"config_hash"`
-	Listeners  []ListenerState     `json:"listeners"`
-	EdgeRules  []EdgeRuleState     `json:"edge_rules"`
-	Routes     []RouteState        `json:"routes"`
-	Providers  []ProviderState     `json:"providers"`
-	Ports      []PortState         `json:"ports"`
+	Version      string              `json:"version"`
+	ExportedAt   string              `json:"exported_at"`
+	StateVersion uint64              `json:"state_version"`
+	LeaderID     string              `json:"leader_id"`
+	ConfigHash   ConfigHash          `json:"config_hash"`
+	Listeners    []ListenerState     `json:"listeners"`
+	EdgeRules    []EdgeRuleState     `json:"edge_rules"`
+	Routes       []RouteState        `json:"routes"`
+	Providers    []ProviderState     `json:"providers"`
+	Ports        []PortState         `json:"ports"`
 }
 
 // ConfigHash stores SHA256 hashes of rendered configs.

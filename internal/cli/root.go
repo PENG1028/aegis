@@ -2,6 +2,7 @@ package cli
 
 import (
 	"aegis/internal/apply"
+	"aegis/internal/cluster"
 	"aegis/internal/config"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
@@ -9,6 +10,7 @@ import (
 	"aegis/internal/health"
 	"aegis/internal/listener"
 	"aegis/internal/httpapi"
+	"aegis/internal/node"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/project"
@@ -29,6 +31,9 @@ type Services struct {
 	Exposure      *exposure.AppService
 	ListenerSvc   *listener.Service
 	EdgeSvc       *edgemux.AppService
+	LeaderSvc     *cluster.LeaderService
+	NodeRepo      *node.Repository
+	StateVer      *cluster.StateVersion
 	Apply         *apply.AppService
 	Health        *health.AppService
 	Logs          *logs.AppService
@@ -53,7 +58,7 @@ v0.x — Production-hardened gateway control with HTTP API.`,
 	cmd.AddCommand(newInitCommand())
 	cmd.AddCommand(newBootstrapCommand(svcs.Config, svcs.ListenerSvc))
 	cmd.AddCommand(newDoctorCommand(svcs.Config, svcs.ListenerSvc))
-	cmd.AddCommand(newSnapshotCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc))
+	cmd.AddCommand(newSnapshotCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc, svcs.LeaderSvc, svcs.NodeRepo, svcs.StateVer))
 	cmd.AddCommand(newVerifyCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc))
 	cmd.AddCommand(newProjectCommand(svcs.Project))
 	cmd.AddCommand(newServiceCommand(svcs.Service, svcs.Project))
