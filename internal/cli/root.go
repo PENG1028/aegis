@@ -51,7 +51,10 @@ v0.x — Production-hardened gateway control with HTTP API.`,
 
 	// Register subcommands
 	cmd.AddCommand(newInitCommand())
+	cmd.AddCommand(newBootstrapCommand(svcs.Config, svcs.ListenerSvc))
 	cmd.AddCommand(newDoctorCommand(svcs.Config, svcs.ListenerSvc))
+	cmd.AddCommand(newSnapshotCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc))
+	cmd.AddCommand(newVerifyCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc))
 	cmd.AddCommand(newProjectCommand(svcs.Project))
 	cmd.AddCommand(newServiceCommand(svcs.Service, svcs.Project))
 	cmd.AddCommand(newEndpointCommand(svcs.EndpointRepo, svcs.Service, svcs.Logs))
