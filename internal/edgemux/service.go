@@ -26,7 +26,6 @@ func (s *AppService) CreateRule(ctx context.Context, input CreateRuleInput) (*Ru
 		return nil, err
 	}
 
-	// Check duplicate
 	existing, err := s.repo.FindBySNIHost(input.SNIHost)
 	if err != nil {
 		return nil, fmt.Errorf("check duplicate sni_host: %w", err)
@@ -35,7 +34,6 @@ func (s *AppService) CreateRule(ctx context.Context, input CreateRuleInput) (*Ru
 		return nil, fmt.Errorf("SNI host %q already exists (rule: %s)", input.SNIHost, existing.ID)
 	}
 
-	// Validate target safety
 	ok, msg := ValidateTarget(input.TargetHost)
 	if !ok {
 		return nil, fmt.Errorf("target safety check failed: %s", msg)
@@ -53,6 +51,7 @@ func (s *AppService) CreateRule(ctx context.Context, input CreateRuleInput) (*Ru
 		TargetHost:   input.TargetHost,
 		TargetPort:   input.TargetPort,
 		ServiceID:    input.ServiceID,
+		ManagedBy:    "manual",
 		Status:       "active",
 		CreatedAt:    now,
 		UpdatedAt:    now,
@@ -69,36 +68,109 @@ func (s *AppService) CreateRule(ctx context.Context, input CreateRuleInput) (*Ru
 }
 
 // EnsureRuleForHTTPRoute creates or updates an edge rule for an HTTP route.
-// In EdgeMux mode, every HTTP route needs a corresponding SNI rule pointing to Caddy internal 8443.
-func (s *AppService) EnsureRuleForHTTPRoute(ctx context.Context, domain string) (*Rule, error) {
+// Called automatically when an HTTP route is created. The edge rule is managed_by=http_route.
+func (s *AppService) EnsureRuleForHTTPRoute(ctx context.Context, domain, routeID string) (*Rule, error) {
 	if err := ValidateSNIHost(domain); err != nil {
 		return nil, fmt.Errorf("invalid HTTP route domain for edge rule: %w", err)
 	}
 
 	existing, _ := s.repo.FindBySNIHost(domain)
 	if existing != nil {
-		// Already exists — ensure it points to Caddy internal 8443
-		if existing.TargetHost != "127.0.0.1" || existing.TargetPort != 8443 {
-			existing.TargetHost = "127.0.0.1"
-			existing.TargetPort = 8443
-			existing.DeclaredKind = KindHTTPSApp
-			existing.UpdatedAt = time.Now()
-			if err := s.repo.Update(existing); err != nil {
-				return nil, err
-			}
+		// Check ownership — only http_route-managed rules are auto-updated
+		if existing.ManagedBy != "http_route" && existing.ManagedBy != "" {
+			// manual rule exists — don't auto-override
+			return existing, nil
+		}
+		existing.TargetHost = "127.0.0.1"
+		existing.TargetPort = 8443
+		existing.DeclaredKind = KindHTTPSApp
+		existing.ManagedBy = "http_route"
+		existing.SourceRef = routeID
+		existing.UpdatedAt = time.Now()
+		if err := s.repo.Update(existing); err != nil {
+			return nil, err
 		}
 		return existing, nil
 	}
 
-	return s.CreateRule(ctx, CreateRuleInput{
+	now := time.Now()
+	rule := &Rule{
+		ID:           id.New("edge"),
 		SNIHost:      domain,
 		DeclaredKind: KindHTTPSApp,
 		TargetHost:   "127.0.0.1",
 		TargetPort:   8443,
-	})
+		ManagedBy:    "http_route",
+		SourceRef:    routeID,
+		Status:       "active",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	if err := s.repo.Create(rule); err != nil {
+		return nil, err
+	}
+
+	s.logSvc.Log(ctx, "edgemux.sync", "edge_mux_rule", rule.ID, "success",
+		fmt.Sprintf("auto-created edge rule for HTTP route %s: SNI %s -> 127.0.0.1:8443", routeID, domain), "system")
+	return rule, nil
 }
 
-// ListRules returns all edge mux rules.
+// RemoveRuleForHTTPRoute removes the auto-managed edge rule for an HTTP route.
+func (s *AppService) RemoveRuleForHTTPRoute(ctx context.Context, routeID string) error {
+	rules, err := s.repo.FindBySourceRef(routeID)
+	if err != nil {
+		return err
+	}
+	for _, rule := range rules {
+		if rule.ManagedBy == "http_route" {
+			if err := s.repo.Delete(rule.ID); err != nil {
+				return err
+			}
+			s.logSvc.Log(ctx, "edgemux.sync", "edge_mux_rule", rule.ID, "success",
+				fmt.Sprintf("auto-removed edge rule for HTTP route %s (SNI %s)", routeID, rule.SNIHost), "system")
+		}
+	}
+	return nil
+}
+
+// SyncRouteStatus syncs edge rule status with route status.
+func (s *AppService) SyncRouteStatus(ctx context.Context, routeID string, routeActive bool) error {
+	rules, err := s.repo.FindBySourceRef(routeID)
+	if err != nil {
+		return err
+	}
+	for _, rule := range rules {
+		if rule.ManagedBy == "http_route" {
+			if routeActive {
+				rule.Status = "active"
+			} else {
+				rule.Status = "disabled"
+			}
+			rule.UpdatedAt = time.Now()
+			if err := s.repo.Update(&rule); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DeleteRule removes an edge rule. Blocks deletion of http_route-managed rules unless force=true.
+func (s *AppService) DeleteRule(ctx context.Context, id string, force bool) error {
+	rule, err := s.repo.FindByID(id)
+	if err != nil {
+		return err
+	}
+	if rule == nil {
+		return fmt.Errorf("edge rule %q not found", id)
+	}
+	if rule.ManagedBy == "http_route" && !force {
+		return fmt.Errorf("edge rule %q is managed by HTTP route (source: %s). Use --force to override, or manage via the route instead.", id, rule.SourceRef)
+	}
+	return s.repo.Delete(id)
+}
+
 func (s *AppService) ListRules(ctx context.Context) ([]Rule, error) {
 	rules, err := s.repo.FindAll()
 	if err != nil { return nil, err }
@@ -106,7 +178,6 @@ func (s *AppService) ListRules(ctx context.Context) ([]Rule, error) {
 	return rules, nil
 }
 
-// GetRule returns a rule by ID.
 func (s *AppService) GetRule(ctx context.Context, id string) (*Rule, error) {
 	rule, err := s.repo.FindByID(id)
 	if err != nil { return nil, err }
@@ -114,7 +185,6 @@ func (s *AppService) GetRule(ctx context.Context, id string) (*Rule, error) {
 	return rule, nil
 }
 
-// EnableRule enables a disabled rule.
 func (s *AppService) EnableRule(ctx context.Context, id string) error {
 	rule, err := s.repo.FindByID(id)
 	if err != nil { return err }
@@ -124,7 +194,6 @@ func (s *AppService) EnableRule(ctx context.Context, id string) error {
 	return s.repo.Update(rule)
 }
 
-// DisableRule disables a rule.
 func (s *AppService) DisableRule(ctx context.Context, id string) error {
 	rule, err := s.repo.FindByID(id)
 	if err != nil { return err }
@@ -132,9 +201,4 @@ func (s *AppService) DisableRule(ctx context.Context, id string) error {
 	rule.Status = "disabled"
 	rule.UpdatedAt = time.Now()
 	return s.repo.Update(rule)
-}
-
-// DeleteRule removes a rule.
-func (s *AppService) DeleteRule(ctx context.Context, id string) error {
-	return s.repo.Delete(id)
 }

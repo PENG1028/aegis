@@ -5,19 +5,21 @@ import (
 	"fmt"
 	"time"
 
+	"aegis/internal/edgemux"
 	"aegis/internal/id"
 	"aegis/internal/logs"
 )
 
 // AppService defines the route application service interface.
 type AppService struct {
-	repo   *Repository
-	logSvc *logs.AppService
+	repo    *Repository
+	logSvc  *logs.AppService
+	edgeSvc *edgemux.AppService
 }
 
 // NewAppService creates a new route application service.
-func NewAppService(repo *Repository, logSvc *logs.AppService) *AppService {
-	return &AppService{repo: repo, logSvc: logSvc}
+func NewAppService(repo *Repository, logSvc *logs.AppService, edgeSvc *edgemux.AppService) *AppService {
+	return &AppService{repo: repo, logSvc: logSvc, edgeSvc: edgeSvc}
 }
 
 // CreateRoute creates a new route.
@@ -61,6 +63,16 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 
 	s.logSvc.Log(ctx, "route.create", "route", rt.ID, "success",
 		fmt.Sprintf("created route for domain %q", rt.Domain), "cli")
+
+	// Auto-sync edge rule in EdgeMux mode
+	if s.edgeSvc != nil {
+		if _, err := s.edgeSvc.EnsureRuleForHTTPRoute(ctx, rt.Domain, rt.ID); err != nil {
+			// Log but don't fail — edge sync is best-effort on create
+			s.logSvc.Log(ctx, "route.edge-sync", "route", rt.ID, "failed",
+				fmt.Sprintf("edge rule sync failed: %v", err), "system")
+		}
+	}
+
 	return rt, nil
 }
 
@@ -116,6 +128,9 @@ func (s *AppService) EnableRoute(ctx context.Context, idOrDomain string) error {
 
 	s.logSvc.Log(ctx, "route.enable", "route", rt.ID, "success",
 		fmt.Sprintf("enabled route for %q", rt.Domain), "cli")
+	if s.edgeSvc != nil {
+		s.edgeSvc.SyncRouteStatus(ctx, rt.ID, true)
+	}
 	return nil
 }
 
@@ -139,6 +154,9 @@ func (s *AppService) DisableRoute(ctx context.Context, idOrDomain string) error 
 
 	s.logSvc.Log(ctx, "route.disable", "route", rt.ID, "success",
 		fmt.Sprintf("disabled route for %q", rt.Domain), "cli")
+	if s.edgeSvc != nil {
+		s.edgeSvc.SyncRouteStatus(ctx, rt.ID, false)
+	}
 	return nil
 }
 

@@ -104,11 +104,11 @@ func main() {
 	// --- App Services ---
 	projectSvc := project.NewAppService(projectRepo, logSvc)
 	serviceSvc := service.NewAppService(serviceRepo, logSvc)
-	routeSvc := route.NewAppService(routeRepo, logSvc)
+	edgeSvc := edgemux.NewAppService(edgeRepo, logSvc)
+	routeSvc := route.NewAppService(routeRepo, logSvc, edgeSvc)
 	mdSvc := manageddomain.NewAppService(mdRepo, logSvc)
 	listenerSvc := listener.NewService(listenerRepo)
 	listenerSvc.SetEdgeMuxMode(true) // Default EdgeMux mode
-	edgeSvc := edgemux.NewAppService(edgeRepo, logSvc)
 
 	// Register EdgeMux default listeners
 	if err := listenerSvc.RegisterDefaults(); err != nil {

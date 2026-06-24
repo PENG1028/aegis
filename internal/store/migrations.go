@@ -57,6 +57,11 @@ func AllMigrations() []Migration {
 			Name:    "edge_mux_rules",
 			UpSQL:   migration008,
 		},
+		{
+			Version: "009",
+			Name:    "edge_rule_managed_by",
+			UpSQL:   migration009,
+		},
 	}
 }
 
@@ -420,4 +425,12 @@ CREATE INDEX IF NOT EXISTS idx_edge_mux_rules_status ON edge_mux_rules(status);
 
 ALTER TABLE listeners ADD COLUMN node_id TEXT DEFAULT '';
 ALTER TABLE listeners ADD COLUMN purpose TEXT DEFAULT '';
+`
+
+// migration009 adds managed_by and source_ref to edge_mux_rules.
+const migration009 = `
+ALTER TABLE edge_mux_rules ADD COLUMN managed_by TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE edge_mux_rules ADD COLUMN source_ref TEXT DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_edge_mux_rules_managed_by ON edge_mux_rules(managed_by);
+CREATE INDEX IF NOT EXISTS idx_edge_mux_rules_source_ref ON edge_mux_rules(source_ref);
 `

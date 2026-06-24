@@ -19,10 +19,10 @@ func NewRepository(db *sql.DB) *Repository {
 // Create inserts a new edge mux rule.
 func (r *Repository) Create(rule *Rule) error {
 	_, err := r.DB.Exec(
-		`INSERT INTO edge_mux_rules (id, sni_host, declared_kind, target_host, target_port, service_id, status, message, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO edge_mux_rules (id, sni_host, declared_kind, target_host, target_port, service_id, managed_by, source_ref, status, message, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rule.ID, rule.SNIHost, rule.DeclaredKind, rule.TargetHost, rule.TargetPort,
-		rule.ServiceID, rule.Status, rule.Message,
+		rule.ServiceID, rule.ManagedBy, rule.SourceRef, rule.Status, rule.Message,
 		rule.CreatedAt.Format(time.RFC3339),
 		rule.UpdatedAt.Format(time.RFC3339),
 	)
@@ -35,7 +35,7 @@ func (r *Repository) Create(rule *Rule) error {
 // FindAll returns all rules ordered by sni_host.
 func (r *Repository) FindAll() ([]Rule, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, sni_host, declared_kind, target_host, target_port, service_id, status, message, created_at, updated_at
+		`SELECT id, sni_host, declared_kind, target_host, target_port, service_id, managed_by, source_ref, status, message, created_at, updated_at
 		 FROM edge_mux_rules ORDER BY sni_host`)
 	if err != nil {
 		return nil, fmt.Errorf("query edge_mux_rules: %w", err)
@@ -47,7 +47,7 @@ func (r *Repository) FindAll() ([]Rule, error) {
 // FindActive returns all active rules.
 func (r *Repository) FindActive() ([]Rule, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, sni_host, declared_kind, target_host, target_port, service_id, status, message, created_at, updated_at
+		`SELECT id, sni_host, declared_kind, target_host, target_port, service_id, managed_by, source_ref, status, message, created_at, updated_at
 		 FROM edge_mux_rules WHERE status = 'active' ORDER BY sni_host`)
 	if err != nil {
 		return nil, fmt.Errorf("query active edge_mux_rules: %w", err)
@@ -60,12 +60,12 @@ func (r *Repository) FindActive() ([]Rule, error) {
 func (r *Repository) FindByID(id string) (*Rule, error) {
 	var rule Rule
 	var createdAt, updatedAt string
-	var serviceID, message sql.NullString
+	var serviceID, message, managedBy, sourceRef sql.NullString
 	err := r.DB.QueryRow(
-		`SELECT id, sni_host, declared_kind, target_host, target_port, service_id, status, message, created_at, updated_at
+		`SELECT id, sni_host, declared_kind, target_host, target_port, service_id, managed_by, source_ref, status, message, created_at, updated_at
 		 FROM edge_mux_rules WHERE id = ?`, id,
 	).Scan(&rule.ID, &rule.SNIHost, &rule.DeclaredKind, &rule.TargetHost, &rule.TargetPort,
-		&serviceID, &rule.Status, &message, &createdAt, &updatedAt)
+		&serviceID, &managedBy, &sourceRef, &rule.Status, &message, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -73,6 +73,8 @@ func (r *Repository) FindByID(id string) (*Rule, error) {
 		return nil, err
 	}
 	rule.ServiceID = serviceID.String
+	rule.ManagedBy = managedBy.String
+	rule.SourceRef = sourceRef.String
 	rule.Message = message.String
 	rule.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	rule.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
@@ -83,12 +85,12 @@ func (r *Repository) FindByID(id string) (*Rule, error) {
 func (r *Repository) FindBySNIHost(sniHost string) (*Rule, error) {
 	var rule Rule
 	var createdAt, updatedAt string
-	var serviceID, message sql.NullString
+	var serviceID, message, managedBy, sourceRef sql.NullString
 	err := r.DB.QueryRow(
-		`SELECT id, sni_host, declared_kind, target_host, target_port, service_id, status, message, created_at, updated_at
+		`SELECT id, sni_host, declared_kind, target_host, target_port, service_id, managed_by, source_ref, status, message, created_at, updated_at
 		 FROM edge_mux_rules WHERE sni_host = ?`, sniHost,
 	).Scan(&rule.ID, &rule.SNIHost, &rule.DeclaredKind, &rule.TargetHost, &rule.TargetPort,
-		&serviceID, &rule.Status, &message, &createdAt, &updatedAt)
+		&serviceID, &managedBy, &sourceRef, &rule.Status, &message, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -96,18 +98,32 @@ func (r *Repository) FindBySNIHost(sniHost string) (*Rule, error) {
 		return nil, err
 	}
 	rule.ServiceID = serviceID.String
+	rule.ManagedBy = managedBy.String
+	rule.SourceRef = sourceRef.String
 	rule.Message = message.String
 	rule.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	rule.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	return &rule, nil
 }
 
+// FindBySourceRef returns rules managed by a specific source (e.g., route_id).
+func (r *Repository) FindBySourceRef(sourceRef string) ([]Rule, error) {
+	rows, err := r.DB.Query(
+		`SELECT id, sni_host, declared_kind, target_host, target_port, service_id, managed_by, source_ref, status, message, created_at, updated_at
+		 FROM edge_mux_rules WHERE source_ref = ?`, sourceRef)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRules(rows)
+}
+
 // Update updates a rule.
 func (r *Repository) Update(rule *Rule) error {
 	_, err := r.DB.Exec(
-		`UPDATE edge_mux_rules SET sni_host=?, declared_kind=?, target_host=?, target_port=?, service_id=?, status=?, message=?, updated_at=? WHERE id=?`,
+		`UPDATE edge_mux_rules SET sni_host=?, declared_kind=?, target_host=?, target_port=?, service_id=?, managed_by=?, source_ref=?, status=?, message=?, updated_at=? WHERE id=?`,
 		rule.SNIHost, rule.DeclaredKind, rule.TargetHost, rule.TargetPort,
-		rule.ServiceID, rule.Status, rule.Message,
+		rule.ServiceID, rule.ManagedBy, rule.SourceRef, rule.Status, rule.Message,
 		rule.UpdatedAt.Format(time.RFC3339), rule.ID,
 	)
 	if err != nil {
@@ -127,12 +143,14 @@ func scanRules(rows *sql.Rows) ([]Rule, error) {
 	for rows.Next() {
 		var rule Rule
 		var createdAt, updatedAt string
-	var serviceID, message sql.NullString
+		var serviceID, message, managedBy, sourceRef sql.NullString
 		if err := rows.Scan(&rule.ID, &rule.SNIHost, &rule.DeclaredKind, &rule.TargetHost, &rule.TargetPort,
-			&serviceID, &rule.Status, &message, &createdAt, &updatedAt); err != nil {
+			&serviceID, &managedBy, &sourceRef, &rule.Status, &message, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan edge_mux_rule: %w", err)
 		}
 		rule.ServiceID = serviceID.String
+		rule.ManagedBy = managedBy.String
+		rule.SourceRef = sourceRef.String
 		rule.Message = message.String
 		rule.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		rule.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)

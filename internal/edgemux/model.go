@@ -18,16 +18,18 @@ const (
 
 // Rule represents a single SNI-based routing rule.
 type Rule struct {
-	ID            string    `json:"id"`
-	SNIHost       string    `json:"sni_host"`
-	DeclaredKind  string    `json:"declared_kind"`
-	TargetHost    string    `json:"target_host"`
-	TargetPort    int       `json:"target_port"`
-	ServiceID     string    `json:"service_id"`
-	Status        string    `json:"status"` // active | disabled | failed
-	Message       string    `json:"message"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+	SNIHost      string    `json:"sni_host"`
+	DeclaredKind string    `json:"declared_kind"`
+	TargetHost   string    `json:"target_host"`
+	TargetPort   int       `json:"target_port"`
+	ServiceID    string    `json:"service_id"`
+	ManagedBy    string    `json:"managed_by"` // manual | http_route
+	SourceRef    string    `json:"source_ref"` // route_id when managed_by=http_route
+	Status       string    `json:"status"`    // active | disabled | failed
+	Message      string    `json:"message"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // CreateRuleInput is the input for creating an edge mux rule.
