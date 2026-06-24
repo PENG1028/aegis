@@ -200,6 +200,7 @@ func main() {
 		LeaderSvc:     leaderSvc,
 		NodeRepo:      nodeRepo,
 		StateVer:      stateVer,
+		DB:            db,
 		Apply:         applySvc,
 		Health:        healthSvc,
 		Logs:          logSvc,

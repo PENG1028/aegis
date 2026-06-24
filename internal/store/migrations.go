@@ -82,6 +82,11 @@ func AllMigrations() []Migration {
 			Name:    "upgrade_sessions",
 			UpSQL:   migration013,
 		},
+		{
+			Version: "014",
+			Name:    "add_spaces",
+			UpSQL:   migration014,
+		},
 	}
 }
 
@@ -510,4 +515,20 @@ CREATE TABLE IF NOT EXISTS upgrade_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_upgrade_sessions_status ON upgrade_sessions(status);
 CREATE INDEX IF NOT EXISTS idx_upgrade_sessions_start_time ON upgrade_sessions(start_time);
+`
+
+// migration014 adds the spaces table for logical isolation.
+const migration014 = `
+CREATE TABLE IF NOT EXISTS spaces (
+	id TEXT PRIMARY KEY,
+	space_id TEXT NOT NULL UNIQUE,
+	name TEXT NOT NULL,
+	max_routes INTEGER NOT NULL DEFAULT 50,
+	max_edge_rules INTEGER NOT NULL DEFAULT 50,
+	max_services INTEGER NOT NULL DEFAULT 20,
+	max_apply_per_minute INTEGER NOT NULL DEFAULT 10,
+	status TEXT NOT NULL DEFAULT 'active',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
 `
