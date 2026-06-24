@@ -3,12 +3,15 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"aegis/internal/edgemux"
+	"aegis/internal/provider"
 
 	"github.com/spf13/cobra"
 )
@@ -144,81 +147,157 @@ func newEdgeRuleDisableCmd(svc *edgemux.AppService) *cobra.Command {
 }
 
 func newEdgeCheckCmd(svc *edgemux.AppService) *cobra.Command {
-	return &cobra.Command{
+	var runtime bool
+	cmd := &cobra.Command{
 		Use:   "check",
 		Short: "Runtime smoke checks for EdgeMux",
-		Long:  "Checks listener ownership and runs openssl s_client tests against 443.",
+		Long:  "Checks provider status, listener ownership, and optionally runtime port/SNI tests (--runtime).",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			rules, _ := svc.ListRules(ctx)
 
-			fmt.Println("=== EdgeMux Runtime Check ===")
+			fmt.Println("=== EdgeMux Diagnostics ===")
 			fmt.Println()
 
-			// 1. Check listener ownership (from diagnostics)
+			// 1. Provider status
+			fmt.Println("[providers]")
+			hpStatus := provider.CheckHAProxyStatus("/etc/haproxy/haproxy.cfg")
+			printProviderStatus(hpStatus)
+			fmt.Println()
+			caddyStatus := provider.CheckCaddyStatus("/etc/caddy/Caddyfile")
+			printProviderStatus(caddyStatus)
+			fmt.Println()
+
+			// 2. Listeners
 			fmt.Println("[listeners]")
-			fmt.Println("  expected: 0.0.0.0:443 → haproxy_edge_mux")
-			fmt.Println("  expected: 0.0.0.0:80  → caddy_http")
-			fmt.Println("  expected: 127.0.0.1:8443 → caddy_http")
+			fmt.Println("  expected: 0.0.0.0:443 → haproxy_edge_mux (tls_mux)")
+			fmt.Println("  expected: 0.0.0.0:80  → caddy_http (http)")
+			fmt.Println("  expected: 127.0.0.1:8443 → caddy_http (https)")
 			fmt.Println()
 
-			// 2. HAProxy version
-			fmt.Println("[haproxy]")
-			haproxyVersion := runCmd("haproxy", "-vv")
-			if haproxyVersion != "" {
-				fmt.Printf("  version: available\n")
-				// Check req.ssl_sni support (HAProxy 1.8+)
-				fmt.Println("  req.ssl_sni: supported (HAProxy ≥1.8)")
-				fmt.Println("  req.ssl_hello_type: supported (HAProxy ≥1.8)")
-			} else {
-				fmt.Println("  version: NOT FOUND — install haproxy")
+			// 3. Edge rules with backend health
+			fmt.Println("[edge rules]")
+			if len(rules) == 0 {
+				fmt.Println("  (none)")
 			}
-			fmt.Println()
-
-			// 3. Caddy status
-			fmt.Println("[caddy]")
-			caddyVersion := runCmd("caddy", "version")
-			if caddyVersion != "" {
-				fmt.Printf("  version: available\n")
-				fmt.Println("  public_http: 0.0.0.0:80 → ACME HTTP-01 possible")
-				fmt.Println("  internal_https: 127.0.0.1:8443")
-				fmt.Println("  acme_tls_alpn_01: may depend on haproxy passthrough")
-			} else {
-				fmt.Println("  version: NOT FOUND")
-			}
-			fmt.Println()
-
-			// 4. SNI tests with openssl
-			fmt.Println("[openssl s_client tests]")
-			if len(rules) > 0 {
-				knownSNI := rules[0].SNIHost
-				fmt.Printf("  test: known SNI (%s) → expect connected\n", knownSNI)
-				result := runCmdTimeout("openssl", "s_client", "-connect", "127.0.0.1:443", "-servername", knownSNI, "-quiet")
-				if result != "" {
-					fmt.Println("  result: connected (SNI matched)")
-				} else {
-					fmt.Println("  result: FAILED — check haproxy is running")
+			for _, r := range rules {
+				healthy, healthMsg := checkTCPConnect(r.TargetHost, r.TargetPort)
+				healthStr := "healthy"
+				if !healthy {
+					healthStr = "unhealthy"
 				}
+				fmt.Printf("  %s → %s:%d [%s] kind=%s managed_by=%s %s\n",
+					r.SNIHost, r.TargetHost, r.TargetPort, healthStr, r.DeclaredKind, r.ManagedBy, healthMsg)
 			}
-			fmt.Println("  test: unknown SNI → expect rejected")
-			unkResult := runCmdTimeout("openssl", "s_client", "-connect", "127.0.0.1:443", "-servername", "unknown.example.com", "-quiet")
-			if unkResult == "" {
-				fmt.Println("  result: rejected (no connection) ✓")
+			fmt.Println()
+
+			// 4. ACME/Cert guidance
+			fmt.Println("[certificate]")
+			fmt.Println("  acme_http_01_possible: true (Caddy owns 0.0.0.0:80)")
+			fmt.Println("  acme_tls_alpn_01: may depend on haproxy passthrough to 8443")
+			fmt.Println("  hint: if cert issuance fails, check HTTP-01 on port 80 or switch to DNS-01")
+			fmt.Println()
+
+			// --runtime: actual port + SNI checks
+			if runtime {
+				fmt.Println("[runtime]")
+				runRuntimeChecks(rules)
 			} else {
-				fmt.Println("  result: WARNING — unknown SNI connected (should be rejected)")
-			}
-			fmt.Println("  test: no SNI → expect rejected")
-			noSNI := runCmdTimeout("openssl", "s_client", "-connect", "127.0.0.1:443", "-quiet")
-			if noSNI == "" {
-				fmt.Println("  result: rejected (no connection) ✓")
-			} else {
-				fmt.Println("  result: WARNING — no-SNI connected (should be rejected)")
+				fmt.Println("(use --runtime for real port/SNI smoke tests)")
 			}
 
 			fmt.Println()
-			fmt.Println("=== Check Complete ===")
+			fmt.Println("=== Done ===")
 			return nil
 		},
+	}
+	cmd.Flags().BoolVar(&runtime, "runtime", false, "Run real port (ss) and SNI (openssl) smoke tests")
+	return cmd
+}
+
+func printProviderStatus(s provider.ProviderStatus) {
+	fmt.Printf("  %s:\n", s.Name)
+	fmt.Printf("    status:          %s\n", s.Status)
+	fmt.Printf("    installed:       %v\n", s.Installed)
+	if s.Version != "" && s.Version != "unknown" {
+		fmt.Printf("    version:         %s\n", s.Version)
+	}
+	if s.SNIPassthroughReady {
+		fmt.Printf("    sni_passthrough: supported\n")
+	}
+	if s.ConfigValid != nil {
+		fmt.Printf("    config_valid:    %v\n", *s.ConfigValid)
+	}
+	if s.ServiceRunning != nil {
+		fmt.Printf("    service_running: %v\n", *s.ServiceRunning)
+	}
+	fmt.Printf("    edge_mux_ready:  %v\n", s.EdgeMuxReady)
+	if s.Message != "" {
+		fmt.Printf("    message:         %s\n", s.Message)
+	}
+}
+
+func checkTCPConnect(host string, port int) (bool, string) {
+	addr := fmt.Sprintf("%s:%d", host, port)
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		return false, fmt.Sprintf("(%v)", err)
+	}
+	conn.Close()
+	return true, ""
+}
+
+func runRuntimeChecks(rules []edgemux.Rule) {
+	// ss check
+	fmt.Println("  [ss -ltnp]")
+	ssOut := runCmd("ss", "-ltnp")
+	if ssOut != "" {
+		checkPortInOutput(ssOut, ":443", "0.0.0.0:443")
+		checkPortInOutput(ssOut, ":80", "0.0.0.0:80")
+		checkPortInOutput(ssOut, ":8443", "127.0.0.1:8443")
+	} else {
+		fmt.Println("    ss not available (missing_binary)")
+	}
+
+	// openssl checks
+	fmt.Println("  [openssl s_client]")
+	if _, err := exec.LookPath("openssl"); err != nil {
+		fmt.Println("    openssl: missing_binary — skipping SNI tests")
+		return
+	}
+
+	for _, r := range rules {
+		if r.Status != "active" {
+			continue
+		}
+		result := runCmdTimeout("openssl", "s_client", "-connect", "127.0.0.1:443",
+			"-servername", r.SNIHost)
+		if result != "" {
+			fmt.Printf("    SNI %s: connected ✓\n", r.SNIHost)
+		} else {
+			fmt.Printf("    SNI %s: FAILED\n", r.SNIHost)
+		}
+	}
+	unk := runCmdTimeout("openssl", "s_client", "-connect", "127.0.0.1:443",
+		"-servername", "unknown.aegis-test.invalid")
+	if unk == "" {
+		fmt.Println("    unknown SNI: rejected ✓")
+	} else {
+		fmt.Println("    unknown SNI: WARNING — should be rejected")
+	}
+	noSNI := runCmdTimeout("openssl", "s_client", "-connect", "127.0.0.1:443")
+	if noSNI == "" {
+		fmt.Println("    no SNI: rejected ✓")
+	} else {
+		fmt.Println("    no SNI: WARNING — should be rejected")
+	}
+}
+
+func checkPortInOutput(output, port, label string) {
+	if strings.Contains(output, port) {
+		fmt.Printf("    %s: in use ✓\n", label)
+	} else {
+		fmt.Printf("    %s: NOT LISTENING\n", label)
 	}
 }
 

@@ -170,18 +170,5 @@ func (p *HAProxyEdgeMuxProvider) GetCurrentConfig() (string, error) {
 }
 
 func (p *HAProxyEdgeMuxProvider) Status() ProviderStatus {
-	status := "ready"
-	msg := ""
-	if _, err := exec.LookPath("haproxy"); err != nil {
-		status = "unavailable"
-		msg = "haproxy binary not found"
-	}
-	return ProviderStatus{Name: "haproxy_edge_mux", Status: status, Message: msg}
-}
-
-// ProviderStatus is returned by Status().
-type ProviderStatus struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"`
-	Message string `json:"message"`
+	return CheckHAProxyStatus(p.configPath)
 }
