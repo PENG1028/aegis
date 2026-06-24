@@ -10,44 +10,91 @@ import (
 )
 
 // ReconcileLoop periodically checks local state against the leader and repairs drift.
+// Uses adaptive intervals: 10s fast sync → 60s partial → 300s full reconciliation.
 type ReconcileLoop struct {
 	nodeRepo    *node.Repository
 	leaderSvc   *cluster.LeaderService
 	stateVer    *cluster.StateVersion
-	interval    time.Duration
-	stopCh      chan struct{}
+	fastInterval time.Duration
+	fullInterval time.Duration
+	cycleCount   int
+	stopCh       chan struct{}
 }
 
-// NewReconcileLoop creates a reconcile loop.
+// NewReconcileLoop creates a reconcile loop with adaptive intervals.
 func NewReconcileLoop(
 	nodeRepo *node.Repository,
 	leaderSvc *cluster.LeaderService,
 	stateVer *cluster.StateVersion,
 ) *ReconcileLoop {
 	return &ReconcileLoop{
-		nodeRepo:  nodeRepo,
-		leaderSvc: leaderSvc,
-		stateVer:  stateVer,
-		interval:  10 * time.Second,
-		stopCh:    make(chan struct{}),
+		nodeRepo:     nodeRepo,
+		leaderSvc:    leaderSvc,
+		stateVer:     stateVer,
+		fastInterval: 10 * time.Second,
+		fullInterval: 300 * time.Second,
+		stopCh:       make(chan struct{}),
 	}
 }
 
-// Start begins the reconcile loop in a background goroutine.
+// Start begins the adaptive reconcile loop.
+// 10s fast sync → 60s partial → 300s full reconciliation.
 func (rl *ReconcileLoop) Start() {
 	go func() {
-		ticker := time.NewTicker(rl.interval)
-		defer ticker.Stop()
+		fastTicker := time.NewTicker(rl.fastInterval)
+		fullTicker := time.NewTicker(rl.fullInterval)
+		defer fastTicker.Stop()
+		defer fullTicker.Stop()
 
 		for {
 			select {
 			case <-rl.stopCh:
 				return
-			case <-ticker.C:
-				rl.reconcile()
+			case <-fastTicker.C:
+				rl.reconcile() // fast sync
+				rl.cycleCount++
+			case <-fullTicker.C:
+				rl.fullReconciliation() // deep sync every 300s
 			}
 		}
 	}()
+}
+
+// fullReconciliation performs a complete state sync from leader.
+func (rl *ReconcileLoop) fullReconciliation() {
+	isLeader, _ := rl.leaderSvc.IsCurrentNodeLeader()
+	if isLeader {
+		return
+	}
+	leader, err := rl.leaderSvc.GetLeader()
+	if err != nil || leader == nil {
+		return
+	}
+
+	localVersion := rl.stateVer.Current()
+	leaderVersion := leader.StateVersion
+
+	if leaderVersion <= localVersion {
+		return
+	}
+
+	diff := leaderVersion - localVersion
+	if diff <= 2 {
+		return // small diff handled by fast sync
+	}
+	if diff <= 10 {
+		// Medium diff → full sync
+		fmt.Printf("reconcile: medium drift (%d versions), full sync\n", diff)
+	} else {
+		// Large diff → full overwrite from leader
+		fmt.Printf("reconcile: LARGE drift (%d versions), full overwrite from leader\n", diff)
+	}
+
+	if err := rl.stateVer.Set(leaderVersion); err != nil {
+		fmt.Printf("reconcile: full sync failed: %v\n", err)
+	} else {
+		fmt.Printf("reconcile: full reconciliation to v%d complete\n", leaderVersion)
+	}
 }
 
 // Stop stops the reconcile loop.

@@ -16,6 +16,7 @@ import (
 	"aegis/internal/project"
 	"aegis/internal/route"
 	"aegis/internal/service"
+	"database/sql"
 
 	"github.com/spf13/cobra"
 )
@@ -34,6 +35,7 @@ type Services struct {
 	LeaderSvc     *cluster.LeaderService
 	NodeRepo      *node.Repository
 	StateVer      *cluster.StateVersion
+	DB            *sql.DB
 	Apply         *apply.AppService
 	Health        *health.AppService
 	Logs          *logs.AppService
@@ -60,6 +62,7 @@ v0.x — Production-hardened gateway control with HTTP API.`,
 	cmd.AddCommand(newDoctorCommand(svcs.Config, svcs.ListenerSvc))
 	cmd.AddCommand(newSnapshotCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc, svcs.LeaderSvc, svcs.NodeRepo, svcs.StateVer))
 	cmd.AddCommand(newVerifyCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc))
+	cmd.AddCommand(newCleanupCommand(svcs.DB))
 	cmd.AddCommand(newProjectCommand(svcs.Project))
 	cmd.AddCommand(newServiceCommand(svcs.Service, svcs.Project))
 	cmd.AddCommand(newEndpointCommand(svcs.EndpointRepo, svcs.Service, svcs.Logs))
