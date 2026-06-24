@@ -77,6 +77,11 @@ func AllMigrations() []Migration {
 			Name:    "cluster_state_version",
 			UpSQL:   migration012,
 		},
+		{
+			Version: "013",
+			Name:    "upgrade_sessions",
+			UpSQL:   migration013,
+		},
 	}
 }
 
@@ -486,4 +491,23 @@ CREATE TABLE IF NOT EXISTS cluster_state (
 );
 
 ALTER TABLE nodes ADD COLUMN state_version INTEGER NOT NULL DEFAULT 0;
+`
+
+// migration013 adds the upgrade_sessions table.
+const migration013 = `
+CREATE TABLE IF NOT EXISTS upgrade_sessions (
+	id TEXT PRIMARY KEY,
+	from_version TEXT NOT NULL,
+	to_version TEXT NOT NULL,
+	state_version_start INTEGER NOT NULL DEFAULT 0,
+	state_version_end INTEGER NOT NULL DEFAULT 0,
+	status TEXT NOT NULL DEFAULT 'running',
+	error_message TEXT,
+	steps TEXT DEFAULT '[]',
+	start_time TEXT NOT NULL,
+	end_time TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_upgrade_sessions_status ON upgrade_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_upgrade_sessions_start_time ON upgrade_sessions(start_time);
 `
