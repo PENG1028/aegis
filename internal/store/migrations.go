@@ -62,6 +62,11 @@ func AllMigrations() []Migration {
 			Name:    "edge_rule_managed_by",
 			UpSQL:   migration009,
 		},
+		{
+			Version: "010",
+			Name:    "add_nodes",
+			UpSQL:   migration010,
+		},
 	}
 }
 
@@ -433,4 +438,24 @@ ALTER TABLE edge_mux_rules ADD COLUMN managed_by TEXT NOT NULL DEFAULT 'manual';
 ALTER TABLE edge_mux_rules ADD COLUMN source_ref TEXT DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_edge_mux_rules_managed_by ON edge_mux_rules(managed_by);
 CREATE INDEX IF NOT EXISTS idx_edge_mux_rules_source_ref ON edge_mux_rules(source_ref);
+`
+
+// migration010 adds the nodes table.
+const migration010 = `
+CREATE TABLE IF NOT EXISTS nodes (
+	id TEXT PRIMARY KEY,
+	node_id TEXT NOT NULL,
+	hostname TEXT NOT NULL,
+	local_ip TEXT NOT NULL DEFAULT '127.0.0.1',
+	private_ip TEXT DEFAULT '',
+	public_ip TEXT DEFAULT '',
+	is_current INTEGER NOT NULL DEFAULT 0,
+	ip_migrated INTEGER NOT NULL DEFAULT 0,
+	last_seen TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_nodes_is_current ON nodes(is_current);
+CREATE INDEX IF NOT EXISTS idx_nodes_node_id ON nodes(node_id);
 `

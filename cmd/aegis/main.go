@@ -12,6 +12,7 @@ import (
 	"aegis/internal/health"
 	"aegis/internal/httpapi"
 	"aegis/internal/listener"
+	"aegis/internal/node"
 	"aegis/internal/provider"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
@@ -96,6 +97,7 @@ func main() {
 	exposureRepo := exposure.NewRepository(db)
 	listenerRepo := listener.NewRepository(db)
 	edgeRepo := edgemux.NewRepository(db)
+	nodeRepo := node.NewRepository(db)
 	tokenRepo := token.NewRepository(db)
 
 	// --- Core Services ---
@@ -117,6 +119,12 @@ func main() {
 
 	tcpManager := tcp.NewManager()
 	defer tcpManager.Shutdown()
+
+	nodeSvc := node.NewService(nodeRepo)
+	if _, err := nodeSvc.RegisterCurrent(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: node registration failed: %v\n", err)
+	}
+
 	healthSvc := health.NewAppService(healthRepo, serviceRepo, endpointRepo, logSvc)
 
 	// --- Endpoint Resolver ---

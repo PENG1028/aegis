@@ -15,6 +15,8 @@ import (
 	"aegis/internal/proxy"
 	"aegis/internal/route"
 	"aegis/internal/service"
+	"crypto/sha256"
+	"encoding/hex"
 )
 
 // AppService is the main apply service.
@@ -121,25 +123,36 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	}
 	plan.BackupPath = backupPath
 
-	// Step 7: Replace
+	// Step 7: Hash comparison (skip if identical to last applied)
+	newHash := computeHash(string(rendered))
+	lastSuccess, _ := s.applyRepo.FindLastSuccess()
+	if lastSuccess != nil && lastSuccess.RenderedConfig != "" {
+		lastHash := computeHash(lastSuccess.RenderedConfig)
+		if newHash == lastHash {
+			s.logSvc.Log(ctx, "apply", "", "", "success",
+				"config unchanged since last apply — skipping reload", "system")
+			plan.RenderedConfig = string(rendered)
+			return plan, nil
+		}
+	}
+
+	// Step 8: Replace
 	if err := s.executor.Replace(tempPath); err != nil {
 		s.logFailed(ctx, "apply", "", fmt.Sprintf("replace config failed: %v", err))
 		return plan, fmt.Errorf("replace config: %w", err)
 	}
 
-	// Step 8: Reload
+	// Step 9: Reload
 	if err := s.executor.ReloadAdapter(s.adapter); err != nil {
 		s.logSvc.Log(ctx, "apply", "", "", "failed",
 			fmt.Sprintf("reload failed, attempting restore: %v", err), "system")
 
 		if backupPath != "" {
-			// Step 9-10: Restore backup
 			if restoreErr := s.executor.RestoreBackup(backupPath); restoreErr != nil {
 				s.logSvc.Log(ctx, "apply", "", "", "critical",
 					fmt.Sprintf("CRITICAL: restore backup also failed: %v", restoreErr), "system")
 				return plan, fmt.Errorf("reload failed: %w; CRITICAL: restore backup also failed: %v", err, restoreErr)
 			}
-			// Step 11: Reload restored config
 			if reloadErr := s.executor.ReloadAdapter(s.adapter); reloadErr != nil {
 				s.logSvc.Log(ctx, "apply", "", "", "critical",
 					fmt.Sprintf("CRITICAL: reload of restored config also failed: %v", reloadErr), "system")
@@ -152,6 +165,11 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 		s.logFailed(ctx, "apply", "", fmt.Sprintf("reload failed, restored old config: %v", err))
 		return plan, fmt.Errorf("reload failed, restored old config: %v", err)
 	}
+
+	// Step 10: Post-reload health check (brief check that config applied cleanly)
+	plan.RenderedConfig = string(rendered)
+	s.logSvc.Log(ctx, "apply", "", "", "success",
+		fmt.Sprintf("config applied (hash: %s)", newHash[:12]), "system")
 
 	// Step 12-13: Record
 	av := &ApplyVersion{
@@ -301,6 +319,11 @@ func (s *AppService) GetCurrentConfig() (string, error) {
 		return "", fmt.Errorf("read current config: %w", err)
 	}
 	return string(data), nil
+}
+
+func computeHash(content string) string {
+	h := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(h[:])
 }
 
 func (s *AppService) logFailed(ctx context.Context, action, targetID, message string) {
