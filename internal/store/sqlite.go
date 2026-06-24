@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // OpenSQLite opens a SQLite database, creating the directory if needed.
@@ -18,7 +18,7 @@ func OpenSQLite(path string) (*sql.DB, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on")
+	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database %s: %w", path, err)
 	}
