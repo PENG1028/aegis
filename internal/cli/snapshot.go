@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"aegis/internal/apply"
+	"aegis/internal/cluster"
 	"aegis/internal/edgemux"
 	"aegis/internal/listener"
+	"aegis/internal/node"
 	"aegis/internal/route"
 	"aegis/internal/snapshot"
 
@@ -20,6 +22,9 @@ func newSnapshotCommand(
 	routeSvc *route.AppService,
 	edgeSvc *edgemux.AppService,
 	listenerSvc *listener.Service,
+	leaderSvc *cluster.LeaderService,
+	nodeRepo *node.Repository,
+	stateVer *cluster.StateVersion,
 ) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "snapshot",
@@ -28,6 +33,12 @@ func newSnapshotCommand(
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			snap := snapshot.NewSnapshot()
+			snap.StateVersion = stateVer.Current()
+
+			// Leader ID
+			if leader, err := leaderSvc.GetLeader(); err == nil && leader != nil {
+				snap.LeaderID = leader.NodeID
+			}
 
 			// Listeners
 			listeners, _ := listenerSvc.ListAll()
