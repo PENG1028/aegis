@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
-
-	"github.com/mattn/go-sqlite3"
 )
 
 // Repository provides database access for routes.
@@ -254,5 +252,3 @@ func scanRoutes(rows *sql.Rows) ([]Route, error) {
 	return routes, rows.Err()
 }
 
-// sqlite3Err is the sqlite3 error type for checking unique constraint violations.
-var _ = sqlite3.ErrConstraint
