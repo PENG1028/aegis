@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"aegis/internal/apply"
+	"aegis/internal/cluster"
 	"aegis/internal/config"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
@@ -123,6 +124,17 @@ func main() {
 	nodeSvc := node.NewService(nodeRepo)
 	if _, err := nodeSvc.RegisterCurrent(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: node registration failed: %v\n", err)
+	}
+
+	// Cluster leader election
+	leaderSvc := cluster.NewLeaderService(nodeRepo)
+	if leader, err := leaderSvc.GetLeader(); err == nil && leader == nil {
+		// No leader — elect one
+		if elected, err := leaderSvc.ElectLeader(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: leader election failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "info: elected leader: %s\n", elected.NodeID)
+		}
 	}
 
 	healthSvc := health.NewAppService(healthRepo, serviceRepo, endpointRepo, logSvc)
