@@ -160,6 +160,31 @@ func (s *AppService) DisableRoute(ctx context.Context, idOrDomain string) error 
 	return nil
 }
 
+// DeleteRoute deletes a route and cleans up managed edge rules.
+func (s *AppService) DeleteRoute(ctx context.Context, idOrDomain string) error {
+	rt, err := s.GetRoute(ctx, idOrDomain)
+	if err != nil {
+		return err
+	}
+
+	// Clean up managed edge rule
+	if s.edgeSvc != nil {
+		if err := s.edgeSvc.RemoveRuleForHTTPRoute(ctx, rt.ID); err != nil {
+			s.logSvc.Log(ctx, "route.delete.edge-cleanup", "route", rt.ID, "failed",
+				fmt.Sprintf("failed to remove edge rule: %v", err), "system")
+		}
+	}
+
+	if err := s.repo.Delete(rt.ID); err != nil {
+		s.logSvc.Log(ctx, "route.delete", "route", rt.ID, "failed", err.Error(), "cli")
+		return fmt.Errorf("delete route: %w", err)
+	}
+
+	s.logSvc.Log(ctx, "route.delete", "route", rt.ID, "success",
+		fmt.Sprintf("deleted route for domain %q", rt.Domain), "cli")
+	return nil
+}
+
 // SwitchRoute switches a route to a different service.
 func (s *AppService) SwitchRoute(ctx context.Context, idOrDomain string, serviceID string) error {
 	rt, err := s.GetRoute(ctx, idOrDomain)

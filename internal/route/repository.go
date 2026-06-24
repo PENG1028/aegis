@@ -222,6 +222,15 @@ func (r *Repository) Update(rt *Route) error {
 	return nil
 }
 
+// Delete removes a route by ID.
+func (r *Repository) Delete(id string) error {
+	_, err := r.DB.Exec(`DELETE FROM routes WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete route: %w", err)
+	}
+	return nil
+}
+
 func scanRoutes(rows *sql.Rows) ([]Route, error) {
 	var routes []Route
 	for rows.Next() {

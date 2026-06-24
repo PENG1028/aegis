@@ -25,6 +25,7 @@ func newRouteCommand(svc *route.AppService, serviceSvc *service.AppService, proj
 	cmd.AddCommand(newRouteShowCommand(svc))
 	cmd.AddCommand(newRouteEnableCommand(svc))
 	cmd.AddCommand(newRouteDisableCommand(svc))
+	cmd.AddCommand(newRouteDeleteCommand(svc))
 	cmd.AddCommand(newRouteSwitchCommand(svc, serviceSvc))
 
 	return cmd
@@ -173,6 +174,22 @@ func newRouteDisableCommand(svc *route.AppService) *cobra.Command {
 				return err
 			}
 			fmt.Printf("Route %q disabled.\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newRouteDeleteCommand(svc *route.AppService) *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <domain-or-id>",
+		Short: "Delete a route (cleans up managed edge rules)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+			if err := svc.DeleteRoute(ctx, args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("Route %q deleted.\n", args[0])
 			return nil
 		},
 	}
