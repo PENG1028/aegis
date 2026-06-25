@@ -145,10 +145,10 @@ func (c *Config) Save(path string) error {
 }
 
 // ResolveValidateCommand replaces template variables in the validate command.
-func (c *Config) ResolveValidateCommand() string {
+func (c *Config) ResolveValidateCommand(configPath string) string {
 	cmd := c.Proxy.ValidateCommand
 	cmd = replaceVar(cmd, "{{caddy_binary}}", c.Proxy.CaddyBinary)
-	cmd = replaceVar(cmd, "{{config_path}}", c.Proxy.CaddyfilePath)
+	cmd = replaceVar(cmd, "{{config_path}}", configPath)
 	return cmd
 }
 

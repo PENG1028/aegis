@@ -13,9 +13,10 @@ import (
 
 // BindHTTPDomainInput is the input for binding an HTTP domain.
 type BindHTTPDomainInput struct {
-	Domain     string `json:"domain"`
-	TargetHost string `json:"target_host"`
-	TargetPort int    `json:"target_port"`
+	Domain        string `json:"domain"`
+	TargetHost    string `json:"target_host"`
+	TargetPort    int    `json:"target_port"`
+	GatewayLinkID string `json:"gateway_link_id,omitempty"`
 }
 
 // BindHTTPDomain binds an HTTP domain to a backend target.
@@ -99,6 +100,7 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 		StripPrefix:        false,
 		ServiceID:          svc.ID,
 		TLSEnabled:         true,
+			GatewayLinkID:      input.GatewayLinkID,
 		Status:             "active",
 		SpaceID:            spaceID,
 		OwnerType:          ownerType,

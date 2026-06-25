@@ -32,7 +32,7 @@ func (a *Adapter) Render(gwCfg proxy.GatewayConfig) ([]byte, error) {
 
 // Validate runs caddy validate on the given config file.
 func (a *Adapter) Validate(configPath string) error {
-	validateCmd := a.cfg.ResolveValidateCommand()
+	validateCmd := a.cfg.ResolveValidateCommand(configPath)
 	if validateCmd == "" {
 		// No validation command configured; skip
 		return nil

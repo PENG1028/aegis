@@ -191,6 +191,7 @@ func main() {
 		ListenerSvc:  listenerSvc,
 		NodeRepo:     nodeRepo,
 		EndpointRepo: endpointRepo,
+		GatewayLinkRepo: gwLinkRepo,
 	})
 
 	authMiddleware := token.NewAuthMiddleware(cfg.Server.AdminToken, tokenRepo)

@@ -8,6 +8,7 @@ import (
 
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
+	"aegis/internal/gateway_link"
 	"aegis/internal/listener"
 	"aegis/internal/node"
 	"aegis/internal/provider"
@@ -20,7 +21,8 @@ type Dependencies struct {
 	EdgeSvc      *edgemux.AppService
 	ListenerSvc  *listener.Service
 	NodeRepo     *node.Repository
-	EndpointRepo *endpoint.Repository // v1.7W: for target address lookup
+	EndpointRepo *endpoint.Repository
+	GatewayLinkRepo *gatewaylink.Repository // v1.7W: for target address lookup
 }
 
 // Service traces access paths for domains, SNI hosts, and routes.
@@ -165,7 +167,7 @@ func (s *Service) TraceDomain(ctx context.Context, domain string) *AccessPathTra
 	steps = append(steps, TraceStep{
 		Order: 5, Component: "route", Name: "route_detail",
 		Status: "matched",
-		Detail: fmt.Sprintf("route %s: service_id=%s status=%s", rt.ID, rt.ServiceID, rt.Status),
+		Detail: fmt.Sprintf("route %s: service_id=%s status=%s link=%s", rt.ID, rt.ServiceID, rt.Status, rt.GatewayLinkID),
 	})
 
 	// v1.7W: Check target connectivity
@@ -188,6 +190,21 @@ func (s *Service) TraceDomain(ctx context.Context, domain string) *AccessPathTra
 				Status: "matched",
 				Detail: fmt.Sprintf("target %s:%d reachable", finalTarget.Host, finalTarget.Port),
 			})
+		}
+	}
+
+	// v1.7AC-3: GatewayLinkInfo
+	if rt.GatewayLinkID != "" && s.deps.GatewayLinkRepo != nil {
+		if gw, err := s.deps.GatewayLinkRepo.FindByID(rt.GatewayLinkID); err == nil && gw != nil {
+			t.GatewayLink = &GatewayLinkInfo{
+				LinkID:           gw.ID,
+				Enabled:          gw.Status == "active",
+				HeaderInjected:   true,
+				VerificationMode: "static_token",
+				TargetHost:       gw.ResolveHost(),
+			}
+		} else {
+			t.Warnings = append(t.Warnings, "GATEWAY_LINK_NOT_FOUND: link "+rt.GatewayLinkID+" not found")
 		}
 	}
 
