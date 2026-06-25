@@ -73,7 +73,7 @@ func main() {
 		fmt.Printf("[verifier]   → 200: verified OK\n")
 	})
 
-	addr := fmt.Sprintf("127.0.0.1:%s", port)
+	addr := fmt.Sprintf("0.0.0.0:%s", port)
 	fmt.Printf("Gateway Link Verifier starting on %s\n", addr)
 	fmt.Printf("  Expected link ID: %s\n", expectedLinkID)
 	fmt.Printf("  Expected token:   %s...\n", tokenPreview(expectedToken))
