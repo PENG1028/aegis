@@ -11,6 +11,7 @@ import (
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
+	"aegis/internal/gateway_link"
 	"aegis/internal/health"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
@@ -52,8 +53,9 @@ type Handlers struct {
 	NodeRepo      *node.Repository
 	Gateway       *gateway.GatewayService
 	DeploymentSvc *deployment.Service
-	PendingState  *cluster.PendingState // v1.7S
-	TraceSvc      *trace.Service        // v1.7T
+	PendingState    *cluster.PendingState  // v1.7S
+	TraceSvc        *trace.Service         // v1.7T
+	GatewayLinkSvc  *gatewaylink.Service   // v1.7AB
 }
 
 // SystemStatus returns enhanced system status.

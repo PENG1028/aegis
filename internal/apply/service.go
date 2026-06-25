@@ -1,6 +1,7 @@
 package apply
 
 import (
+"aegis/internal/gateway_link"
 	"context"
 	"fmt"
 	"os"
@@ -51,11 +52,12 @@ func NewAppService(
 	endpointResolver *endpoint.Resolver,
 	applyRepo *Repository,
 	logSvc *logs.AppService,
+	gwLinkRepo *gatewaylink.Repository,
 ) *AppService {
 	return &AppService{
 		cfg:         cfg,
 		adapter:     adapter,
-		planner:     NewPlanner(routeRepo, mdRepo, exposureRepo, serviceRepo, endpointResolver),
+		planner:     NewPlanner(routeRepo, mdRepo, exposureRepo, serviceRepo, endpointResolver, gwLinkRepo),
 		executor:    NewExecutor(cfg),
 		rollbackSvc: NewRollbackService(applyRepo, cfg),
 		applyRepo:   applyRepo,

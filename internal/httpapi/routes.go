@@ -29,6 +29,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		DeploymentSvc: svcs.DepSvc,
 		PendingState:  svcs.PendingState,
 		TraceSvc:      svcs.TraceSvc,
+		GatewayLinkSvc: svcs.GatewayLinkSvc,
 	}
 
 	// System
@@ -168,6 +169,12 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/providers/diagnose", h.DiagnoseAllProviders)
 
 	// v1.7T Access Path Trace (admin only, read-only)
+		// v1.7AB Gateway Links
+		mux.HandleFunc("POST /api/admin/v1/gateway-links", h.CreateGatewayLink)
+		mux.HandleFunc("GET /api/admin/v1/gateway-links", h.ListGatewayLinks)
+		mux.HandleFunc("GET /api/admin/v1/gateway-links/{id}", h.GetGatewayLink)
+		mux.HandleFunc("DELETE /api/admin/v1/gateway-links/{id}", h.DeleteGatewayLink)
+		mux.HandleFunc("POST /api/admin/v1/gateway-links/{id}/rotate", h.RotateGatewayLinkSecret)
 	mux.HandleFunc("GET /api/admin/v1/trace/domain/{domain}", h.TraceDomain)
 	mux.HandleFunc("GET /api/admin/v1/trace/sni/{sni_host}", h.TraceSNI)
 	mux.HandleFunc("GET /api/admin/v1/trace/route/{route_id}", h.TraceRoute)

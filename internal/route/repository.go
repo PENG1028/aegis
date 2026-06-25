@@ -16,7 +16,7 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{DB: db}
 }
 
-const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at`
+const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, created_at, updated_at`
 
 // Create inserts a new route.
 func (r *Repository) Create(rt *Route) error {
@@ -34,8 +34,8 @@ func (r *Repository) Create(rt *Route) error {
 	}
 
 	_, err := r.DB.Exec(
-		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rt.ID, rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal, rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
 		rt.CreatedAt.Format(time.RFC3339),
@@ -67,7 +67,7 @@ func (r *Repository) FindByID(id string) (*Route, error) {
 	var maintMsg sql.NullString
 	err := r.DB.QueryRow(
 		`SELECT `+routeSelectCols+` FROM routes WHERE id = ?`, id,
-	).Scan(&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &createdAt, &updatedAt)
+	).Scan(&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &rt.GatewayLinkID, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -93,7 +93,7 @@ func (r *Repository) FindByDomain(domain string) (*Route, error) {
 	var maintMsg sql.NullString
 	err := r.DB.QueryRow(
 		`SELECT `+routeSelectCols+` FROM routes WHERE domain = ? AND (path_prefix IS NULL OR path_prefix = '') LIMIT 1`, domain,
-	).Scan(&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &createdAt, &updatedAt)
+	).Scan(&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &rt.GatewayLinkID, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -125,7 +125,7 @@ func (r *Repository) FindByDomainAndPath(domain, pathPrefix string) (*Route, err
 		row = r.DB.QueryRow(
 			`SELECT `+routeSelectCols+` FROM routes WHERE domain = ? AND path_prefix = ?`, domain, pathPrefix)
 	}
-	err := row.Scan(&rt.ID, &rt.Domain, &dbPathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &createdAt, &updatedAt)
+	err := row.Scan(&rt.ID, &rt.Domain, &dbPathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &rt.GatewayLinkID, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -244,7 +244,7 @@ func scanRoutes(rows *sql.Rows) ([]Route, error) {
 		var pathPrefix sql.NullString
 		var tlsVal, maintVal, stripVal int
 		var maintMsg sql.NullString
-		if err := rows.Scan(&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &rt.GatewayLinkID, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan route: %w", err)
 		}
 		rt.PathPrefix = pathPrefix.String

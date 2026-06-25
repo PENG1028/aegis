@@ -22,6 +22,7 @@ import (
 	"aegis/internal/space"
 	"aegis/internal/token"
 	"aegis/internal/trace"
+	"aegis/internal/gateway_link"
 )
 
 // Services holds all application services for the HTTP API.
@@ -46,6 +47,7 @@ type Services struct {
 	NodeRepo      *node.Repository
 	Gateway       *gateway.GatewayService
 	DepSvc        *deployment.Service
-	PendingState  *cluster.PendingState // v1.7S
-	TraceSvc      *trace.Service        // v1.7T
+	PendingState    *cluster.PendingState  // v1.7S
+	TraceSvc        *trace.Service         // v1.7T
+	GatewayLinkSvc  *gatewaylink.Service   // v1.7AB
 }
