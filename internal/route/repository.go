@@ -38,7 +38,8 @@ func (r *Repository) Create(rt *Route) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rt.ID, rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal, rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
-		rt.CreatedAt.Format(time.RFC3339),
+		rt.GatewayLinkID,
+			rt.CreatedAt.Format(time.RFC3339),
 		rt.UpdatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
