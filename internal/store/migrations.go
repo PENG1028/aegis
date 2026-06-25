@@ -87,6 +87,51 @@ func AllMigrations() []Migration {
 			Name:    "add_spaces",
 			UpSQL:   migration014,
 		},
+		{
+			Version: "015",
+			Name:    "alter_api_tokens_add_space",
+			UpSQL:   migration015,
+		},
+		{
+			Version: "016",
+			Name:    "add_resource_ownership",
+			UpSQL:   migration016,
+		},
+		{
+			Version: "017",
+			Name:    "add_admin_auth",
+			UpSQL:   migration017,
+		},
+		{
+			Version: "018",
+			Name:    "add_apply_logs",
+			UpSQL:   migration018,
+		},
+		{
+			Version: "019",
+			Name:    "add_audit_logs",
+			UpSQL:   migration019,
+		},
+		{
+			Version: "020",
+			Name:    "add_node_events",
+			UpSQL:   migration020,
+		},
+		{
+			Version: "021",
+			Name:    "add_node_capabilities",
+			UpSQL:   migration021,
+		},
+		{
+			Version: "022",
+			Name:    "add_gateway_abstraction",
+			UpSQL:   migration022,
+		},
+		{
+			Version: "023",
+			Name:    "add_deployments",
+			UpSQL:   migration023,
+		},
 	}
 }
 
@@ -531,4 +576,185 @@ CREATE TABLE IF NOT EXISTS spaces (
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
+`
+
+// migration015 adds space_id and token_type to api_tokens.
+const migration015 = `
+ALTER TABLE api_tokens ADD COLUMN space_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE api_tokens ADD COLUMN token_type TEXT NOT NULL DEFAULT 'admin';
+CREATE INDEX IF NOT EXISTS idx_api_tokens_space_id ON api_tokens(space_id);
+`
+
+// migration016 adds ownership fields to services, routes, and edge_mux_rules.
+const migration016 = `
+ALTER TABLE services ADD COLUMN space_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE services ADD COLUMN owner_type TEXT NOT NULL DEFAULT '';
+ALTER TABLE services ADD COLUMN owner_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE services ADD COLUMN created_by_token_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_services_space_id ON services(space_id);
+
+ALTER TABLE routes ADD COLUMN space_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE routes ADD COLUMN owner_type TEXT NOT NULL DEFAULT '';
+ALTER TABLE routes ADD COLUMN owner_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE routes ADD COLUMN created_by_token_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_routes_space_id ON routes(space_id);
+
+ALTER TABLE edge_mux_rules ADD COLUMN space_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE edge_mux_rules ADD COLUMN owner_type TEXT NOT NULL DEFAULT '';
+ALTER TABLE edge_mux_rules ADD COLUMN owner_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE edge_mux_rules ADD COLUMN created_by_token_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_edge_mux_rules_space_id ON edge_mux_rules(space_id);
+`
+
+// migration017 adds admin authentication tables.
+const migration017 = `
+CREATE TABLE IF NOT EXISTS admin_users (
+	id TEXT PRIMARY KEY,
+	username TEXT NOT NULL UNIQUE,
+	password_hash TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+	id TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL,
+	session_hash TEXT NOT NULL UNIQUE,
+	expires_at TEXT NOT NULL,
+	revoked_at TEXT DEFAULT '',
+	created_at TEXT NOT NULL,
+	last_seen_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_hash ON admin_sessions(session_hash);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_user_id ON admin_sessions(user_id);
+`
+
+// migration018 adds the apply_logs table.
+const migration018 = `
+CREATE TABLE IF NOT EXISTS apply_logs (
+	id TEXT PRIMARY KEY,
+	operation_id TEXT NOT NULL,
+	state_version INTEGER NOT NULL DEFAULT 0,
+	config_hash_before TEXT DEFAULT '',
+	config_hash_after TEXT DEFAULT '',
+	provider TEXT NOT NULL DEFAULT '',
+	validate_status TEXT NOT NULL DEFAULT 'pending',
+	reload_status TEXT NOT NULL DEFAULT 'pending',
+	runtime_verify_status TEXT NOT NULL DEFAULT 'pending',
+	stderr TEXT DEFAULT '',
+	step_log TEXT DEFAULT '[]',
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_apply_logs_operation_id ON apply_logs(operation_id);
+CREATE INDEX IF NOT EXISTS idx_apply_logs_created_at ON apply_logs(created_at);
+`
+
+// migration019 adds the audit_logs table.
+const migration019 = `
+CREATE TABLE IF NOT EXISTS audit_logs (
+	id TEXT PRIMARY KEY,
+	actor_type TEXT NOT NULL DEFAULT '',
+	actor_id TEXT NOT NULL DEFAULT '',
+	event_type TEXT NOT NULL DEFAULT '',
+	ip TEXT NOT NULL DEFAULT '',
+	user_agent TEXT NOT NULL DEFAULT '',
+	target_type TEXT NOT NULL DEFAULT '',
+	target_id TEXT NOT NULL DEFAULT '',
+	result TEXT NOT NULL DEFAULT '',
+	error_code TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_event_type ON audit_logs(event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_type, actor_id);
+`
+
+// migration020 adds the node_events table.
+const migration020 = `
+CREATE TABLE IF NOT EXISTS node_events (
+	id TEXT PRIMARY KEY,
+	node_id TEXT NOT NULL DEFAULT '',
+	event_type TEXT NOT NULL DEFAULT '',
+	state_version INTEGER NOT NULL DEFAULT 0,
+	severity TEXT NOT NULL DEFAULT 'info',
+	message TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_node_events_node_id ON node_events(node_id);
+CREATE INDEX IF NOT EXISTS idx_node_events_event_type ON node_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_node_events_created_at ON node_events(created_at);
+`
+
+// migration021 adds capabilities column to nodes.
+const migration021 = `
+ALTER TABLE nodes ADD COLUMN capabilities TEXT NOT NULL DEFAULT '{}';
+`
+
+// migration022 adds gateway abstraction tables.
+const migration022 = `
+CREATE TABLE IF NOT EXISTS gateway_domains (
+	id TEXT PRIMARY KEY,
+	domain TEXT NOT NULL UNIQUE,
+	node_id TEXT NOT NULL DEFAULT '',
+	tls_enabled INTEGER NOT NULL DEFAULT 0,
+	tls_provider TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'active',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gateway_domains_node_id ON gateway_domains(node_id);
+
+CREATE TABLE IF NOT EXISTS gateway_routes (
+	id TEXT PRIMARY KEY,
+	domain_id TEXT NOT NULL,
+	path TEXT NOT NULL DEFAULT '',
+	target_service TEXT NOT NULL DEFAULT '',
+	target_port INTEGER NOT NULL DEFAULT 0,
+	protocol TEXT NOT NULL DEFAULT 'http',
+	status TEXT NOT NULL DEFAULT 'active',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gateway_routes_domain_id ON gateway_routes(domain_id);
+
+CREATE TABLE IF NOT EXISTS gateway_listeners (
+	id TEXT PRIMARY KEY,
+	node_id TEXT NOT NULL DEFAULT '',
+	port INTEGER NOT NULL DEFAULT 0,
+	tls_enabled INTEGER NOT NULL DEFAULT 0,
+	protocol TEXT NOT NULL DEFAULT 'http',
+	status TEXT NOT NULL DEFAULT 'active',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gateway_listeners_node_id ON gateway_listeners(node_id);
+`
+
+// migration023 adds deployment version tracking tables.
+const migration023 = `
+CREATE TABLE IF NOT EXISTS deployments (
+	id TEXT PRIMARY KEY,
+	version TEXT NOT NULL DEFAULT '',
+	service_id TEXT NOT NULL DEFAULT '',
+	target_nodes TEXT NOT NULL DEFAULT '[]',
+	rollout_strategy TEXT NOT NULL DEFAULT 'all',
+	status TEXT NOT NULL DEFAULT 'pending',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deployments_service_id ON deployments(service_id);
+CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
+
+CREATE TABLE IF NOT EXISTS deployment_instances (
+	id TEXT PRIMARY KEY,
+	deployment_id TEXT NOT NULL,
+	node_id TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'pending',
+	last_applied_version TEXT NOT NULL DEFAULT '',
+	applied_at TEXT DEFAULT '',
+	error_message TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deployment_instances_deployment_id ON deployment_instances(deployment_id);
+CREATE INDEX IF NOT EXISTS idx_deployment_instances_node_id ON deployment_instances(node_id);
 `

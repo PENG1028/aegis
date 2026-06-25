@@ -1,21 +1,34 @@
 package handlers
 
 import (
+	"aegis/internal/action"
+	"aegis/internal/adminauth"
 	"aegis/internal/apply"
+	"aegis/internal/cluster"
 	"aegis/internal/config"
+	"aegis/internal/deployment"
+	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
+	"aegis/internal/gateway"
 	"aegis/internal/health"
+	"aegis/internal/listener"
 	"aegis/internal/logs"
+	"aegis/internal/node"
 	"aegis/internal/manageddomain"
 	"aegis/internal/project"
 	"aegis/internal/route"
 	"aegis/internal/service"
+	"aegis/internal/space"
 	"aegis/internal/store"
+	"aegis/internal/token"
+	"aegis/internal/trace"
 	"database/sql"
 	"net/http"
 	"time"
 )
+
+const rfc3339 = time.RFC3339
 
 // Handlers holds all service dependencies for HTTP handlers.
 type Handlers struct {
@@ -30,6 +43,17 @@ type Handlers struct {
 	Apply         *apply.AppService
 	Health        *health.AppService
 	Logs          *logs.AppService
+	Action        *action.ActionService
+	Space         *space.AppService
+	TokenRepo     *token.Repository
+	AdminAuth     *adminauth.Service
+	EdgeSvc       *edgemux.AppService
+	ListenerSvc   *listener.Service
+	NodeRepo      *node.Repository
+	Gateway       *gateway.GatewayService
+	DeploymentSvc *deployment.Service
+	PendingState  *cluster.PendingState // v1.7S
+	TraceSvc      *trace.Service        // v1.7T
 }
 
 // SystemStatus returns enhanced system status.
@@ -74,6 +98,17 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// v1.7S: Pending apply status
+	pendingApply := map[string]interface{}{"pending": false}
+	if h.PendingState != nil {
+		ps := h.PendingState.Status()
+		pendingApply = map[string]interface{}{
+			"pending": ps.Pending,
+			"since":   ps.Since,
+			"reason":  ps.Reason,
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"name":        "aegis",
 		"version":     "0.x",
@@ -95,7 +130,8 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 			"routes":           len(routes),
 			"managed_domains":  len(mdDomains),
 		},
-		"last_apply": lastApply,
+		"last_apply":    lastApply,
+		"pending_apply": pendingApply,
 		"health": map[string]interface{}{
 			"healthy_endpoints":   healthyCount,
 			"unhealthy_endpoints": unhealthyCount,

@@ -180,3 +180,75 @@ func (p *HAProxyEdgeMuxProvider) GetCurrentConfig() (string, error) {
 func (p *HAProxyEdgeMuxProvider) Status() ProviderStatus {
 	return CheckHAProxyStatus(p.configPath)
 }
+
+// Diagnose implements the Diagnoser interface for HAProxyEdgeMuxProvider.
+func (p *HAProxyEdgeMuxProvider) Diagnose() ProviderDiagnostic {
+	now := time.Now().Format(time.RFC3339)
+	diag := ProviderDiagnostic{
+		Provider:   "haproxy_edge_mux",
+		ConfigPath: p.configPath,
+		CheckedAt:  now,
+	}
+
+	// 1. Check binary
+	haproxyPath, err := exec.LookPath("haproxy")
+	if err != nil {
+		diag.LastErrorCode = DiagCodeProviderMissing
+		diag.LastErrorMessage = "haproxy binary not found in PATH"
+		return diag
+	}
+	diag.Installed = true
+	diag.BinaryPath = haproxyPath
+
+	// 2. Get version
+	verOut, verErr := exec.Command(haproxyPath, "-v").CombinedOutput()
+	if verErr != nil {
+		diag.Version = "unknown"
+		diag.VersionSupported = false
+		diag.LastErrorCode = DiagCodeVersionUnsupported
+		diag.LastErrorMessage = fmt.Sprintf("haproxy version check failed: %v", verErr)
+		diag.Stderr = string(verOut)
+		return diag
+	}
+	diag.Version = strings.TrimSpace(string(verOut))
+	major, minor := parseHAProxyVersionParts(diag.Version)
+	diag.VersionSupported = major >= 2 || (major == 1 && minor >= 8)
+
+	// 3. Check config file
+	if _, statErr := os.Stat(p.configPath); os.IsNotExist(statErr) {
+		diag.LastErrorCode = DiagCodeConfigFileMissing
+		diag.LastErrorMessage = fmt.Sprintf("config file not found: %s", p.configPath)
+		return diag
+	}
+	diag.ConfigExists = true
+
+	// 4. Validate config
+	validOut, validErr := exec.Command(haproxyPath, "-c", "-f", p.configPath).CombinedOutput()
+	valid := validErr == nil
+	diag.ConfigValid = &valid
+	if !valid {
+		diag.LastErrorCode = DiagCodeConfigValidateFailed
+		diag.LastErrorMessage = fmt.Sprintf("haproxy -c failed for %s", p.configPath)
+		diag.Stderr = string(validOut)
+		return diag
+	}
+
+	// 5. Check service
+	_, svcErr := exec.Command("systemctl", "is-active", "--quiet", "haproxy").CombinedOutput()
+	running := svcErr == nil
+	diag.ServiceRunning = &running
+	if !running {
+		diag.LastErrorCode = DiagCodeServiceNotRunning
+		diag.LastErrorMessage = "haproxy systemd service is not active"
+		return diag
+	}
+
+	diag.ListenerOK = true
+	rtOK := true
+	diag.RuntimeVerifyOK = &rtOK
+
+	return diag
+}
+
+// Ensure HAProxyEdgeMuxProvider implements Diagnoser
+var _ Diagnoser = (*HAProxyEdgeMuxProvider)(nil)

@@ -45,6 +45,7 @@ func (s *Service) RegisterCurrent() (*NodeRecord, error) {
 		existing.PublicIP = publicIP
 		existing.LastSeen = now
 		existing.UpdatedAt = now
+		existing.Capabilities = DetectCapabilities()
 		if ipChanged {
 			existing.IPMigrated = true
 		}
@@ -56,16 +57,17 @@ func (s *Service) RegisterCurrent() (*NodeRecord, error) {
 
 	// Create new node record
 	n := &NodeRecord{
-		ID:        id.New("node"),
-		NodeID:    nodeID,
-		Hostname:  hostname,
-		LocalIP:   localIP,
-		PrivateIP: privateIP,
-		PublicIP:  publicIP,
-		IsCurrent: true,
-		LastSeen:  now,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:           id.New("node"),
+		NodeID:       nodeID,
+		Hostname:     hostname,
+		LocalIP:      localIP,
+		PrivateIP:    privateIP,
+		PublicIP:     publicIP,
+		IsCurrent:    true,
+		Capabilities: DetectCapabilities(),
+		LastSeen:     now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	if err := s.repo.Create(n); err != nil {
 		return nil, err

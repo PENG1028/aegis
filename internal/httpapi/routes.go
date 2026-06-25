@@ -18,6 +18,17 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		Apply:         svcs.Apply,
 		Health:        svcs.Health,
 		Logs:          svcs.Logs,
+		Action:        svcs.Action,
+		Space:         svcs.Space,
+		TokenRepo:     svcs.TokenRepo,
+		AdminAuth:     svcs.AdminAuth,
+		EdgeSvc:       svcs.EdgeSvc,
+		ListenerSvc:   svcs.ListenerSvc,
+		NodeRepo:      svcs.NodeRepo,
+		Gateway:       svcs.Gateway,
+		DeploymentSvc: svcs.DepSvc,
+		PendingState:  svcs.PendingState,
+		TraceSvc:      svcs.TraceSvc,
 	}
 
 	// System
@@ -97,4 +108,67 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// Settings
 	mux.HandleFunc("GET /api/settings", h.GetSettings)
 	mux.HandleFunc("PATCH /api/settings", h.UpdateSettings)
+
+	// v1.6 Action API
+	mux.HandleFunc("POST /api/v1/actions/bind-http-domain", h.BindHTTPDomain)
+	mux.HandleFunc("POST /api/v1/actions/bind-tls-backend", h.BindTLSBackend)
+	mux.HandleFunc("PATCH /api/v1/actions/update-target", h.UpdateTarget)
+	mux.HandleFunc("POST /api/v1/actions/disable-domain", h.DisableDomain)
+	mux.HandleFunc("DELETE /api/v1/actions/domain", h.DeleteDomain)
+
+	// v1.6 My resources
+	mux.HandleFunc("GET /api/v1/my/routes", h.ListMyRoutes)
+	mux.HandleFunc("GET /api/v1/my/services", h.ListMyServices)
+	mux.HandleFunc("GET /api/v1/my/edge-rules", h.ListMyEdgeRules)
+	mux.HandleFunc("GET /api/v1/my/operations", h.ListMyOperations)
+
+	// v1.6B Admin API
+	mux.HandleFunc("POST /api/admin/v1/auth/login", h.AdminLogin)
+	mux.HandleFunc("POST /api/admin/v1/auth/logout", h.AdminLogout)
+	mux.HandleFunc("GET /api/admin/v1/auth/me", h.AdminMe)
+	mux.HandleFunc("GET /api/admin/v1/system/overview", h.SystemOverview)
+	mux.HandleFunc("GET /api/admin/v1/nodes", h.AdminListNodes)
+	mux.HandleFunc("GET /api/admin/v1/routes", h.AdminListRoutes)
+	mux.HandleFunc("GET /api/admin/v1/edge-rules", h.AdminListEdgeRules)
+	mux.HandleFunc("GET /api/admin/v1/services", h.AdminListServices)
+	mux.HandleFunc("GET /api/admin/v1/scopes", h.AdminListScopes)
+	mux.HandleFunc("POST /api/admin/v1/scopes", h.AdminCreateSpace)
+	mux.HandleFunc("GET /api/admin/v1/api-keys", h.AdminListAPIKeys)
+	mux.HandleFunc("POST /api/admin/v1/scopes/{id}/api-keys", h.AdminCreateAPIKey)
+	mux.HandleFunc("POST /api/admin/v1/api-keys/{id}/revoke", h.AdminRevokeAPIKey)
+	mux.HandleFunc("POST /api/admin/v1/api-keys/{id}/rotate", h.AdminRotateAPIKey)
+	mux.HandleFunc("GET /api/admin/v1/operations", h.AdminListOperations)
+	mux.HandleFunc("GET /api/admin/v1/apply-logs", h.AdminListApplyLogs)
+	mux.HandleFunc("GET /api/admin/v1/audit-logs", h.AdminListAuditLogs)
+	mux.HandleFunc("GET /api/admin/v1/node-events", h.AdminListNodeEvents)
+	mux.HandleFunc("POST /api/admin/v1/system/doctor", h.AdminSystemDoctor)
+	mux.HandleFunc("POST /api/admin/v1/system/verify", h.AdminSystemVerify)
+	mux.HandleFunc("POST /api/admin/v1/system/apply", h.AdminSystemApply)
+
+	// v1.7 Node Capabilities
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/capabilities", h.GetNodeCapabilities)
+	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/refresh-capabilities", h.RefreshNodeCapabilities)
+
+	// v1.7 Gateway Abstraction
+	mux.HandleFunc("POST /api/admin/v1/gateway/domains", h.CreateGatewayDomain)
+	mux.HandleFunc("GET /api/admin/v1/gateway/domains", h.ListGatewayDomains)
+	mux.HandleFunc("POST /api/admin/v1/gateway/routes", h.AttachGatewayRoute)
+	mux.HandleFunc("DELETE /api/admin/v1/gateway/routes/{id}", h.DetachGatewayRoute)
+	mux.HandleFunc("GET /api/admin/v1/gateway/listeners", h.ListGatewayListeners)
+	mux.HandleFunc("PUT /api/admin/v1/gateway/domains/{id}/tls", h.UpdateTLSPolicy)
+
+	// v1.7 Deployment Versioning
+	mux.HandleFunc("POST /api/admin/v1/deployments", h.CreateDeployment)
+	mux.HandleFunc("GET /api/admin/v1/deployments", h.ListDeployments)
+	mux.HandleFunc("GET /api/admin/v1/deployments/{id}", h.GetDeployment)
+	mux.HandleFunc("POST /api/admin/v1/deployments/{id}/rollback", h.RollbackDeployment)
+
+	// v1.7S Provider Diagnostics
+	mux.HandleFunc("GET /api/admin/v1/providers", h.ListProviders)
+	mux.HandleFunc("POST /api/admin/v1/providers/diagnose", h.DiagnoseAllProviders)
+
+	// v1.7T Access Path Trace (admin only, read-only)
+	mux.HandleFunc("GET /api/admin/v1/trace/domain/{domain}", h.TraceDomain)
+	mux.HandleFunc("GET /api/admin/v1/trace/sni/{sni_host}", h.TraceSNI)
+	mux.HandleFunc("GET /api/admin/v1/trace/route/{route_id}", h.TraceRoute)
 }

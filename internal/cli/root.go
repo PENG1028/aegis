@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"aegis/internal/action"
 	"aegis/internal/apply"
 	"aegis/internal/cluster"
 	"aegis/internal/config"
@@ -16,6 +17,9 @@ import (
 	"aegis/internal/project"
 	"aegis/internal/route"
 	"aegis/internal/service"
+	"aegis/internal/smoke"
+	"aegis/internal/space"
+	"aegis/internal/trace"
 	"database/sql"
 
 	"github.com/spf13/cobra"
@@ -39,7 +43,11 @@ type Services struct {
 	Apply         *apply.AppService
 	Health        *health.AppService
 	Logs          *logs.AppService
+	Action        *action.ActionService
+	Space         *space.AppService
 	HTTPServices  *httpapi.Services
+	PendingState  *cluster.PendingState
+	TraceSvc      *trace.Service
 }
 
 // NewRootCommand creates the root aegis CLI command.
@@ -84,9 +92,56 @@ v0.x — Production-hardened gateway control with HTTP API.`,
 		svcs.ManagedDomain, svcs.Apply, svcs.Health, svcs.Logs,
 	))
 
+	if svcs.Action != nil {
+		cmd.AddCommand(newActionCommand(svcs.Action))
+	}
+
 	if svcs.HTTPServices != nil {
 		cmd.AddCommand(newServeCommand(svcs.Config, svcs.HTTPServices))
+		if svcs.HTTPServices.TraceSvc != nil {
+			cmd.AddCommand(newTraceCommand(svcs.HTTPServices.TraceSvc))
+		}
+	}
+
+	// Trace from svcs directly (for CLI use without serve)
+	if svcs.TraceSvc != nil && svcs.HTTPServices == nil {
+		cmd.AddCommand(newTraceCommand(svcs.TraceSvc))
+	}
+
+	// Smoke commands
+	smokeSvc := buildSmokeService(svcs)
+	if smokeSvc != nil {
+		cmd.AddCommand(newSmokeCommand(smokeSvc))
 	}
 
 	return cmd
+}
+
+// buildSmokeService creates a smoke service from CLI services.
+// Returns nil if required dependencies are missing.
+func buildSmokeService(svcs *Services) *smoke.Service {
+	if svcs.DB == nil {
+		return nil
+	}
+
+	deps := smoke.Dependencies{
+		Config:      svcs.Config,
+		DB:          svcs.DB,
+		ApplySvc:    svcs.Apply,
+		HealthSvc:   svcs.Health,
+		LogSvc:      svcs.Logs,
+		RouteSvc:    svcs.Route,
+		ListenerSvc: svcs.ListenerSvc,
+		StateVer:    svcs.StateVer,
+		PendingSt:   svcs.PendingState,
+	}
+
+	// Trace service from HTTP services or direct
+	if svcs.HTTPServices != nil && svcs.HTTPServices.TraceSvc != nil {
+		deps.TraceSvc = svcs.HTTPServices.TraceSvc
+	} else if svcs.TraceSvc != nil {
+		deps.TraceSvc = svcs.TraceSvc
+	}
+
+	return smoke.NewService(deps)
 }

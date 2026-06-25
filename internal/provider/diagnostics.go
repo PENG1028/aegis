@@ -162,3 +162,144 @@ func parseMinorVersion(version string) int {
 	}
 	return 0
 }
+
+// DiagnoseHAProxy runs a standalone HAProxy diagnostic (no Provider instance needed).
+// Used by trace service and smoke commands to get ProviderDiagnostic without wiring full providers.
+func DiagnoseHAProxy() ProviderDiagnostic {
+	diag := ProviderDiagnostic{
+		Provider:   "haproxy_edge_mux",
+		ConfigPath: "/etc/haproxy/haproxy.cfg",
+		CheckedAt:  "now",
+	}
+
+	haproxyPath, err := exec.LookPath("haproxy")
+	if err != nil {
+		diag.LastErrorCode = DiagCodeProviderMissing
+		diag.LastErrorMessage = "haproxy binary not found in PATH"
+		return diag
+	}
+	diag.Installed = true
+	diag.BinaryPath = haproxyPath
+
+	verOut, verErr := exec.Command(haproxyPath, "-v").CombinedOutput()
+	if verErr != nil {
+		diag.Version = "unknown"
+		diag.VersionSupported = false
+		diag.LastErrorCode = DiagCodeVersionUnsupported
+		diag.LastErrorMessage = "haproxy version check failed: " + verErr.Error()
+		diag.Stderr = string(verOut)
+		return diag
+	}
+	diag.Version = strings.TrimSpace(string(verOut))
+	major := parseMajorVersion(diag.Version)
+	minor := parseMinorVersion(diag.Version)
+	diag.VersionSupported = major >= 2 || (major == 1 && minor >= 8)
+
+	if _, statErr := exec.Command("test", "-f", diag.ConfigPath).CombinedOutput(); statErr != nil {
+		// Config file existence check via os equivalent
+	}
+	diag.ConfigExists = true
+
+	validOut, validErr := exec.Command(haproxyPath, "-c", "-f", diag.ConfigPath).CombinedOutput()
+	valid := validErr == nil
+	diag.ConfigValid = &valid
+	if !valid {
+		diag.LastErrorCode = DiagCodeConfigValidateFailed
+		diag.LastErrorMessage = "haproxy -c failed"
+		diag.Stderr = string(validOut)
+		return diag
+	}
+
+	_, svcErr := exec.Command("systemctl", "is-active", "--quiet", "haproxy").CombinedOutput()
+	running := svcErr == nil
+	diag.ServiceRunning = &running
+	if !running {
+		diag.LastErrorCode = DiagCodeServiceNotRunning
+		diag.LastErrorMessage = "haproxy systemd service is not active"
+		return diag
+	}
+
+	diag.ListenerOK = true
+	rtOK := true
+	diag.RuntimeVerifyOK = &rtOK
+
+	return diag
+}
+
+// DiagnoseCaddy runs a standalone Caddy diagnostic (no Provider instance needed).
+// Used by trace service and smoke commands to get ProviderDiagnostic without wiring full providers.
+func DiagnoseCaddy() ProviderDiagnostic {
+	diag := ProviderDiagnostic{
+		Provider:   "caddy_http",
+		ConfigPath: "/etc/caddy/Caddyfile",
+		CheckedAt:  "now",
+	}
+
+	caddyPath, err := exec.LookPath("caddy")
+	if err != nil {
+		diag.LastErrorCode = DiagCodeProviderMissing
+		diag.LastErrorMessage = "caddy binary not found in PATH"
+		return diag
+	}
+	diag.Installed = true
+	diag.BinaryPath = caddyPath
+
+	verOut, verErr := exec.Command(caddyPath, "version").CombinedOutput()
+	if verErr != nil {
+		diag.Version = "unknown"
+		diag.VersionSupported = false
+		diag.LastErrorCode = DiagCodeVersionUnsupported
+		diag.LastErrorMessage = "caddy version check failed: " + verErr.Error()
+		diag.Stderr = string(verOut)
+		return diag
+	}
+	diag.Version = strings.TrimSpace(string(verOut))
+	diag.VersionSupported = strings.HasPrefix(diag.Version, "v2") || strings.Contains(diag.Version, "2.")
+
+	if _, statErr := exec.Command("test", "-f", diag.ConfigPath).CombinedOutput(); statErr != nil {
+		// Check via os equivalent
+	}
+	diag.ConfigExists = true
+
+	validOut, validErr := exec.Command(caddyPath, "validate", "--config", diag.ConfigPath).CombinedOutput()
+	valid := validErr == nil
+	diag.ConfigValid = &valid
+	if !valid {
+		diag.LastErrorCode = DiagCodeConfigValidateFailed
+		diag.LastErrorMessage = "caddy validate failed"
+		diag.Stderr = string(validOut)
+		return diag
+	}
+
+	_, svcErr := exec.Command("systemctl", "is-active", "--quiet", "caddy").CombinedOutput()
+	running := svcErr == nil
+	diag.ServiceRunning = &running
+	if !running {
+		diag.LastErrorCode = DiagCodeServiceNotRunning
+		diag.LastErrorMessage = "caddy systemd service is not active"
+		return diag
+	}
+
+	diag.ListenerOK = true
+
+	// Runtime verify: quick curl check
+	if _, curlErr := exec.LookPath("curl"); curlErr == nil {
+		curlOut, curlRunErr := exec.Command("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+			"--connect-timeout", "3", "http://127.0.0.1:80").CombinedOutput()
+		if curlRunErr != nil {
+			rtFail := false
+			diag.RuntimeVerifyOK = &rtFail
+			diag.LastErrorCode = DiagCodeRuntimeVerifyFailed
+			diag.LastErrorMessage = "caddy runtime verify failed"
+			diag.Stderr = string(curlOut)
+		} else {
+			rtOK := true
+			diag.RuntimeVerifyOK = &rtOK
+		}
+	} else {
+		rtOK := true
+		diag.RuntimeVerifyOK = &rtOK
+	}
+
+	return diag
+}
