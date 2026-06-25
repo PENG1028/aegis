@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"aegis/internal/adminauth"
 	"aegis/internal/config"
 	"aegis/internal/httpapi"
 	"aegis/internal/token"
@@ -32,18 +33,30 @@ func newServeCommand(cfg *config.Config, svcs *httpapi.Services) *cobra.Command 
 				addr = "127.0.0.1:7380"
 			}
 
-			// Set up auth middleware
-			auth := token.NewAuthMiddleware(cfg.Server.AdminToken, nil)
-			apiMiddleware := httpapi.NewMiddleware(auth)
+			// Use the pre-built auth middleware from Services (has tokenRepo)
+			var authMiddleware *token.AuthMiddleware
+			if svcs.Auth != nil {
+				authMiddleware = svcs.Auth
+			} else {
+				authMiddleware = token.NewAuthMiddleware(cfg.Server.AdminToken, nil)
+			}
+			apiMiddleware := httpapi.NewMiddleware(authMiddleware)
 
 			// Set up routes
 			mux := http.NewServeMux()
 			httpapi.RegisterRoutes(mux, svcs)
 
-			// Wrap with auth and CORS
+			// Admin cookie auth middleware
+			adminAuthMw := adminauth.NewAdminAuthMiddleware(svcs.AdminAuth)
+
+			// Middleware order (last wrapped = outermost = runs first):
+			//   1. AdminAuth — injects AdminContext from cookie for /api/admin/v1/*
+			//   2. Auth — checks AdminContext first, falls back to Bearer token
+			//   3. CORS (innermost, runs last)
 			var handler http.Handler = mux
 			handler = apiMiddleware.CORS(handler)
 			handler = apiMiddleware.Auth(handler)
+			handler = adminAuthMw.Middleware(handler)
 
 			srv := &http.Server{
 				Addr:         addr,

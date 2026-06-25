@@ -13,11 +13,12 @@ type NodeRecord struct {
 	IsCurrent       bool      `json:"is_current"`
 	IsLeader        bool      `json:"is_leader"`
 	LeaderElectedAt time.Time `json:"leader_elected_at"`
-	StateVersion    uint64    `json:"state_version"`
-	IPMigrated      bool      `json:"ip_migrated"` // true if IP changed since last registration
-	LastSeen        time.Time `json:"last_seen"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	StateVersion    uint64           `json:"state_version"`
+	IPMigrated      bool             `json:"ip_migrated"` // true if IP changed since last registration
+	Capabilities    NodeCapabilities `json:"capabilities"`
+	LastSeen        time.Time        `json:"last_seen"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
 }
 
 // ResolveIP returns the best available IP for the given preference order.

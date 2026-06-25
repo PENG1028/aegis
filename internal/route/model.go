@@ -17,6 +17,10 @@ type Route struct {
 	Status             string    `json:"status"` // active | disabled
 	MaintenanceEnabled bool      `json:"maintenance_enabled"`
 	MaintenanceMessage string    `json:"maintenance_message"`
+	SpaceID            string    `json:"space_id"`
+	OwnerType          string    `json:"owner_type"`         // space | admin
+	OwnerID            string    `json:"owner_id"`           // space_id when owner_type=space
+	CreatedByTokenID   string    `json:"created_by_token_id"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }

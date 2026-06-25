@@ -185,6 +185,39 @@ func (s *AppService) GetRule(ctx context.Context, id string) (*Rule, error) {
 	return rule, nil
 }
 
+// CreateRuleDirect creates a pre-built edge rule directly via the repository.
+// Used by the action service to create rules with ownership fields set.
+func (s *AppService) CreateRuleDirect(rule *Rule) error {
+	return s.repo.Create(rule)
+}
+
+// UpdateRuleDirect updates an edge rule directly via the repository.
+// Used by the action service to update rules with ownership fields preserved.
+func (s *AppService) UpdateRuleDirect(rule *Rule) error {
+	return s.repo.Update(rule)
+}
+
+// ListRulesBySpaceID returns all edge rules for a specific space.
+func (s *AppService) ListRulesBySpaceID(ctx context.Context, spaceID string) ([]Rule, error) {
+	rules, err := s.repo.FindBySpaceID(spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list edge rules by space: %w", err)
+	}
+	if rules == nil {
+		rules = []Rule{}
+	}
+	return rules, nil
+}
+
+// FindBySNIHost looks up an edge rule by SNI hostname.
+func (s *AppService) FindBySNIHost(ctx context.Context, sniHost string) (*Rule, error) {
+	rule, err := s.repo.FindBySNIHost(sniHost)
+	if err != nil {
+		return nil, err
+	}
+	return rule, nil
+}
+
 func (s *AppService) EnableRule(ctx context.Context, id string) error {
 	rule, err := s.repo.FindByID(id)
 	if err != nil { return err }

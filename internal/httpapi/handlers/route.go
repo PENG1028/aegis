@@ -34,6 +34,13 @@ func (h *Handlers) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Mark pending — admin CRUD modifies desired state but doesn't auto-apply
+	if h.PendingState != nil {
+		h.PendingState.MarkPending("route created: " + rt.ID)
+	}
+	if h.Logs != nil {
+		h.Logs.Log(r.Context(), "route.create", "route", rt.ID, "success", "route created via admin CRUD", "admin")
+	}
 	writeJSON(w, http.StatusCreated, routeToMap(*rt))
 }
 
@@ -57,6 +64,12 @@ func (h *Handlers) EnableRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if h.PendingState != nil {
+		h.PendingState.MarkPending("route enabled: " + id)
+	}
+	if h.Logs != nil {
+		h.Logs.Log(r.Context(), "route.enable", "route", id, "success", "route enabled via admin CRUD", "admin")
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
 }
 
@@ -65,6 +78,12 @@ func (h *Handlers) DisableRoute(w http.ResponseWriter, r *http.Request) {
 	if err := h.Route.DisableRoute(r.Context(), id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if h.PendingState != nil {
+		h.PendingState.MarkPending("route disabled: " + id)
+	}
+	if h.Logs != nil {
+		h.Logs.Log(r.Context(), "route.disable", "route", id, "success", "route disabled via admin CRUD", "admin")
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
 }

@@ -19,9 +19,10 @@ func NewRepository(db *sql.DB) *Repository {
 // Create inserts a new service.
 func (r *Repository) Create(s *Service) error {
 	_, err := r.DB.Exec(
-		`INSERT INTO services (id, project_id, name, kind, env, status, note, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO services (id, project_id, name, kind, env, status, note, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		s.ID, s.ProjectID, s.Name, s.Kind, s.Env, s.Status, s.Note,
+		s.SpaceID, s.OwnerType, s.OwnerID, s.CreatedByTokenID,
 		s.CreatedAt.Format(time.RFC3339),
 		s.UpdatedAt.Format(time.RFC3339),
 	)
@@ -34,7 +35,7 @@ func (r *Repository) Create(s *Service) error {
 // FindAll returns all services ordered by name.
 func (r *Repository) FindAll() ([]Service, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, project_id, name, kind, env, status, note, created_at, updated_at
+		`SELECT id, project_id, name, kind, env, status, note, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at
 		 FROM services ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("query services: %w", err)
@@ -49,9 +50,9 @@ func (r *Repository) FindByID(id string) (*Service, error) {
 	var createdAt, updatedAt string
 	var note sql.NullString
 	err := r.DB.QueryRow(
-		`SELECT id, project_id, name, kind, env, status, note, created_at, updated_at
+		`SELECT id, project_id, name, kind, env, status, note, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at
 		 FROM services WHERE id = ?`, id,
-	).Scan(&s.ID, &s.ProjectID, &s.Name, &s.Kind, &s.Env, &s.Status, &note, &createdAt, &updatedAt)
+	).Scan(&s.ID, &s.ProjectID, &s.Name, &s.Kind, &s.Env, &s.Status, &note, &s.SpaceID, &s.OwnerType, &s.OwnerID, &s.CreatedByTokenID, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -70,9 +71,9 @@ func (r *Repository) FindByName(name string) (*Service, error) {
 	var createdAt, updatedAt string
 	var note sql.NullString
 	err := r.DB.QueryRow(
-		`SELECT id, project_id, name, kind, env, status, note, created_at, updated_at
+		`SELECT id, project_id, name, kind, env, status, note, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at
 		 FROM services WHERE name = ?`, name,
-	).Scan(&s.ID, &s.ProjectID, &s.Name, &s.Kind, &s.Env, &s.Status, &note, &createdAt, &updatedAt)
+	).Scan(&s.ID, &s.ProjectID, &s.Name, &s.Kind, &s.Env, &s.Status, &note, &s.SpaceID, &s.OwnerType, &s.OwnerID, &s.CreatedByTokenID, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -88,7 +89,7 @@ func (r *Repository) FindByName(name string) (*Service, error) {
 // FindByProjectID returns all services for a project.
 func (r *Repository) FindByProjectID(projectID string) ([]Service, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, project_id, name, kind, env, status, note, created_at, updated_at
+		`SELECT id, project_id, name, kind, env, status, note, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at
 		 FROM services WHERE project_id = ? ORDER BY name`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("query services by project: %w", err)
@@ -97,11 +98,24 @@ func (r *Repository) FindByProjectID(projectID string) ([]Service, error) {
 	return scanServices(rows)
 }
 
+// FindBySpaceID returns all services for a space.
+func (r *Repository) FindBySpaceID(spaceID string) ([]Service, error) {
+	rows, err := r.DB.Query(
+		`SELECT id, project_id, name, kind, env, status, note, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at
+		 FROM services WHERE space_id = ? ORDER BY name`, spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("query services by space_id: %w", err)
+	}
+	defer rows.Close()
+	return scanServices(rows)
+}
+
 // Update updates a service.
 func (r *Repository) Update(s *Service) error {
 	_, err := r.DB.Exec(
-		`UPDATE services SET project_id=?, name=?, kind=?, env=?, status=?, note=?, updated_at=? WHERE id=?`,
+		`UPDATE services SET project_id=?, name=?, kind=?, env=?, status=?, note=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, updated_at=? WHERE id=?`,
 		s.ProjectID, s.Name, s.Kind, s.Env, s.Status, s.Note,
+		s.SpaceID, s.OwnerType, s.OwnerID, s.CreatedByTokenID,
 		s.UpdatedAt.Format(time.RFC3339), s.ID,
 	)
 	if err != nil {
@@ -113,7 +127,7 @@ func (r *Repository) Update(s *Service) error {
 // FindActive returns all active services.
 func (r *Repository) FindActive() ([]Service, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, project_id, name, kind, env, status, note, created_at, updated_at
+		`SELECT id, project_id, name, kind, env, status, note, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at
 		 FROM services WHERE status = 'active' ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("query active services: %w", err)
@@ -128,7 +142,7 @@ func scanServices(rows *sql.Rows) ([]Service, error) {
 		var s Service
 		var createdAt, updatedAt string
 		var note sql.NullString
-		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Kind, &s.Env, &s.Status, &note, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Kind, &s.Env, &s.Status, &note, &s.SpaceID, &s.OwnerType, &s.OwnerID, &s.CreatedByTokenID, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan service: %w", err)
 		}
 		s.Note = note.String

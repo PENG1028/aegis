@@ -76,6 +76,24 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 	return rt, nil
 }
 
+// CreateRouteDirect creates a pre-built route directly via the repository.
+// Used by the action service to create routes with ownership fields set.
+func (s *AppService) CreateRouteDirect(rt *Route) error {
+	return s.repo.Create(rt)
+}
+
+// ListRoutesBySpaceID returns all routes for a specific space.
+func (s *AppService) ListRoutesBySpaceID(ctx context.Context, spaceID string) ([]Route, error) {
+	routes, err := s.repo.FindBySpaceID(spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list routes by space: %w", err)
+	}
+	if routes == nil {
+		routes = []Route{}
+	}
+	return routes, nil
+}
+
 // ListRoutes returns all routes.
 func (s *AppService) ListRoutes(ctx context.Context) ([]Route, error) {
 	routes, err := s.repo.FindAll()

@@ -36,6 +36,13 @@ func (h *Handlers) CreateService(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Mark pending — admin CRUD modifies desired state but doesn't auto-apply
+	if h.PendingState != nil {
+		h.PendingState.MarkPending("service created: " + s.ID)
+	}
+	if h.Logs != nil {
+		h.Logs.Log(r.Context(), "service.create", "service", s.ID, "success", "service created via admin CRUD", "admin")
+	}
 	writeJSON(w, http.StatusCreated, serviceToMap(*s))
 }
 

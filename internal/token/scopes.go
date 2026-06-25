@@ -37,6 +37,20 @@ const (
 	ScopeExposureRead  = "exposure:read"
 	ScopeExposureWrite = "exposure:write"
 
+	// v1.6 Action scopes
+	ScopeDomainBind    = "domain:bind"
+	ScopeDomainUpdate  = "domain:update"
+	ScopeDomainDisable = "domain:disable"
+	ScopeRouteCreate   = "route:create"
+	ScopeRouteUpdate   = "route:update"
+	ScopeRouteDisable  = "route:disable"
+	ScopeEdgeCreate    = "edge:create"
+	ScopeEdgeUpdate    = "edge:update"
+	ScopeEdgeDisable   = "edge:disable"
+	ScopeServiceCreate = "service:create"
+	ScopeServiceUpdate = "service:update"
+	ScopeReadOwn       = "read:own"
+
 	ScopeAdminAll = "admin:*"
 )
 
@@ -117,6 +131,19 @@ var RequiredScopes = map[string]string{
 
 	// Diagnostics (needs admin or system+logs+config)
 	"GET /api/diagnostics/": ScopeAdminAll,
+
+	// v1.6 Action API
+	"POST /api/v1/actions/bind-http-domain":  ScopeDomainBind,
+	"POST /api/v1/actions/bind-tls-backend":  ScopeEdgeCreate,
+	"PATCH /api/v1/actions/update-target":    ScopeDomainUpdate,
+	"POST /api/v1/actions/disable-domain":    ScopeDomainDisable,
+	"DELETE /api/v1/actions/domain":          ScopeDomainDisable,
+
+	// v1.6 My resources
+	"GET /api/v1/my/routes":     ScopeReadOwn,
+	"GET /api/v1/my/services":   ScopeReadOwn,
+	"GET /api/v1/my/edge-rules": ScopeReadOwn,
+	"GET /api/v1/my/operations": ScopeReadOwn,
 }
 
 // HasScope checks if a token has a specific scope.

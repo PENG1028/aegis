@@ -144,6 +144,24 @@ func (s *AppService) DisableService(ctx context.Context, idOrName string) error 
 	return nil
 }
 
+// CreateServiceDirect creates a pre-built service directly via the repository.
+// Used by the action service to create services with ownership fields set.
+func (s *AppService) CreateServiceDirect(svc *Service) error {
+	return s.repo.Create(svc)
+}
+
+// ListServicesBySpaceID returns all services for a specific space.
+func (s *AppService) ListServicesBySpaceID(ctx context.Context, spaceID string) ([]Service, error) {
+	services, err := s.repo.FindBySpaceID(spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list services by space: %w", err)
+	}
+	if services == nil {
+		services = []Service{}
+	}
+	return services, nil
+}
+
 // UpdateService updates a service's fields.
 func (s *AppService) UpdateService(ctx context.Context, idOrName string, input UpdateServiceInput) (*Service, error) {
 	svc, err := s.GetService(ctx, idOrName)
