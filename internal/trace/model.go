@@ -10,7 +10,8 @@ type AccessPathTrace struct {
 	Steps       []TraceStep   `json:"steps"`
 	FinalTarget *TargetInfo   `json:"final_target,omitempty"`
 	Warnings    []string      `json:"warnings,omitempty"`
-	Errors      []string      `json:"errors,omitempty"`
+	Errors      []string         `json:"errors,omitempty"`
+	GatewayLink *GatewayLinkInfo `json:"gateway_link,omitempty"`
 }
 
 // TraceStep represents one hop in the access path.
@@ -51,3 +52,14 @@ const (
 	ErrTraceNotFound          = "TRACE_NOT_FOUND"
 	ErrTraceIncomplete        = "TRACE_INCOMPLETE"
 )
+
+// GatewayLinkInfo shows gateway link metadata in trace output.
+// Never includes raw token.
+type GatewayLinkInfo struct {
+	LinkID           string `json:"link_id"`
+	Enabled          bool   `json:"enabled"`
+	TokenVersion     int    `json:"token_version"`
+	HeaderInjected   bool   `json:"header_injected"`
+	VerificationMode string `json:"verification_mode"`
+	TargetHost       string `json:"target_host,omitempty"`
+}
