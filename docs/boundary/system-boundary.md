@@ -10,6 +10,7 @@
 - Trace/diagnose/apply operational tools
 - SQLite-backed stateful control plane
 - Action API for safe, scoped mutations
+- **Trusted Gateway Link** (v1.7AA): shared-secret auth between gateways
 
 ## What Aegis is NOT
 
@@ -24,13 +25,17 @@
 | Auto-healing system | Drift detected but not auto-repaired |
 | UI dashboard | CLI-only; no web UI |
 
-## Status: SINGLE_NODE_REAL_VERIFIED
+## Status
 
-All capabilities verified on real Ubuntu VPS with Caddy 2.6.2 + HAProxy 2.8.16.
-Two-node acceptance in progress (v1.7AA).
+| Verification | Status |
+|-------------|--------|
+| Single-node real VPS | ✅ Caddy 2.6.2 + HAProxy 2.8.16 |
+| Two-node gateway-to-gateway | ✅ Server A→B via :80 (tested) |
+| Trusted Gateway Link auth | 🛠️ Implemented (not yet wired into Planner) |
 
 ## Design Principle
 
 > Aegis manages **desired state** (routes in DB) and drives **applied state**
 > (Caddy/HAProxy configs) toward it via safe apply. It is NOT in the data path.
 > Caddy and HAProxy serve traffic independently of Aegis process lifecycle.
+> Gateway-to-gateway auth is handled via shared secret, not via Aegis control plane.
