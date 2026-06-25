@@ -38,6 +38,7 @@ type ProxyOptions struct {
 	ReadTimeoutSec int
 	PreserveHost   bool
 	StripPrefix    bool
+	ExtraHeaders   map[string]string // additional upstream headers (gateway auth, etc.)
 }
 
 // ErrNotImplemented is returned by adapters that are not yet implemented.

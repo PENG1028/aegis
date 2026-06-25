@@ -132,6 +132,11 @@ func AllMigrations() []Migration {
 			Name:    "add_deployments",
 			UpSQL:   migration023,
 		},
+	{
+			Version: "024",
+			Name:    "add_trusted_gateways",
+			UpSQL:   migration024,
+		},
 	}
 }
 
@@ -731,6 +736,23 @@ CREATE INDEX IF NOT EXISTS idx_gateway_listeners_node_id ON gateway_listeners(no
 `
 
 // migration023 adds deployment version tracking tables.
+const migration024 = `
+CREATE TABLE IF NOT EXISTS trusted_gateways (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL DEFAULT "",
+	host TEXT NOT NULL DEFAULT "",
+	private_ip TEXT NOT NULL DEFAULT "",
+	port INTEGER NOT NULL DEFAULT 443,
+	auth_type TEXT NOT NULL DEFAULT "shared_secret",
+	auth_value TEXT NOT NULL DEFAULT "",
+	gateway_type TEXT NOT NULL DEFAULT "upstream",
+	auto_route INTEGER NOT NULL DEFAULT 1,
+	status TEXT NOT NULL DEFAULT "active",
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+`
+
 const migration023 = `
 CREATE TABLE IF NOT EXISTS deployments (
 	id TEXT PRIMARY KEY,
