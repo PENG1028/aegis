@@ -12,6 +12,7 @@ import (
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
+	"aegis/internal/gateway_link"
 	"aegis/internal/health"
 	"aegis/internal/httpapi"
 	"aegis/internal/listener"
@@ -156,9 +157,13 @@ func main() {
 	exposureSvc := exposure.NewAppService(exposureRepo, logSvc, provRegistry, listenerSvc)
 	var proxyAdapter proxy.ProxyAdapter = caddy.NewAdapter(cfg)
 
+	// --- Gateway Link (v1.7AB) ---
+	gwLinkRepo := gatewaylink.NewRepository(db)
+
 	applySvc := apply.NewAppService(
 		cfg, proxyAdapter, routeRepo, mdRepo, exposureRepo, serviceRepo,
 		endpointResolver, applyRepo, logSvc,
+		gwLinkRepo,
 	)
 
 	adminUserRepo := adminauth.NewAdminUserRepository(db)
@@ -170,6 +175,8 @@ func main() {
 
 	pendingState := cluster.NewPendingState(db)
 	applySvc.SetPendingState(pendingState)
+
+	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, "gw_main", "main-gateway")
 
 	spaceRepo := space.NewRepository(db)
 	spaceSvc := space.NewAppService(spaceRepo, logSvc)
@@ -211,6 +218,7 @@ func main() {
 		DepSvc:        nil,
 		PendingState:  pendingState,
 		TraceSvc:      traceSvc,
+		GatewayLinkSvc: gwLinkSvc,
 	}
 
 	cliSvcs := &cli.Services{

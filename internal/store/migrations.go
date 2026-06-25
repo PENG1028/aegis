@@ -133,6 +133,11 @@ func AllMigrations() []Migration {
 			UpSQL:   migration023,
 		},
 	{
+			Version: "025",
+			Name:    "add_route_gateway_link",
+			UpSQL:   migration025,
+		},
+		{
 			Version: "024",
 			Name:    "add_trusted_gateways",
 			UpSQL:   migration024,
@@ -736,6 +741,11 @@ CREATE INDEX IF NOT EXISTS idx_gateway_listeners_node_id ON gateway_listeners(no
 `
 
 // migration023 adds deployment version tracking tables.
+const migration025 = `
+ALTER TABLE routes ADD COLUMN gateway_link_id TEXT NOT NULL DEFAULT "";
+`
+
+
 const migration024 = `
 CREATE TABLE IF NOT EXISTS trusted_gateways (
 	id TEXT PRIMARY KEY,

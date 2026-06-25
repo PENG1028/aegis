@@ -1,13 +1,15 @@
 package apply
 
 import (
+	"fmt"
+
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
+	gatewaylink "aegis/internal/gateway_link"
 	"aegis/internal/manageddomain"
 	"aegis/internal/proxy"
 	"aegis/internal/route"
 	"aegis/internal/service"
-	"fmt"
 )
 
 // Planner builds a GatewayConfig and ApplyPlan from routes, managed domains, and HTTP exposures.
@@ -17,6 +19,7 @@ type Planner struct {
 	exposureRepo     *exposure.Repository
 	serviceRepo      *service.Repository
 	endpointResolver *endpoint.Resolver
+	gwLinkRepo       *gatewaylink.Repository // v1.7AB
 }
 
 // NewPlanner creates a new apply planner.
@@ -26,6 +29,7 @@ func NewPlanner(
 	exposureRepo *exposure.Repository,
 	serviceRepo *service.Repository,
 	endpointResolver *endpoint.Resolver,
+	gwLinkRepo *gatewaylink.Repository, // v1.7AB
 ) *Planner {
 	return &Planner{
 		routeRepo:        routeRepo,
@@ -33,6 +37,7 @@ func NewPlanner(
 		exposureRepo:     exposureRepo,
 		serviceRepo:      serviceRepo,
 		endpointResolver: endpointResolver,
+		gwLinkRepo:       gwLinkRepo,
 	}
 }
 
@@ -51,7 +56,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 	}
 
 	for _, rt := range routes {
-		rc, warns := p.resolveRouteConfig(rt.Domain, rt.PathPrefix, rt.StripPrefix, rt.ServiceID, rt.TLSEnabled, rt.MaintenanceEnabled, rt.MaintenanceMessage)
+		rc, warns := p.resolveRouteConfig(rt.Domain, rt.PathPrefix, rt.StripPrefix, rt.ServiceID, rt.TLSEnabled, rt.MaintenanceEnabled, rt.MaintenanceMessage, rt.GatewayLinkID)
 		if rc == nil {
 			plan.SkippedCount++
 		} else {
@@ -68,7 +73,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 	}
 
 	for _, md := range mdDomains {
-		rc, warns := p.resolveRouteConfig(md.Domain, "", false, md.ServiceID, true, false, "")
+		rc, warns := p.resolveRouteConfig(md.Domain, "", false, md.ServiceID, true, false, "", "")
 		if rc == nil {
 			plan.SkippedCount++
 		} else {
@@ -89,7 +94,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 		if exp.Port > 0 && exp.Port != 80 && exp.Port != 443 {
 			domain = fmt.Sprintf("%s:%d", exp.Host, exp.Port)
 		}
-		rc, warns := p.resolveRouteConfig(domain, "", false, exp.ServiceID, true, false, "")
+		rc, warns := p.resolveRouteConfig(domain, "", false, exp.ServiceID, true, false, "", "")
 		if rc == nil {
 			plan.SkippedCount++
 		} else {
@@ -105,7 +110,7 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 // resolveRouteConfig resolves a single domain to a RouteConfig with warnings.
 func (p *Planner) resolveRouteConfig(
 	domain string, pathPrefix string, stripPrefix bool, serviceID string, tlsEnabled bool,
-	maintenanceEnabled bool, maintenanceMessage string,
+	maintenanceEnabled bool, maintenanceMessage string, gatewayLinkID string,
 ) (*proxy.RouteConfig, []ApplyWarning) {
 	var warnings []ApplyWarning
 
@@ -147,7 +152,6 @@ func (p *Planner) resolveRouteConfig(
 		return nil, warnings
 	}
 
-	// Check if the resolved endpoint had failed attempts
 	for _, att := range result.Attempts {
 		if !att.Success {
 			warnings = append(warnings, ApplyWarning{
@@ -158,7 +162,7 @@ func (p *Planner) resolveRouteConfig(
 		}
 	}
 
-	return &proxy.RouteConfig{
+	rc := &proxy.RouteConfig{
 		Domain:             domain,
 		PathPrefix:         pathPrefix,
 		Kind:               "reverse_proxy",
@@ -170,5 +174,20 @@ func (p *Planner) resolveRouteConfig(
 			EnableGzip:  true,
 			StripPrefix: stripPrefix,
 		},
-	}, warnings
+	}
+
+	// v1.7AB: Inject Gateway Link headers if route is linked to a downstream gateway
+	if gatewayLinkID != "" && p.gwLinkRepo != nil {
+		gw, err := p.gwLinkRepo.FindByID(gatewayLinkID)
+		if err == nil && gw != nil && gw.Status == gatewaylink.StatusActive {
+			rc.Options.ExtraHeaders = map[string]string{
+				"X-Aegis-Gateway-Link": gw.ID,
+			}
+			if gw.AuthValue != "" {
+				rc.Options.ExtraHeaders["X-Aegis-Gateway-Token"] = gw.AuthValue
+			}
+		}
+	}
+
+	return rc, warnings
 }
