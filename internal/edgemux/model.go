@@ -2,6 +2,7 @@ package edgemux
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 	"time"
@@ -74,5 +75,8 @@ func ValidateTarget(host string) (bool, string) {
 		strings.HasPrefix(host, "192.168.") {
 		return true, "private IP allowed"
 	}
-	return false, "target must be 127.0.0.1 or private IP"
+		if net.ParseIP(host) != nil {
+		return true, "public IP allowed"
+	}
+	return false, "target must be a valid IP address"
 }
