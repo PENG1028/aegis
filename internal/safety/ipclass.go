@@ -2,11 +2,13 @@ package safety
 
 import (
 	"net"
+	"strconv"
 	"strings"
 )
 
 // ClassifyIP classifies an IP address into a category.
-// Returns IPInvalid if the input is not a valid IP or is a hostname.
+// Priority: invalid → hostname → loopback → private → public.
+// "self" classification is no longer returned — use IsCurrentNodeAddress instead.
 func ClassifyIP(host string, selfIPs []string) IPClassification {
 	ip := net.ParseIP(host)
 	if ip == nil {
@@ -20,13 +22,7 @@ func ClassifyIP(host string, selfIPs []string) IPClassification {
 		return IPHostname // not an IP, treat as hostname
 	}
 
-	// Check self IPs
-	for _, selfIP := range selfIPs {
-		if ip.Equal(net.ParseIP(selfIP)) {
-			return IPSelf
-		}
-	}
-
+	// Priority: loopback → private → public
 	if ip.IsLoopback() {
 		return IPLoopback
 	}
@@ -37,6 +33,20 @@ func ClassifyIP(host string, selfIPs []string) IPClassification {
 		return IPPublic
 	}
 	return IPInvalid
+}
+
+// IsCurrentNodeAddress returns true if the host matches any of the given node IPs.
+func IsCurrentNodeAddress(host string, nodeIPs []string) bool {
+	ip := net.ParseIP(NormalizeHost(host))
+	if ip == nil {
+		return false
+	}
+	for _, nodeIP := range nodeIPs {
+		if ip.Equal(net.ParseIP(nodeIP)) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsPublicIP returns true if the IP is a public unicast IP.
@@ -50,7 +60,12 @@ func IsPrivateIP(host string) bool {
 	return c == IPPrivate || c == IPLoopback
 }
 
-// NormalizeHost strips the port from a host:port string.
+// NormalizeHost strips the port from a "host:port" string.
+// This is THE canonical host-only extractor for the entire project.
+// Do NOT create another parseHostPort/NormalizeHost/SplitHostPort variant
+// that returns only the host — use this function.
+// For splitting into (host, port), use SplitHostPort instead.
+// Standard library: net.SplitHostPort
 func NormalizeHost(addr string) string {
 	if h, _, err := net.SplitHostPort(addr); err == nil {
 		return h
@@ -61,4 +76,22 @@ func NormalizeHost(addr string) string {
 		return addr
 	}
 	return addr
+}
+
+// SplitHostPort splits a "host:port" string into host and port.
+// This is THE canonical host:port splitter for the entire project.
+// Returns port = 0 if no port is found or the port is invalid.
+// Do NOT create another parseHostPort/HostPort function — use this, or endpoint.HostPort()
+// if you already have an Endpoint value.
+// Standard library: net.SplitHostPort (returns string port + error)
+func SplitHostPort(addr string) (host string, port int) {
+	h, pStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return NormalizeHost(addr), 0
+	}
+	p, err := strconv.Atoi(pStr)
+	if err != nil {
+		return h, 0
+	}
+	return h, p
 }

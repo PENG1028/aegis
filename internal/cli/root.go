@@ -17,6 +17,8 @@ import (
 	"aegis/internal/project"
 	"aegis/internal/route"
 	"aegis/internal/service"
+	"aegis/internal/safety"
+"aegis/internal/relay"
 	"aegis/internal/smoke"
 	"aegis/internal/space"
 	"aegis/internal/trace"
@@ -48,6 +50,8 @@ type Services struct {
 	HTTPServices  *httpapi.Services
 	PendingState  *cluster.PendingState
 	TraceSvc      *trace.Service
+	SafetySvc     *safety.Service
+RelaySvc      *relay.Resolver   // v1.8B
 }
 
 // NewRootCommand creates the root aegis CLI command.
@@ -100,13 +104,24 @@ v0.x — Production-hardened gateway control with HTTP API.`,
 		cmd.AddCommand(newServeCommand(svcs.Config, svcs.HTTPServices))
 		if svcs.HTTPServices.TraceSvc != nil {
 			cmd.AddCommand(newTraceCommand(svcs.HTTPServices.TraceSvc))
-		}
+	}
 	}
 
 	// Trace from svcs directly (for CLI use without serve)
 	if svcs.TraceSvc != nil && svcs.HTTPServices == nil {
 		cmd.AddCommand(newTraceCommand(svcs.TraceSvc))
 	}
+
+	// Safety commands
+	if svcs.SafetySvc != nil {
+		cmd.AddCommand(newSafetyCommand(svcs.SafetySvc))
+	}
+
+		// Relay commands
+	if svcs.RelaySvc != nil {
+		cmd.AddCommand(newRelayCommand(svcs.RelaySvc))
+	}
+	
 
 	// Smoke commands
 	smokeSvc := buildSmokeService(svcs)

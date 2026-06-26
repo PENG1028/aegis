@@ -1,7 +1,8 @@
 package apply
 
 import (
-"aegis/internal/gateway_link"
+	"aegis/internal/gateway_link"
+	"aegis/internal/secrets"
 	"context"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"aegis/internal/manageddomain"
 	"aegis/internal/proxy"
 	"aegis/internal/route"
+	"aegis/internal/safety"
 	"aegis/internal/service"
 	"crypto/sha256"
 	"encoding/hex"
@@ -37,6 +39,7 @@ type AppService struct {
 	rollbackSvc  *RollbackService
 	applyRepo    *Repository
 	logSvc       *logs.AppService
+	masterKey    *secrets.MasterKey // v1.8B-5
 	mu           sync.Mutex
 	pendingState PendingStateClearer // v1.7S
 }
@@ -53,15 +56,18 @@ func NewAppService(
 	applyRepo *Repository,
 	logSvc *logs.AppService,
 	gwLinkRepo *gatewaylink.Repository,
+	safetySvc *safety.Service, // v1.8A
+	masterKey *secrets.MasterKey, // v1.8B-5
 ) *AppService {
 	return &AppService{
 		cfg:         cfg,
 		adapter:     adapter,
-		planner:     NewPlanner(routeRepo, mdRepo, exposureRepo, serviceRepo, endpointResolver, gwLinkRepo),
+		planner:     NewPlanner(routeRepo, mdRepo, exposureRepo, serviceRepo, endpointResolver, gwLinkRepo, safetySvc, masterKey),
 		executor:    NewExecutor(cfg),
 		rollbackSvc: NewRollbackService(applyRepo, cfg),
 		applyRepo:   applyRepo,
 		logSvc:      logSvc,
+		masterKey:   masterKey,
 	}
 }
 

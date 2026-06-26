@@ -1,11 +1,8 @@
 package main
-
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"aegis/internal/id"
 	"fmt"
 	"os"
-
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
 	"aegis/internal/apply"
@@ -23,9 +20,11 @@ import (
 	"aegis/internal/node"
 	"aegis/internal/provider"
 	"aegis/internal/project"
+	"aegis/internal/relay"
 	"aegis/internal/proxy"
 	"aegis/internal/proxy/caddy"
 	"aegis/internal/route"
+	"aegis/internal/secrets"
 	"aegis/internal/safety"
 	"aegis/internal/service"
 	"aegis/internal/space"
@@ -34,10 +33,8 @@ import (
 	"aegis/internal/tcp"
 	"aegis/internal/token"
 	"aegis/internal/trace"
-
 	cli "aegis/internal/cli"
 )
-
 func main() {
 	configPath := ""
 	for i, arg := range os.Args {
@@ -50,7 +47,6 @@ func main() {
 			break
 		}
 	}
-
 	var cfg *config.Config
 	if configPath != "" {
 		var err error
@@ -81,7 +77,6 @@ func main() {
 			cfg = config.DefaultConfig()
 		}
 	}
-
 	db, err := store.OpenSQLite(cfg.Store.SQLitePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: failed to open database: %v\n", err)
@@ -89,12 +84,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
-
 	if err := store.Initialize(db); err != nil {
 		fmt.Fprintf(os.Stderr, "error: failed to run migrations: %v\n", err)
 		os.Exit(1)
 	}
-
 	projectRepo := project.NewRepository(db)
 	serviceRepo := service.NewRepository(db)
 	routeRepo := route.NewRepository(db)
@@ -108,7 +101,6 @@ func main() {
 	edgeRepo := edgemux.NewRepository(db)
 	nodeRepo := node.NewRepository(db)
 	tokenRepo := token.NewRepository(db)
-
 	logSvc := logs.NewAppService(logRepo)
 	applyLogRepo := logs.NewApplyLogRepository(db)
 	auditLogRepo := logs.NewAuditLogRepository(db)
@@ -116,7 +108,6 @@ func main() {
 	logSvc.SetApplyRepo(applyLogRepo)
 	logSvc.SetAuditRepo(auditLogRepo)
 	logSvc.SetNodeEventRepo(nodeEventRepo)
-
 	projectSvc := project.NewAppService(projectRepo, logSvc)
 	serviceSvc := service.NewAppService(serviceRepo, logSvc)
 	edgeSvc := edgemux.NewAppService(edgeRepo, logSvc)
@@ -127,15 +118,12 @@ func main() {
 	if err := listenerSvc.RegisterDefaults(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to register listeners: %v\n", err)
 	}
-
 	tcpManager := tcp.NewManager()
 	defer tcpManager.Shutdown()
-
 	nodeSvc := node.NewService(nodeRepo)
 	if _, err := nodeSvc.RegisterCurrent(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: node registration failed: %v\n", err)
 	}
-
 	leaderSvc := cluster.NewLeaderService(nodeRepo)
 	if leader, err := leaderSvc.GetLeader(); err == nil && leader == nil {
 		if elected, err := leaderSvc.ElectLeader(); err != nil {
@@ -144,31 +132,47 @@ func main() {
 			fmt.Fprintf(os.Stderr, "info: elected leader: %s\n", elected.NodeID)
 		}
 	}
-
 	stateVer := cluster.NewStateVersion(db)
 	reconcileLoop := sync.NewReconcileLoop(nodeRepo, leaderSvc, stateVer)
 	reconcileLoop.Start()
 	defer reconcileLoop.Stop()
-
 	healthSvc := health.NewAppService(healthRepo, serviceRepo, endpointRepo, logSvc)
 	endpointResolver := endpoint.NewResolver(endpointRepo)
-
 	provRegistry := provider.NewRegistry()
 	provRegistry.Register(provider.NewCaddyHTTPProvider(cfg))
 	provRegistry.Register(provider.NewHAProxyTCPProvider(cfg))
-
 	exposureSvc := exposure.NewAppService(exposureRepo, logSvc, provRegistry, listenerSvc)
 	var proxyAdapter proxy.ProxyAdapter = caddy.NewAdapter(cfg)
-
 	// --- Gateway Link (v1.7AB) ---
 	gwLinkRepo := gatewaylink.NewRepository(db)
-
+	// v1.8B-5: Load master key for secret-at-rest encryption
+	masterKey, err := secrets.LoadMasterKey(true)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: master key not available — gateway link secrets will use legacy HMAC storage: %v\n", err)
+		masterKey = nil
+	}
+	safetySvc := safety.NewService(safety.Dependencies{
+		RouteRepo:    routeRepo,
+		MDRRepo:      mdRepo,
+		EndpointRepo: endpointRepo,
+		NodeRepo:     nodeRepo,
+		GWLinkRepo:   gwLinkRepo,
+		ListenerRepo: listenerRepo,
+	})
+	// --- Relay Resolver (v1.8B) ---
+	relaySvc := relay.NewResolver(relay.Dependencies{
+		RouteRepo:    routeRepo,
+		ServiceRepo:  serviceRepo,
+		EndpointRepo: endpointRepo,
+		NodeRepo:     nodeRepo,
+		GWLinkRepo:   gwLinkRepo,
+		ListenerRepo: listenerRepo,
+	})
 	applySvc := apply.NewAppService(
 		cfg, proxyAdapter, routeRepo, mdRepo, exposureRepo, serviceRepo,
 		endpointResolver, applyRepo, logSvc,
-		gwLinkRepo,
+		gwLinkRepo, safetySvc, masterKey,
 	)
-
 	adminUserRepo := adminauth.NewAdminUserRepository(db)
 	adminSessionRepo := adminauth.NewAdminSessionRepository(db)
 	adminAuthSvc := adminauth.NewService(adminUserRepo, adminSessionRepo)
@@ -182,27 +186,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  Store this securely — it will not be shown again.\n")
 		fmt.Fprintf(os.Stderr, "=========================================\n\n")
 	}
-
 	pendingState := cluster.NewPendingState(db)
 	applySvc.SetPendingState(pendingState)
-
-	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, "gw_main", "main-gateway")
-
-	safetySvc := safety.NewService(safety.Dependencies{
-		RouteRepo:    routeRepo,
-		MDRRepo:      mdRepo,
-		EndpointRepo: endpointRepo,
-		NodeRepo:     nodeRepo,
-		GWLinkRepo:   gwLinkRepo,
-	})
-
+	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, "gw_main", "main-gateway", masterKey)
 	spaceRepo := space.NewRepository(db)
 	spaceSvc := space.NewAppService(spaceRepo, logSvc)
 	actionSvc := action.NewActionService(serviceSvc, routeSvc, edgeSvc, endpointRepo, applySvc, spaceRepo, logSvc, listenerSvc)
-
 	token.SetAuditLogger(logSvc)
 	adminauth.SetAuditLogger(logSvc)
-
 	traceSvc := trace.NewService(trace.Dependencies{
 		RouteRepo:    routeRepo,
 		EdgeSvc:      edgeSvc,
@@ -211,9 +202,7 @@ func main() {
 		EndpointRepo: endpointRepo,
 		GatewayLinkRepo: gwLinkRepo,
 	})
-
 	authMiddleware := token.NewAuthMiddleware(cfg.Server.AdminToken, tokenRepo)
-
 	httpSvcs := &httpapi.Services{
 		Config:        cfg,
 		Project:       projectSvc,
@@ -239,8 +228,16 @@ func main() {
 		TraceSvc:      traceSvc,
 		GatewayLinkSvc: gwLinkSvc,
 		SafetySvc:     safetySvc,
+		RelaySvc:      relaySvc,
+		RelayHTTPHandler: relay.RelayHandlerForMux(relay.NewRelayHandler(relay.HandlerDeps{
+			RouteRepo:     routeRepo,
+			EndpointRepo:  endpointRepo,
+			NodeRepo:      nodeRepo,
+			GWLinkRepo:    gwLinkRepo,
+			LogSvc:        logSvc,
+			MasterKey:     masterKey,
+		})),
 	}
-
 	cliSvcs := &cli.Services{
 		Config:        cfg,
 		Project:       projectSvc,
@@ -263,21 +260,17 @@ func main() {
 		HTTPServices:  httpSvcs,
 		PendingState:  pendingState,
 		TraceSvc:      traceSvc,
+		RelaySvc:      relaySvc,
+		SafetySvc:     safetySvc,
 	}
-
 	rootCmd := cli.NewRootCommand(cliSvcs)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
-
 // generateRandomHex returns a cryptographically random hex string of n bytes.
+// Delegates to id.GenerateRandomHex — the project's canonical random-hex generator.
 func generateRandomHex(n int) string {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		// crypto/rand.Read failing on a modern OS is extraordinarily rare.
-		return "fallback-insecure-" + hex.EncodeToString([]byte("CHANGE-ME"))
-	}
-	return hex.EncodeToString(b)
+	return id.GenerateRandomHex(n)
 }

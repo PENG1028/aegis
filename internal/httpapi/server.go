@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+"net/http"
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
 	"aegis/internal/apply"
@@ -18,6 +19,7 @@ import (
 	"aegis/internal/node"
 	"aegis/internal/project"
 	"aegis/internal/route"
+"aegis/internal/relay"
 	"aegis/internal/service"
 	"aegis/internal/space"
 	"aegis/internal/token"
@@ -52,4 +54,6 @@ type Services struct {
 	TraceSvc        *trace.Service         // v1.7T
 	GatewayLinkSvc  *gatewaylink.Service   // v1.7AB
 	SafetySvc       *safety.Service        // v1.8A
+RelaySvc        *relay.Resolver        // v1.8B
+	RelayHTTPHandler http.Handler           // v1.8B relay dispatch
 }

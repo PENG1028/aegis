@@ -1,8 +1,7 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"aegis/internal/id"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -159,12 +158,7 @@ func (c *Config) ResolveValidateCommand(configPath string) string {
 }
 
 // generateAdminToken creates a cryptographically random 32-byte hex token.
+// Delegates to id.GenerateRandomHex — the project's canonical random-hex generator.
 func generateAdminToken() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback: crypto/rand.Read failing on a modern OS is extremely rare.
-		// Return a fixed prefix so the operator knows something is wrong.
-		return "ERROR-CRYPTO-RAND-FAILED-" + hex.EncodeToString([]byte("PLEASE-REPORT"))
-	}
-	return hex.EncodeToString(b)
+	return id.GenerateRandomHex(32)
 }

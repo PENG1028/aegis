@@ -49,6 +49,12 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Relay handler: uses GatewayLink-based auth, not Bearer token
+		if strings.HasPrefix(r.URL.Path, "/__aegis/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// If admin session is already validated (by AdminAuthMiddleware),
 		// skip bearer token check and use admin context directly.
 		if adminCtx := adminauth.GetAdminContext(r.Context()); adminCtx != nil {

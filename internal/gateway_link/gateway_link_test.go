@@ -181,7 +181,7 @@ func TestServiceCreateGateway(t *testing.T) {
 	defer db.Close()
 
 	repo := NewRepository(db)
-	svc := NewService(repo, "gw_self", "server-a")
+	svc := NewService(repo, "gw_self", "server-a", nil)
 
 	gw, secret, err := svc.Register("server-b", "43.159.34.11", "10.3.0.11", 443, TypeUpstream, true)
 	if err != nil {
@@ -204,7 +204,7 @@ func TestServiceRotateSecret(t *testing.T) {
 	defer db.Close()
 
 	repo := NewRepository(db)
-	svc := NewService(repo, "gw_self", "server-a")
+	svc := NewService(repo, "gw_self", "server-a", nil)
 
 	_, _, err := svc.Register("server-b", "43.159.34.11", "", 443, TypeUpstream, true)
 	if err != nil {
@@ -231,7 +231,7 @@ func TestAuthHeaderRoundTrip(t *testing.T) {
 	defer db.Close()
 
 	repo := NewRepository(db)
-	svc := NewService(repo, "gw_self", "server-a")
+	svc := NewService(repo, "gw_self", "server-a", nil)
 
 	_, secret, err := svc.Register("server-b", "43.159.34.11", "", 443, TypeUpstream, true)
 	if err != nil {

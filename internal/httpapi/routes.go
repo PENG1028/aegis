@@ -31,6 +31,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		TraceSvc:      svcs.TraceSvc,
 		SafetySvc:     svcs.SafetySvc,
 		GatewayLinkSvc: svcs.GatewayLinkSvc,
+		RelayResolver: &handlers.RelayResolver{Resolver: svcs.RelaySvc},
 	}
 
 	// System
@@ -180,6 +181,11 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("GET /api/admin/v1/gateway-links/{id}", h.GetGatewayLink)
 		mux.HandleFunc("DELETE /api/admin/v1/gateway-links/{id}", h.DeleteGatewayLink)
 		mux.HandleFunc("POST /api/admin/v1/gateway-links/{id}/rotate", h.RotateGatewayLinkSecret)
+	mux.HandleFunc("GET /api/admin/v1/relay/resolve", h.ResolveRelay)
+	// v1.8B relay dispatch — uses GatewayLink auth
+	if svcs.RelayHTTPHandler != nil {
+		mux.Handle("POST /__aegis/relay", svcs.RelayHTTPHandler)
+	}
 	mux.HandleFunc("GET /api/admin/v1/trace/domain/{domain}", h.TraceDomain)
 	mux.HandleFunc("GET /api/admin/v1/trace/sni/{sni_host}", h.TraceSNI)
 	mux.HandleFunc("GET /api/admin/v1/trace/route/{route_id}", h.TraceRoute)
