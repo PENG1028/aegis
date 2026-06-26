@@ -26,6 +26,7 @@ import (
 	"aegis/internal/proxy"
 	"aegis/internal/proxy/caddy"
 	"aegis/internal/route"
+	"aegis/internal/safety"
 	"aegis/internal/service"
 	"aegis/internal/space"
 	"aegis/internal/store"
@@ -187,6 +188,14 @@ func main() {
 
 	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, "gw_main", "main-gateway")
 
+	safetySvc := safety.NewService(safety.Dependencies{
+		RouteRepo:    routeRepo,
+		MDRRepo:      mdRepo,
+		EndpointRepo: endpointRepo,
+		NodeRepo:     nodeRepo,
+		GWLinkRepo:   gwLinkRepo,
+	})
+
 	spaceRepo := space.NewRepository(db)
 	spaceSvc := space.NewAppService(spaceRepo, logSvc)
 	actionSvc := action.NewActionService(serviceSvc, routeSvc, edgeSvc, endpointRepo, applySvc, spaceRepo, logSvc, listenerSvc)
@@ -229,6 +238,7 @@ func main() {
 		PendingState:  pendingState,
 		TraceSvc:      traceSvc,
 		GatewayLinkSvc: gwLinkSvc,
+		SafetySvc:     safetySvc,
 	}
 
 	cliSvcs := &cli.Services{
