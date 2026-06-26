@@ -12,14 +12,14 @@ import (
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
 	"aegis/internal/gateway_link"
-"aegis/internal/safety"
 	"aegis/internal/health"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
-	"aegis/internal/node"
 	"aegis/internal/manageddomain"
+	"aegis/internal/node"
 	"aegis/internal/project"
 	"aegis/internal/route"
+	"aegis/internal/safety"
 	"aegis/internal/service"
 	"aegis/internal/space"
 	"aegis/internal/store"
@@ -57,7 +57,8 @@ type Handlers struct {
 	PendingState    *cluster.PendingState  // v1.7S
 	TraceSvc        *trace.Service         // v1.7T
 	GatewayLinkSvc  *gatewaylink.Service
-	SafetySvc        *safety.Service   // v1.7AB
+	SafetySvc       *safety.Service        // v1.7AB
+	RelayResolver   *RelayResolver         // v1.8B
 }
 
 // SystemStatus returns enhanced system status.

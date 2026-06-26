@@ -16,14 +16,22 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{DB: db}
 }
 
+const gwSelectCols = `id, name, host, private_ip, port, auth_type, gateway_type, auto_route, target_node_id, status, created_at, updated_at`
+
+const gwSelectColsWithAuth = `id, name, host, private_ip, port, auth_type, auth_value, gateway_type, auto_route, target_node_id, status, created_at, updated_at`
+
+const gwSelectColsEncrypted = `id, name, host, private_ip, port, auth_type, auth_value, gateway_type, auto_route, target_node_id, encrypted_secret, secret_nonce, secret_version, secret_created_at, secret_rotated_at, status, created_at, updated_at`
+
 // Create inserts a new trusted gateway.
 func (r *Repository) Create(g *TrustedGateway) error {
 	_, err := r.DB.Exec(
 		`INSERT INTO trusted_gateways
-		 (id, name, host, private_ip, port, auth_type, auth_value, gateway_type, auto_route, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (id, name, host, private_ip, port, auth_type, auth_value, gateway_type, auto_route,
+		  target_node_id, encrypted_secret, secret_nonce, secret_version, secret_created_at, secret_rotated_at, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		g.ID, g.Name, g.Host, g.PrivateIP, g.Port,
-		g.AuthType, g.AuthValue, g.GatewayType, g.AutoRoute, g.Status,
+		g.AuthType, g.AuthValue, g.GatewayType, g.AutoRoute, g.TargetNodeID,
+		g.EncryptedSecret, g.SecretNonce, g.SecretVersion, g.SecretCreatedAt, g.SecretRotatedAt, g.Status,
 		g.CreatedAt.Format(time.RFC3339), g.UpdatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -32,11 +40,10 @@ func (r *Repository) Create(g *TrustedGateway) error {
 	return nil
 }
 
-// FindAll returns all trusted gateways.
+// FindAll returns all trusted gateways (no auth_value or encrypted secret).
 func (r *Repository) FindAll() ([]TrustedGateway, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, name, host, private_ip, port, auth_type, gateway_type, auto_route, status, created_at, updated_at
-		 FROM trusted_gateways ORDER BY name`)
+		`SELECT ` + gwSelectCols + ` FROM trusted_gateways ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("query trusted_gateways: %w", err)
 	}
@@ -44,25 +51,59 @@ func (r *Repository) FindAll() ([]TrustedGateway, error) {
 	return scanGateways(rows)
 }
 
-// FindByID returns a trusted gateway by ID.
+// FindByID returns a trusted gateway by ID (includes auth_value and encrypted fields).
 func (r *Repository) FindByID(id string) (*TrustedGateway, error) {
-	row := r.DB.QueryRow(
-		`SELECT id, name, host, private_ip, port, auth_type, auth_value, gateway_type, auto_route, status, created_at, updated_at
-		 FROM trusted_gateways WHERE id = ?`, id)
-	g, err := scanGateway(row)
+	var g TrustedGateway
+	var createdAt, updatedAt string
+	var privateIP, authType, authValue sql.NullString
+	var targetNodeID sql.NullString
+	var encryptedSecret, secretNonce, secretCreatedAt, secretRotatedAt sql.NullString
+	var secretVersion sql.NullInt64
+	err := r.DB.QueryRow(
+		`SELECT `+gwSelectColsEncrypted+` FROM trusted_gateways WHERE id = ?`, id,
+	).Scan(&g.ID, &g.Name, &g.Host, &privateIP, &g.Port,
+		&authType, &authValue, &g.GatewayType, &g.AutoRoute, &targetNodeID,
+		&encryptedSecret, &secretNonce, &secretVersion, &secretCreatedAt, &secretRotatedAt,
+		&g.Status, &createdAt, &updatedAt)
 	if err != nil {
-		return nil, err
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query trusted_gateway by id: %w", err)
 	}
-	return g, nil
+	g.PrivateIP = privateIP.String
+	g.AuthType = authType.String
+	g.AuthValue = authValue.String
+	g.TargetNodeID = targetNodeID.String
+	g.EncryptedSecret = encryptedSecret.String
+	g.SecretNonce = secretNonce.String
+	if secretVersion.Valid {
+		g.SecretVersion = int(secretVersion.Int64)
+	}
+	g.SecretCreatedAt = secretCreatedAt.String
+	g.SecretRotatedAt = secretRotatedAt.String
+	g.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	g.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	return &g, nil
 }
 
-// FindByType returns gateways of a specific type.
+// FindByType returns gateways of a specific type (no auth_value or encrypted secret).
 func (r *Repository) FindByType(gatewayType string) ([]TrustedGateway, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, name, host, private_ip, port, auth_type, gateway_type, auto_route, status, created_at, updated_at
-		 FROM trusted_gateways WHERE gateway_type = ? ORDER BY name`, gatewayType)
+		`SELECT `+gwSelectCols+` FROM trusted_gateways WHERE gateway_type = ? ORDER BY name`, gatewayType)
 	if err != nil {
 		return nil, fmt.Errorf("query trusted_gateways by type: %w", err)
+	}
+	defer rows.Close()
+	return scanGateways(rows)
+}
+
+// FindByTargetNodeID returns gateways targeting a specific node (no auth_value).
+func (r *Repository) FindByTargetNodeID(nodeID string) ([]TrustedGateway, error) {
+	rows, err := r.DB.Query(
+		`SELECT `+gwSelectCols+` FROM trusted_gateways WHERE target_node_id = ? ORDER BY name`, nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("query trusted_gateways by target_node_id: %w", err)
 	}
 	defer rows.Close()
 	return scanGateways(rows)
@@ -84,11 +125,21 @@ func (r *Repository) UpdateStatus(id, status string) error {
 	return err
 }
 
-// RotateSecret updates the auth secret.
+// RotateSecret updates the auth secret (legacy HMAC path).
 func (r *Repository) RotateSecret(id, newAuthValue string) error {
 	_, err := r.DB.Exec(
 		`UPDATE trusted_gateways SET auth_value = ?, updated_at = ? WHERE id = ?`,
 		newAuthValue, time.Now().Format(time.RFC3339), id)
+	return err
+}
+
+// RotateSecretEncrypted rotates the secret with encrypted storage (v1.8B-5).
+func (r *Repository) RotateSecretEncrypted(id, encryptedSecret, secretNonce string, secretVersion int, secretRotatedAt string) error {
+	_, err := r.DB.Exec(
+		`UPDATE trusted_gateways SET encrypted_secret = ?, secret_nonce = ?, secret_version = ?,
+		 secret_rotated_at = ?, updated_at = ? WHERE id = ?`,
+		encryptedSecret, secretNonce, secretVersion, secretRotatedAt,
+		time.Now().Format(time.RFC3339), id)
 	return err
 }
 
@@ -104,39 +155,23 @@ func scanGateways(rows *sql.Rows) ([]TrustedGateway, error) {
 		var g TrustedGateway
 		var createdAt, updatedAt string
 		var privateIP, authType sql.NullString
+		var targetNodeID sql.NullString
 		err := rows.Scan(&g.ID, &g.Name, &g.Host, &privateIP, &g.Port,
-			&authType, &g.GatewayType, &g.AutoRoute, &g.Status,
+			&authType, &g.GatewayType, &g.AutoRoute, &targetNodeID, &g.Status,
 			&createdAt, &updatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("scan trusted_gateway: %w", err)
 		}
 		g.PrivateIP = privateIP.String
 		g.AuthType = authType.String
-		g.AuthValue = "" // never returned
+		g.TargetNodeID = targetNodeID.String
+		g.AuthValue = "" // never returned in list queries
+		g.EncryptedSecret = ""
+		g.SecretNonce = ""
+		g.SecretVersion = 0
 		g.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		g.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 		gateways = append(gateways, g)
 	}
 	return gateways, rows.Err()
-}
-
-func scanGateway(row *sql.Row) (*TrustedGateway, error) {
-	var g TrustedGateway
-	var createdAt, updatedAt string
-	var privateIP, authType, authValue sql.NullString
-	err := row.Scan(&g.ID, &g.Name, &g.Host, &privateIP, &g.Port,
-		&authType, &authValue, &g.GatewayType, &g.AutoRoute, &g.Status,
-		&createdAt, &updatedAt)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("scan trusted_gateway: %w", err)
-	}
-	g.PrivateIP = privateIP.String
-	g.AuthType = authType.String
-	g.AuthValue = authValue.String
-	g.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	g.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-	return &g, nil
 }

@@ -9,6 +9,8 @@ import (
 	"aegis/internal/manageddomain"
 	"aegis/internal/proxy"
 	"aegis/internal/route"
+	"aegis/internal/safety"
+	"aegis/internal/secrets"
 	"aegis/internal/service"
 )
 
@@ -20,6 +22,8 @@ type Planner struct {
 	serviceRepo      *service.Repository
 	endpointResolver *endpoint.Resolver
 	gwLinkRepo       *gatewaylink.Repository // v1.7AB
+	safetySvc        *safety.Service         // v1.8A
+	masterKey        *secrets.MasterKey      // v1.8B-5: for decrypting GatewayLink secrets
 }
 
 // NewPlanner creates a new apply planner.
@@ -30,6 +34,8 @@ func NewPlanner(
 	serviceRepo *service.Repository,
 	endpointResolver *endpoint.Resolver,
 	gwLinkRepo *gatewaylink.Repository, // v1.7AB
+	safetySvc *safety.Service,          // v1.8A
+	masterKey *secrets.MasterKey,       // v1.8B-5
 ) *Planner {
 	return &Planner{
 		routeRepo:        routeRepo,
@@ -38,6 +44,8 @@ func NewPlanner(
 		serviceRepo:      serviceRepo,
 		endpointResolver: endpointResolver,
 		gwLinkRepo:       gwLinkRepo,
+		safetySvc:        safetySvc,
+		masterKey:        masterKey,
 	}
 }
 
@@ -191,19 +199,35 @@ func (p *Planner) resolveRouteConfigWithService(
 		},
 	}
 
-	// v1.7AB: Inject Gateway Link headers if route is linked to a downstream gateway
-	if gatewayLinkID != "" && p.gwLinkRepo != nil {
-		gw, err := p.gwLinkRepo.FindByID(gatewayLinkID)
-		if err == nil && gw != nil && gw.Status == gatewaylink.StatusActive {
-			rc.Options.ExtraHeaders = map[string]string{
-				"X-Aegis-Gateway-Link": gw.ID,
+		// v1.7AB: Inject Gateway Link headers if route is linked to a downstream gateway
+		if gatewayLinkID != "" && p.gwLinkRepo != nil {
+			gw, err := p.gwLinkRepo.FindByID(gatewayLinkID)
+			if err == nil && gw != nil && gw.Status == gatewaylink.StatusActive {
+				rc.Options.ExtraHeaders = map[string]string{
+					"X-Aegis-Gateway-Link": gw.ID,
+				}
+				// v1.8B-5: Get raw secret (decrypts encrypted secret, falls back to HMAC hash)
+				if gw.HasSecret() {
+					secret, err := gw.GetRawSecret(p.masterKey)
+					if err == nil && secret != "" {
+						rc.Options.ExtraHeaders["X-Aegis-Gateway-Token"] = secret
+					}
+				}
 			}
-			if gw.AuthValue != "" {
-				rc.Options.ExtraHeaders["X-Aegis-Gateway-Token"] = gw.AuthValue
-			}
+		}
+	// v1.8A: Safety warnings from Planner (detection only, does not block apply)
+	if p.safetySvc != nil {
+		targetHost := result.Endpoint.Address
+		safetyRisks := p.safetySvc.GetPlannerWarnings(domain, targetHost, gatewayLinkID)
+		for _, risk := range safetyRisks {
+			warnings = append(warnings, ApplyWarning{
+				Code:     "SAFETY_" + risk.Code,
+				Severity: risk.Severity,
+				Message:  risk.Message,
+				Target:   domain,
+			})
 		}
 	}
 
 	return rc, warnings
 }
-

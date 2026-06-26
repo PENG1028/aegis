@@ -142,6 +142,16 @@ func AllMigrations() []Migration {
 			Name:    "add_route_gateway_link",
 			UpSQL:   migration025,
 		},
+		{
+			Version: "026",
+			Name:    "add_relay_fields",
+			UpSQL:   migration026,
+		},
+		{
+			Version: "027",
+			Name:    "add_gateway_link_encryption",
+			UpSQL:   migration027,
+		},
 	}
 }
 
@@ -790,4 +800,22 @@ CREATE TABLE IF NOT EXISTS deployment_instances (
 );
 CREATE INDEX IF NOT EXISTS idx_deployment_instances_deployment_id ON deployment_instances(deployment_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_instances_node_id ON deployment_instances(node_id);
+`
+
+// migration026 adds relay-related fields: endpoints.node_id + trusted_gateways.target_node_id.
+const migration026 = `
+ALTER TABLE endpoints ADD COLUMN node_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE trusted_gateways ADD COLUMN target_node_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_endpoints_node_id ON endpoints(node_id);
+CREATE INDEX IF NOT EXISTS idx_trusted_gateways_target_node ON trusted_gateways(target_node_id);
+`
+
+// migration027 adds encrypted secret fields to trusted_gateways for secret-at-rest.
+const migration027 = `
+ALTER TABLE trusted_gateways ADD COLUMN encrypted_secret TEXT NOT NULL DEFAULT '';
+ALTER TABLE trusted_gateways ADD COLUMN secret_nonce TEXT NOT NULL DEFAULT '';
+ALTER TABLE trusted_gateways ADD COLUMN secret_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE trusted_gateways ADD COLUMN secret_created_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE trusted_gateways ADD COLUMN secret_rotated_at TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_trusted_gateways_encrypted ON trusted_gateways(encrypted_secret);
 `

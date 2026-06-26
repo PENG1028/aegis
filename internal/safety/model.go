@@ -25,7 +25,6 @@ const (
 	IPPublic   IPClassification = "public"
 	IPPrivate  IPClassification = "private"
 	IPLoopback IPClassification = "loopback"
-	IPSelf     IPClassification = "self"
 	IPInvalid  IPClassification = "invalid"
 	IPHostname IPClassification = "hostname"
 )
@@ -39,32 +38,36 @@ type Risk struct {
 
 // RouteSafetyResult is the output of a route safety check.
 type RouteSafetyResult struct {
-	RouteID             string `json:"route_id"`
-	Domain              string `json:"domain"`
-	TargetHost          string `json:"target_host"`
-	TargetPort          int    `json:"target_port"`
-	IPClassification    string `json:"ip_classification"`
-	HasGatewayLink      bool   `json:"has_gateway_link"`
-	GatewayLinkID       string `json:"gateway_link_id,omitempty"`
-	GatewayLinkRequired bool   `json:"gateway_link_required,omitempty"`
-	Risks               []Risk `json:"risks"`
-	Recommendation      string `json:"recommendation,omitempty"`
+	RouteID                string   `json:"route_id"`
+	Domain                 string   `json:"domain"`
+	TargetHost             string   `json:"target_host"`
+	TargetPort             int      `json:"target_port"`
+	IPClassification       string   `json:"ip_classification"`
+	IsCurrentNodeAddress   bool     `json:"is_current_node_address"`
+	IsGatewayListenerTarget bool    `json:"is_gateway_listener_target"`
+	HasGatewayLink         bool     `json:"has_gateway_link"`
+	GatewayLinkID          string   `json:"gateway_link_id,omitempty"`
+	GatewayLinkRequired    bool     `json:"gateway_link_required,omitempty"`
+	Risks                  []Risk   `json:"risks"`
+	Recommendation         string   `json:"recommendation,omitempty"`
 }
 
 // EgressTraceResult is the output of an egress trace.
 type EgressTraceResult struct {
-	Domain             string           `json:"domain"`
-	ResolvedIPs        []string         `json:"resolved_ips"`
-	IPClassification   string           `json:"ip_classification"`
-	IsManagedDomain    bool             `json:"is_aegis_managed_domain"`
-	MatchedRouteID     string           `json:"matched_route_id,omitempty"`
-	GatewayNode        string           `json:"gateway_node"`
-	CurrentNode        string           `json:"current_node"`
-	TargetHost         string           `json:"target_host,omitempty"`
-	TargetPort         int              `json:"target_port,omitempty"`
-	HasGatewayLink     bool             `json:"has_gateway_link"`
-	GatewayLinkID      string           `json:"gateway_link_id,omitempty"`
-	InternalTargetAvail bool            `json:"internal_target_available"`
-	Risks              []Risk           `json:"risks"`
-	Recommendation     string           `json:"recommendation,omitempty"`
+	Domain                 string   `json:"domain"`
+	ResolvedIPs            []string `json:"resolved_ips"`
+	IPClassification       string   `json:"ip_classification"`
+	IsManagedDomain        bool     `json:"is_aegis_managed_domain"`
+	MatchedRouteID         string   `json:"matched_route_id,omitempty"`
+	GatewayNode            string   `json:"gateway_node"`
+	CurrentNode            string   `json:"current_node"`
+	TargetHost             string   `json:"target_host,omitempty"`
+	TargetPort             int      `json:"target_port,omitempty"`
+	HasGatewayLink         bool     `json:"has_gateway_link"`
+	GatewayLinkID          string   `json:"gateway_link_id,omitempty"`
+	IsCurrentNodeAddress   bool     `json:"is_current_node_address"`
+	IsGatewayListenerTarget bool    `json:"is_gateway_listener_target"`
+	InternalTargetAvail    bool     `json:"internal_target_available"`
+	Risks                  []Risk   `json:"risks"`
+	Recommendation         string   `json:"recommendation,omitempty"`
 }

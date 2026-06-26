@@ -1,8 +1,7 @@
 package adminauth
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"aegis/internal/id"
 	"fmt"
 	"sync"
 	"time"
@@ -194,8 +193,7 @@ func logAuditEvent(actorType, actorID, eventType, ip, userAgent, targetType, tar
 }
 
 // generateToken creates a cryptographically random hex token.
+// Delegates to id.GenerateRandomHex — the project's canonical random-hex generator.
 func generateToken(bytes int) string {
-	b := make([]byte, bytes)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	return id.GenerateRandomHex(bytes)
 }

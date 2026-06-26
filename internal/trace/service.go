@@ -13,6 +13,7 @@ import (
 	"aegis/internal/node"
 	"aegis/internal/provider"
 	"aegis/internal/route"
+	"aegis/internal/safety"
 )
 
 // Dependencies provides read-only access to all subsystems needed for tracing.
@@ -500,14 +501,12 @@ func isConnRefused(err error) bool {
 }
 
 // parseHostPort splits an address like "host:port" or "1.2.3.4:8080".
+// Defaults port to 80 if not present (HTTP assumption).
+// Uses safety.SplitHostPort for the canonical split — do NOT rewrite the split logic here.
 func parseHostPort(addr string) (host string, port int) {
-	h, p, err := net.SplitHostPort(addr)
-	if err != nil {
-		return addr, 80
+	host, port = safety.SplitHostPort(addr)
+	if port == 0 {
+		port = 80 // HTTP default
 	}
-	portNum := 80
-	if n, err := fmt.Sscanf(p, "%d", &portNum); err == nil && n == 1 {
-		port = portNum
-	}
-	return h, port
+	return host, port
 }

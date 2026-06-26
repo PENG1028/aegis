@@ -120,6 +120,11 @@ func NormalizeAddress(addr string) string {
 }
 
 // parseHostPort extracts host and port from an address string.
+// NOTE: Unlike the canonical safety.SplitHostPort, this function:
+//   - Strips "http://" and "https://" URL prefixes
+//   - Returns port as string (not int)
+//   - Defaults to "80" or "443" based on scheme
+// For simple "host:port" splitting, use safety.SplitHostPort instead.
 func parseHostPort(addr string) (host string, port string, err error) {
 	cleaned := addr
 	if len(cleaned) > 7 && strings.HasPrefix(cleaned, "http://") {
