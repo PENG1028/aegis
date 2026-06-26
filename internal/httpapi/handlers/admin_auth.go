@@ -28,12 +28,18 @@ func (h *Handlers) AdminLogin(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.AdminAuth.Login(input.Username, input.Password, ip, userAgent)
 	if err != nil {
+		// Check for rate limiting
+		errMsg := err.Error()
+		if len(errMsg) > 20 && errMsg[:7] == "too many" {
+			writeError(w, http.StatusTooManyRequests, errMsg)
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	// Set session cookie
-	adminauth.SetSessionCookie(w, result.SessionToken, result.ExpiresAt.Format(time.RFC3339))
+	adminauth.SetSessionCookie(w, result.SessionToken, result.ExpiresAt.Format(time.RFC3339), h.Config.Server.SessionSecure)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"user": map[string]interface{}{

@@ -1,9 +1,12 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -35,8 +38,9 @@ type StoreConfig struct {
 
 // ServerConfig holds HTTP API server settings.
 type ServerConfig struct {
-	Addr       string `yaml:"addr"`
-	AdminToken string `yaml:"admin_token"`
+	Addr          string `yaml:"addr"`
+	AdminToken    string `yaml:"admin_token"`
+	SessionSecure bool   `yaml:"session_secure"`
 }
 
 // ManagedDomainConfig holds managed domain settings.
@@ -69,8 +73,9 @@ func DefaultConfig() *Config {
 			SQLitePath: filepath.Join(baseDir, "aegis.db"),
 		},
 		Server: ServerConfig{
-			Addr:       "127.0.0.1:7380",
-			AdminToken: "change-me",
+			Addr:          "127.0.0.1:7380",
+			AdminToken:    generateAdminToken(),
+			SessionSecure: false, // dev: no TLS by default
 		},
 		ManagedDomain: ManagedDomainConfig{
 			GatewayDomain: "",
@@ -98,8 +103,9 @@ func ProductionConfig() *Config {
 			SQLitePath: "/var/lib/aegis/aegis.db",
 		},
 		Server: ServerConfig{
-			Addr:       "127.0.0.1:7380",
-			AdminToken: "change-me",
+			Addr:          "127.0.0.1:7380",
+			AdminToken:    generateAdminToken(),
+			SessionSecure: true, // prod: assume TLS
 		},
 		ManagedDomain: ManagedDomainConfig{
 			GatewayDomain: "gateway.example.com",
@@ -147,20 +153,18 @@ func (c *Config) Save(path string) error {
 // ResolveValidateCommand replaces template variables in the validate command.
 func (c *Config) ResolveValidateCommand(configPath string) string {
 	cmd := c.Proxy.ValidateCommand
-	cmd = replaceVar(cmd, "{{caddy_binary}}", c.Proxy.CaddyBinary)
-	cmd = replaceVar(cmd, "{{config_path}}", configPath)
+	cmd = strings.ReplaceAll(cmd, "{{caddy_binary}}", c.Proxy.CaddyBinary)
+	cmd = strings.ReplaceAll(cmd, "{{config_path}}", configPath)
 	return cmd
 }
 
-func replaceVar(s, old, new string) string {
-	result := ""
-	for i := 0; i < len(s); i++ {
-		if i+len(old) <= len(s) && s[i:i+len(old)] == old {
-			result += new
-			i += len(old) - 1
-		} else {
-			result += string(s[i])
-		}
+// generateAdminToken creates a cryptographically random 32-byte hex token.
+func generateAdminToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: crypto/rand.Read failing on a modern OS is extremely rare.
+		// Return a fixed prefix so the operator knows something is wrong.
+		return "ERROR-CRYPTO-RAND-FAILED-" + hex.EncodeToString([]byte("PLEASE-REPORT"))
 	}
-	return result
+	return hex.EncodeToString(b)
 }

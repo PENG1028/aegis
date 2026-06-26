@@ -133,14 +133,14 @@ func AllMigrations() []Migration {
 			UpSQL:   migration023,
 		},
 	{
-			Version: "025",
-			Name:    "add_route_gateway_link",
-			UpSQL:   migration025,
-		},
-		{
 			Version: "024",
 			Name:    "add_trusted_gateways",
 			UpSQL:   migration024,
+		},
+		{
+			Version: "025",
+			Name:    "add_route_gateway_link",
+			UpSQL:   migration025,
 		},
 	}
 }
@@ -740,7 +740,7 @@ CREATE TABLE IF NOT EXISTS gateway_listeners (
 CREATE INDEX IF NOT EXISTS idx_gateway_listeners_node_id ON gateway_listeners(node_id);
 `
 
-// migration023 adds deployment version tracking tables.
+// migration025 adds gateway_link_id column to routes (Gateway Link binding).
 const migration025 = `
 ALTER TABLE routes ADD COLUMN gateway_link_id TEXT NOT NULL DEFAULT "";
 `
@@ -761,6 +761,7 @@ CREATE TABLE IF NOT EXISTS trusted_gateways (
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_trusted_gateways_gateway_type ON trusted_gateways(gateway_type);
 `
 
 const migration023 = `

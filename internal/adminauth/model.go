@@ -1,13 +1,13 @@
 package adminauth
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"time"
 
 	"aegis/internal/id"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // AdminUser represents the single administrator account.
@@ -40,55 +40,20 @@ func (s *AdminSession) IsRevoked() bool {
 	return !s.RevokedAt.IsZero()
 }
 
-// hashPassword creates a salted SHA-256 hash of a password.
-// Format: $sha256$<hex-salt>$<hex-hash>
+// hashPassword creates a bcrypt hash of a password.
+// Uses cost factor 12 (~250ms per hash on modern hardware).
 func hashPassword(password string) (string, error) {
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
 		return "", err
 	}
-	h := sha256.New()
-	h.Write(salt)
-	h.Write([]byte(password))
-	hash := hex.EncodeToString(h.Sum(nil))
-	saltHex := hex.EncodeToString(salt)
-	return fmt.Sprintf("$sha256$%s$%s", saltHex, hash), nil
+	return string(hash), nil
 }
 
-// checkPassword verifies a password against a salted SHA-256 hash.
+// checkPasswordHash verifies a password against a bcrypt hash.
 func checkPasswordHash(password, storedHash string) bool {
-	parts := splitHash(storedHash)
-	if len(parts) != 3 || parts[0] != "$sha256$" {
-		return false
-	}
-	salt, err := hex.DecodeString(parts[1])
-	if err != nil {
-		return false
-	}
-	h := sha256.New()
-	h.Write(salt)
-	h.Write([]byte(password))
-	expected := hex.EncodeToString(h.Sum(nil))
-	return expected == parts[2]
-}
-
-// splitHash splits a hash string formatted as $sha256$<salt>$<hash>
-func splitHash(hash string) []string {
-	// Format: $sha256$<salt>$<hash>
-	if len(hash) < 9 || hash[:8] != "$sha256$" {
-		return nil
-	}
-	rest := hash[8:]
-	var parts []string
-	parts = append(parts, "$sha256$")
-	// Find first $ after position 8
-	for i := 0; i < len(rest); i++ {
-		if rest[i] == '$' {
-			parts = append(parts, rest[:i], rest[i+1:])
-			return parts
-		}
-	}
-	return nil
+	err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(password))
+	return err == nil
 }
 
 // NewAdminUser creates a new admin user with a hashed password.

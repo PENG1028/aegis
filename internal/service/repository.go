@@ -3,6 +3,7 @@ package service
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -63,6 +64,42 @@ func (r *Repository) FindByID(id string) (*Service, error) {
 	s.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	s.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	return &s, nil
+}
+
+// FindByIDs returns services for a set of IDs in a single query.
+// Returns empty map if ids is empty. This avoids N+1 queries in the apply planner.
+func (r *Repository) FindByIDs(ids []string) (map[string]*Service, error) {
+	if len(ids) == 0 {
+		return map[string]*Service{}, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	rows, err := r.DB.Query(
+		`SELECT id, project_id, name, kind, env, status, note, space_id, owner_type, owner_id, created_by_token_id, created_at, updated_at
+		 FROM services WHERE id IN (`+strings.Join(placeholders, ",")+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query services by ids: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]*Service)
+	for rows.Next() {
+		var s Service
+		var createdAt, updatedAt string
+		var note sql.NullString
+		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Name, &s.Kind, &s.Env, &s.Status, &note, &s.SpaceID, &s.OwnerType, &s.OwnerID, &s.CreatedByTokenID, &createdAt, &updatedAt); err != nil {
+			return nil, fmt.Errorf("scan service: %w", err)
+		}
+		s.Note = note.String
+		s.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		s.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		result[s.ID] = &s
+	}
+	return result, rows.Err()
 }
 
 // FindByName returns a service by name.
