@@ -12,6 +12,7 @@ import (
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
 	"aegis/internal/gateway_link"
+"aegis/internal/safety"
 	"aegis/internal/health"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
@@ -55,7 +56,8 @@ type Handlers struct {
 	DeploymentSvc *deployment.Service
 	PendingState    *cluster.PendingState  // v1.7S
 	TraceSvc        *trace.Service         // v1.7T
-	GatewayLinkSvc  *gatewaylink.Service   // v1.7AB
+	GatewayLinkSvc  *gatewaylink.Service
+	SafetySvc        *safety.Service   // v1.7AB
 }
 
 // SystemStatus returns enhanced system status.
