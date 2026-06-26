@@ -99,14 +99,14 @@ func writeAdminError(w http.ResponseWriter, status int, code, message string) {
 }
 
 // SetSessionCookie sets the admin session cookie on a response.
-func SetSessionCookie(w http.ResponseWriter, token string, expiresAt string) {
+func SetSessionCookie(w http.ResponseWriter, token string, expiresAt string, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "aegis_admin_session",
 		Value:    token,
 		Path:     "/api/admin/v1",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   false, // set to true in production with HTTPS
+		Secure:   secure,
 		MaxAge:   int(24 * 60 * 60), // 24 hours
 	})
 }

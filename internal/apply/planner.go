@@ -49,14 +49,46 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 
 	var routeConfigs []proxy.RouteConfig
 
-	// Phase 1: Process active routes (internal, admin-managed)
+	// Phase 0: Collect all service IDs upfront to avoid N+1 queries
+	serviceIDSet := make(map[string]struct{})
+
 	routes, err := p.routeRepo.FindActive()
 	if err != nil {
 		return nil, fmt.Errorf("find active routes: %w", err)
 	}
-
 	for _, rt := range routes {
-		rc, warns := p.resolveRouteConfig(rt.Domain, rt.PathPrefix, rt.StripPrefix, rt.ServiceID, rt.TLSEnabled, rt.MaintenanceEnabled, rt.MaintenanceMessage, rt.GatewayLinkID)
+		serviceIDSet[rt.ServiceID] = struct{}{}
+	}
+
+	mdDomains, err := p.mdRepo.FindActive()
+	if err != nil {
+		return nil, fmt.Errorf("find active managed domains: %w", err)
+	}
+	for _, md := range mdDomains {
+		serviceIDSet[md.ServiceID] = struct{}{}
+	}
+
+	httpExposures, err := p.exposureRepo.FindActiveHTTP()
+	if err != nil {
+		return nil, fmt.Errorf("find active http exposures: %w", err)
+	}
+	for _, exp := range httpExposures {
+		serviceIDSet[exp.ServiceID] = struct{}{}
+	}
+
+	// Batch-load all services in a single query
+	allIDs := make([]string, 0, len(serviceIDSet))
+	for id := range serviceIDSet {
+		allIDs = append(allIDs, id)
+	}
+	serviceMap, err := p.serviceRepo.FindByIDs(allIDs)
+	if err != nil {
+		return nil, fmt.Errorf("batch load services: %w", err)
+	}
+
+	// Phase 1: Process active routes (internal, admin-managed)
+	for _, rt := range routes {
+		rc, warns := p.resolveRouteConfigWithService(rt.Domain, rt.PathPrefix, rt.StripPrefix, rt.TLSEnabled, rt.MaintenanceEnabled, rt.MaintenanceMessage, rt.GatewayLinkID, rt.ServiceID, serviceMap)
 		if rc == nil {
 			plan.SkippedCount++
 		} else {
@@ -67,13 +99,8 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 	}
 
 	// Phase 2: Process active managed domains (verified external domains)
-	mdDomains, err := p.mdRepo.FindActive()
-	if err != nil {
-		return nil, fmt.Errorf("find active managed domains: %w", err)
-	}
-
 	for _, md := range mdDomains {
-		rc, warns := p.resolveRouteConfig(md.Domain, "", false, md.ServiceID, true, false, "", "")
+		rc, warns := p.resolveRouteConfigWithService(md.Domain, "", false, true, false, "", "", md.ServiceID, serviceMap)
 		if rc == nil {
 			plan.SkippedCount++
 		} else {
@@ -84,17 +111,12 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 	}
 
 	// Phase 3: Process active HTTP exposures (generate config from exposure host/path)
-	httpExposures, err := p.exposureRepo.FindActiveHTTP()
-	if err != nil {
-		return nil, fmt.Errorf("find active http exposures: %w", err)
-	}
-
 	for _, exp := range httpExposures {
 		domain := exp.Host
 		if exp.Port > 0 && exp.Port != 80 && exp.Port != 443 {
 			domain = fmt.Sprintf("%s:%d", exp.Host, exp.Port)
 		}
-		rc, warns := p.resolveRouteConfig(domain, "", false, exp.ServiceID, true, false, "", "")
+		rc, warns := p.resolveRouteConfigWithService(domain, "", false, true, false, "", "", exp.ServiceID, serviceMap)
 		if rc == nil {
 			plan.SkippedCount++
 		} else {
@@ -107,22 +129,15 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 	return plan, nil
 }
 
-// resolveRouteConfig resolves a single domain to a RouteConfig with warnings.
-func (p *Planner) resolveRouteConfig(
-	domain string, pathPrefix string, stripPrefix bool, serviceID string, tlsEnabled bool,
+// resolveRouteConfigWithService is like resolveRouteConfig but takes a pre-loaded service map.
+func (p *Planner) resolveRouteConfigWithService(
+	domain string, pathPrefix string, stripPrefix bool, tlsEnabled bool,
 	maintenanceEnabled bool, maintenanceMessage string, gatewayLinkID string,
+	serviceID string, serviceMap map[string]*service.Service,
 ) (*proxy.RouteConfig, []ApplyWarning) {
 	var warnings []ApplyWarning
 
-	svc, err := p.serviceRepo.FindByID(serviceID)
-	if err != nil {
-		warnings = append(warnings, ApplyWarning{
-			Code: WarningRouteSkipped, Severity: "critical",
-			Message: fmt.Sprintf("service lookup failed for %s: %v", domain, err),
-			Target:  serviceID,
-		})
-		return nil, warnings
-	}
+	svc := serviceMap[serviceID]
 	if svc == nil {
 		warnings = append(warnings, ApplyWarning{
 			Code: WarningRouteSkipped, Severity: "critical",
@@ -191,3 +206,4 @@ func (p *Planner) resolveRouteConfig(
 
 	return rc, warnings
 }
+

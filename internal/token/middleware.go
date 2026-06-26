@@ -1,7 +1,6 @@
 package token
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -155,15 +154,6 @@ func isSystemRoute(path string) bool {
 	return false
 }
 
-// GetTokenFromContext extracts the token repository lookup helper.
-func (m *AuthMiddleware) GetTokenFromContext(ctx context.Context) *APIToken {
-	ac := action.GetActionContext(ctx)
-	if ac == nil || ac.TokenID == "" || m.tokenRepo == nil {
-		return nil
-	}
-	// We can't easily look up by ID with current repo, return nil for now
-	return nil
-}
 
 // extractBearerToken extracts the Bearer token from an Authorization header.
 func extractBearerToken(r *http.Request) string {

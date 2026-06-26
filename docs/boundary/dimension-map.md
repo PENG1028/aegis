@@ -169,8 +169,8 @@ operation_id, state_version, provider, step, status, error_code, error_message, 
 | Capability | Status | Details |
 |-----------|--------|---------|
 | TrustedGateway model | ✅ | id, name, host, private_ip, port, auth, type, auto_route |
-| Shared secret auth | ✅ | HMAC-SHA256, never stored in plaintext |
-| Auth header generation | ✅ | Format: "Aegis <gateway_id>:<signature>" |
+| Shared secret auth | ✅ | HMAC-SHA256 with timestamp replay protection (5 min window) |
+| Auth header generation | ✅ | Format: "Aegis <gateway_id>:<timestamp>:<signature>" |
 | Auth header verification | ✅ | Constant-time comparison |
 | Auto-routing (private→public fallback) | ✅ | ResolveHost() |
 | Secret rotation | ✅ | Old secret invalidated |
@@ -241,11 +241,9 @@ Gateway Link ──→ Planner ──→ Provider Render (header_up)
 
 | Feature | Status | Reason |
 |---------|--------|--------|
-| Gateway Link in Planner | ❌ | Needs GatewayLinkService ref in route planning |
-| Gateway Link API handlers | ❌ | POST/GET/DELETE /api/admin/v1/gateway-links |
-| Gateway Link rotation API | ❌ | POST /api/admin/v1/gateway-links/{id}/rotate |
 | Server B config (verify auth) | ❌ | Needs Caddy template for header validation |
 | HAProxy header_up equivalent | ❌ | HAProxy renderer doesn't support custom headers yet |
+| Gateway Link auto-route in planner | ⏳ | Route-level gateway link ID binding works; auto-route pending |
 
 ---
 

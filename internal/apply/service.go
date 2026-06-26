@@ -103,13 +103,6 @@ func (s *AppService) SetPendingState(ps PendingStateClearer) {
 	s.pendingState = ps
 }
 
-// IsApplying returns true if an apply operation is currently in progress.
-func (s *AppService) IsApplying() bool {
-	// We can't check TryLock without side effects, so just report false.
-	// The actual lock state is managed by TryApply.
-	return false
-}
-
 // Apply executes the full staged apply flow.
 func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	version := fmt.Sprintf("v%s", time.Now().Format("20060102_150405"))

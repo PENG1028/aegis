@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -17,5 +19,16 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 func decodeJSON(r *http.Request, v interface{}) error {
 	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(v)
+	// 1 MB limit — prevents memory exhaustion from oversized payloads
+	const maxBodySize = 1 << 20
+	limitedBody := io.LimitReader(r.Body, maxBodySize)
+	if err := json.NewDecoder(limitedBody).Decode(v); err != nil {
+		return err
+	}
+	// Drain any remaining bytes so the connection can be reused.
+	// If the body was truncated, return an error.
+	if n, _ := io.Copy(io.Discard, r.Body); n > 0 {
+		return fmt.Errorf("request body exceeds %d byte limit", maxBodySize)
+	}
+	return nil
 }

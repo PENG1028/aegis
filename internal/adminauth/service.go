@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -31,8 +32,54 @@ type LoginResult struct {
 	ExpiresAt    time.Time  `json:"expires_at"`
 }
 
+// Rate limiting defaults (personal tool — conservative settings).
+const (
+	maxLoginAttempts  = 5
+	loginWindow       = 1 * time.Minute
+	loginLockDuration = 60 * time.Second
+)
+
+// loginRate tracks login attempts per IP.
+type loginRate struct {
+	attempts   int
+	firstSeen  time.Time
+	lockedUntil time.Time
+}
+
+var loginRates sync.Map // map[string]*loginRate
+
+func checkLoginRate(ip string) error {
+	now := time.Now()
+	val, _ := loginRates.LoadOrStore(ip, &loginRate{firstSeen: now})
+	lr := val.(*loginRate)
+
+	// Check if locked out
+	if now.Before(lr.lockedUntil) {
+		return fmt.Errorf("too many login attempts; try again in %d seconds", int(time.Until(lr.lockedUntil).Seconds()))
+	}
+
+	// Reset window if expired
+	if now.Sub(lr.firstSeen) > loginWindow {
+		lr.attempts = 0
+		lr.firstSeen = now
+	}
+
+	lr.attempts++
+	if lr.attempts > maxLoginAttempts {
+		lr.lockedUntil = now.Add(loginLockDuration)
+		return fmt.Errorf("too many login attempts; locked for %v", loginLockDuration)
+	}
+	return nil
+}
+
 // Login authenticates an admin user and creates a session.
 func (s *Service) Login(username, password, ip, userAgent string) (*LoginResult, error) {
+	// Rate limit check
+	if err := checkLoginRate(ip); err != nil {
+		logAuditEvent("admin", "", "login_rate_limited", ip, userAgent, "admin_user", username, "failed", "RATE_LIMITED")
+		return nil, err
+	}
+
 	user, err := s.userRepo.FindByUsername(username)
 	if err != nil {
 		logAuditEvent("admin", "", "login_failed", ip, userAgent, "admin_user", username, "failed", "DB_ERROR")
@@ -47,6 +94,9 @@ func (s *Service) Login(username, password, ip, userAgent string) (*LoginResult,
 		logAuditEvent("admin", user.ID, "login_failed", ip, userAgent, "admin_user", username, "failed", "BAD_PASSWORD")
 		return nil, fmt.Errorf("invalid username or password")
 	}
+
+	// Successful login clears rate limit state
+	loginRates.Delete(ip)
 
 	// Generate session token
 	sessionToken := generateToken(32)

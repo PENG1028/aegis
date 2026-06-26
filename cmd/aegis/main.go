@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -169,8 +171,15 @@ func main() {
 	adminUserRepo := adminauth.NewAdminUserRepository(db)
 	adminSessionRepo := adminauth.NewAdminSessionRepository(db)
 	adminAuthSvc := adminauth.NewService(adminUserRepo, adminSessionRepo)
-	if _, err := adminAuthSvc.EnsureAdmin("admin", "admin"); err != nil {
+	adminPassword := generateRandomHex(16)
+	if _, err := adminAuthSvc.EnsureAdmin("admin", adminPassword); err != nil {
 		fmt.Printf("  admin user: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "\n=== AEGIS FIRST-RUN ADMIN CREDENTIALS ===\n")
+		fmt.Fprintf(os.Stderr, "  Username: admin\n")
+		fmt.Fprintf(os.Stderr, "  Password: %s\n", adminPassword)
+		fmt.Fprintf(os.Stderr, "  Store this securely — it will not be shown again.\n")
+		fmt.Fprintf(os.Stderr, "=========================================\n\n")
 	}
 
 	pendingState := cluster.NewPendingState(db)
@@ -251,4 +260,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// generateRandomHex returns a cryptographically random hex string of n bytes.
+func generateRandomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand.Read failing on a modern OS is extraordinarily rare.
+		return "fallback-insecure-" + hex.EncodeToString([]byte("CHANGE-ME"))
+	}
+	return hex.EncodeToString(b)
 }
