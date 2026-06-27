@@ -17,6 +17,11 @@ import (
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
+	"aegis/internal/nodeauth"
+	"aegis/internal/nodestate"
+	"aegis/internal/routingpolicy"
+	"aegis/internal/routingtable"
+	"aegis/internal/topology"
 	"aegis/internal/project"
 	"aegis/internal/route"
 	"aegis/internal/safety"
@@ -52,6 +57,8 @@ type Handlers struct {
 	EdgeSvc       *edgemux.AppService
 	ListenerSvc   *listener.Service
 	NodeRepo      *node.Repository
+	NodeSvc       *node.Service     // v1.8C
+	NodeAuthSvc   *nodeauth.Service // v1.8C
 	Gateway       *gateway.GatewayService
 	DeploymentSvc *deployment.Service
 	PendingState    *cluster.PendingState  // v1.7S
@@ -59,6 +66,12 @@ type Handlers struct {
 	GatewayLinkSvc  *gatewaylink.Service
 	SafetySvc       *safety.Service        // v1.7AB
 	RelayResolver   *RelayResolver         // v1.8B
+	NodeStateSvc    *nodestate.Service        // v1.8C-2
+	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
+	GatewayInvSvc   *gateway.InventoryService       // v1.8C-2
+	TopologySvc     *topology.Service           // v1.8C-2
+		PolicySvc       *routingpolicy.Service       // v1.8C-3
+		RoutingTableSvc *routingtable.Service        // v1.8C-3
 }
 
 // SystemStatus returns enhanced system status.

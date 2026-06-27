@@ -11,6 +11,7 @@ import (
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
+	"aegis/internal/gateway"
 	"aegis/internal/gateway_link"
 	"aegis/internal/health"
 	"aegis/internal/httpapi"
@@ -18,6 +19,9 @@ import (
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
+	"aegis/internal/nodeauth"
+	"aegis/internal/nodestate"
+	"aegis/internal/topology"
 	"aegis/internal/provider"
 	"aegis/internal/project"
 	"aegis/internal/relay"
@@ -121,6 +125,8 @@ func main() {
 	tcpManager := tcp.NewManager()
 	defer tcpManager.Shutdown()
 	nodeSvc := node.NewService(nodeRepo)
+	nodeAuthRepo := nodeauth.NewRepository(db)
+	nodeAuthSvc := nodeauth.NewService(nodeAuthRepo, nodeRepo, nodeSvc)
 	if _, err := nodeSvc.RegisterCurrent(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: node registration failed: %v\n", err)
 	}
@@ -188,6 +194,12 @@ func main() {
 	}
 	pendingState := cluster.NewPendingState(db)
 	applySvc.SetPendingState(pendingState)
+	nodeStateRepo := nodestate.NewRepository(db)
+	nodeStateSvc := nodestate.NewService(nodeStateRepo)
+	gatewayInvRepo := gateway.NewInventoryRepository(db)
+	gatewayInvSvc := gateway.NewInventoryService(gatewayInvRepo)
+	topologyRepo := topology.NewRepository(db)
+	topologySvc := topology.NewService(topologyRepo)
 	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, "gw_main", "main-gateway", masterKey)
 	spaceRepo := space.NewRepository(db)
 	spaceSvc := space.NewAppService(spaceRepo, logSvc)
@@ -222,6 +234,12 @@ func main() {
 		EdgeSvc:       edgeSvc,
 		ListenerSvc:   listenerSvc,
 		NodeRepo:      nodeRepo,
+		NodeSvc:       nodeSvc,
+		NodeAuthSvc:   nodeAuthSvc,
+		NodeStateSvc:  nodeStateSvc,
+		GatewayInvRepo: gatewayInvRepo,
+		GatewayInvSvc:  gatewayInvSvc,
+		TopologySvc:    topologySvc,
 		Gateway:       nil,
 		DepSvc:        nil,
 		PendingState:  pendingState,

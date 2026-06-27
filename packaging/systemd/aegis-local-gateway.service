@@ -1,0 +1,65 @@
+# Aegis Local Gateway — Systemd Service
+#
+# Standalone local gateway service (without full node runtime).
+# Use this when you want to run the local HTTP gateway independently
+# with a pre-populated routing table cache.
+#
+# Installation:
+#   sudo cp aegis-local-gateway.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable aegis-local-gateway
+#   sudo systemctl start aegis-local-gateway
+#
+# Status:
+#   sudo systemctl status aegis-local-gateway
+#   journalctl -u aegis-local-gateway -f
+#
+# CONFIGURATION NOTE:
+#   This service file assumes the aegis CLI supports a
+#   "local-gateway run" subcommand. If the CLI does not yet have
+#   this subcommand, this file serves as a blueprint.
+#
+#   For now, use the go run or direct binary invocation approach
+#   documented in developer-entry-local-gateway.md.
+
+[Unit]
+Description=Aegis Local HTTP Gateway
+Documentation=https://github.com/aegis/docs
+After=network.target
+
+[Service]
+Type=simple
+User=aegis
+Group=aegis
+WorkingDirectory=/var/lib/aegis
+
+# Environment
+EnvironmentFile=-/etc/aegis/aegis-gateway.conf
+Environment=AEGIS_CACHE_DIR=/var/lib/aegis
+
+# ExecStart — adjust flags to match your gateway CLI
+ExecStart=/usr/local/bin/aegis local-gateway run \
+  --config /etc/aegis/node.yaml
+
+# Restart behavior
+Restart=always
+RestartSec=3
+
+# Startup timing
+TimeoutStartSec=15
+TimeoutStopSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

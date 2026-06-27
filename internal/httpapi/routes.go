@@ -25,12 +25,18 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		EdgeSvc:       svcs.EdgeSvc,
 		ListenerSvc:   svcs.ListenerSvc,
 		NodeRepo:      svcs.NodeRepo,
+		NodeSvc:       svcs.NodeSvc,
+		NodeAuthSvc:   svcs.NodeAuthSvc,
+		NodeStateSvc:    svcs.NodeStateSvc,
+		GatewayInvRepo:  svcs.GatewayInvRepo,
+		GatewayInvSvc:   svcs.GatewayInvSvc,
+		TopologySvc:     svcs.TopologySvc,
 		Gateway:       svcs.Gateway,
 		DeploymentSvc: svcs.DepSvc,
-		PendingState:  svcs.PendingState,
-		TraceSvc:      svcs.TraceSvc,
-		SafetySvc:     svcs.SafetySvc,
-		GatewayLinkSvc: svcs.GatewayLinkSvc,
+		PendingState:    svcs.PendingState,
+		TraceSvc:        svcs.TraceSvc,
+		SafetySvc:       svcs.SafetySvc,
+		GatewayLinkSvc:  svcs.GatewayLinkSvc,
 		RelayResolver: &handlers.RelayResolver{Resolver: svcs.RelaySvc},
 	}
 
@@ -171,16 +177,16 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/providers/diagnose", h.DiagnoseAllProviders)
 
 	// v1.7T Access Path Trace (admin only, read-only)
-		// v1.8A Route Safety & Egress Trace
-		mux.HandleFunc("GET /api/admin/v1/routes/{id}/safety", h.CheckRouteSafety)
-		mux.HandleFunc("GET /api/admin/v1/routes/safety", h.CheckAllRoutesSafety)
-		mux.HandleFunc("GET /api/admin/v1/trace/egress", h.TraceEgress)
-		// v1.7AB Gateway Links
-		mux.HandleFunc("POST /api/admin/v1/gateway-links", h.CreateGatewayLink)
-		mux.HandleFunc("GET /api/admin/v1/gateway-links", h.ListGatewayLinks)
-		mux.HandleFunc("GET /api/admin/v1/gateway-links/{id}", h.GetGatewayLink)
-		mux.HandleFunc("DELETE /api/admin/v1/gateway-links/{id}", h.DeleteGatewayLink)
-		mux.HandleFunc("POST /api/admin/v1/gateway-links/{id}/rotate", h.RotateGatewayLinkSecret)
+	// v1.8A Route Safety & Egress Trace
+	mux.HandleFunc("GET /api/admin/v1/routes/{id}/safety", h.CheckRouteSafety)
+	mux.HandleFunc("GET /api/admin/v1/routes/safety", h.CheckAllRoutesSafety)
+	mux.HandleFunc("GET /api/admin/v1/trace/egress", h.TraceEgress)
+	// v1.7AB Gateway Links
+	mux.HandleFunc("POST /api/admin/v1/gateway-links", h.CreateGatewayLink)
+	mux.HandleFunc("GET /api/admin/v1/gateway-links", h.ListGatewayLinks)
+	mux.HandleFunc("GET /api/admin/v1/gateway-links/{id}", h.GetGatewayLink)
+	mux.HandleFunc("DELETE /api/admin/v1/gateway-links/{id}", h.DeleteGatewayLink)
+	mux.HandleFunc("POST /api/admin/v1/gateway-links/{id}/rotate", h.RotateGatewayLinkSecret)
 	mux.HandleFunc("GET /api/admin/v1/relay/resolve", h.ResolveRelay)
 	// v1.8B relay dispatch — uses GatewayLink auth
 	if svcs.RelayHTTPHandler != nil {
@@ -189,4 +195,65 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/trace/domain/{domain}", h.TraceDomain)
 	mux.HandleFunc("GET /api/admin/v1/trace/sni/{sni_host}", h.TraceSNI)
 	mux.HandleFunc("GET /api/admin/v1/trace/route/{route_id}", h.TraceRoute)
+
+	// ============================================================================
+	// v1.8C Node Bootstrap + Registry
+	// ============================================================================
+
+	// Node API (no admin auth — uses node credential auth)
+	mux.HandleFunc("POST /api/node/v1/join", h.NodeJoin)
+	mux.HandleFunc("POST /api/node/v1/heartbeat", h.NodeHeartbeat)
+		mux.HandleFunc("GET /api/node/v1/gateway-link-token/{gatewayLinkID}", h.NodeGatewayLinkToken)
+
+	// Admin Node Join Tokens
+	mux.HandleFunc("POST /api/admin/v1/node-join-tokens", h.CreateJoinToken)
+	mux.HandleFunc("GET /api/admin/v1/node-join-tokens", h.ListJoinTokens)
+	mux.HandleFunc("POST /api/admin/v1/node-join-tokens/{id}/revoke", h.RevokeJoinToken)
+
+	// Admin Node Detail
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}", h.GetNode)
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/health", h.GetNodeHealth)
+
+	// ============================================================================
+	// v1.8C-2 Control Plane Sync Foundation
+	// ============================================================================
+
+	// Node API (node credential auth)
+	mux.HandleFunc("GET /api/node/v1/desired-state", h.NodeDesiredState)
+	mux.HandleFunc("POST /api/node/v1/actual-state", h.NodeActualState)
+
+	// Admin Desired/Actual State
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/desired-state", h.AdminGetDesiredState)
+	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/desired-state", h.AdminCreateDesiredState)
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/actual-state", h.AdminGetActualState)
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/sync-status", h.AdminGetSyncStatus)
+
+	// Admin Gateway Inventory
+	mux.HandleFunc("GET /api/admin/v1/gateways", h.AdminListGateways)
+	mux.HandleFunc("POST /api/admin/v1/gateways", h.AdminCreateGateway)
+	mux.HandleFunc("GET /api/admin/v1/gateways/{id}", h.AdminGetGateway)
+	mux.HandleFunc("PATCH /api/admin/v1/gateways/{id}", h.AdminUpdateGateway)
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/gateways", h.AdminListNodeGateways)
+
+	// Admin Topology
+	mux.HandleFunc("GET /api/admin/v1/topology/matrix", h.AdminGetTopologyMatrix)
+	mux.HandleFunc("GET /api/admin/v1/topology/path", h.AdminGetTopologyPath)
+	mux.HandleFunc("POST /api/admin/v1/topology/edges", h.AdminCreateTopologyEdge)
+	mux.HandleFunc("PATCH /api/admin/v1/topology/edges/{id}", h.AdminUpdateTopologyEdge)
+
+		// ============================================================================
+		// v1.8C-3 Gateway Policy + Routing Table
+		// ============================================================================
+
+		// Gateway Policy APIs
+		mux.HandleFunc("GET /api/admin/v1/services/{id}/gateway-policy", h.AdminGetServicePolicy)
+		mux.HandleFunc("PUT /api/admin/v1/services/{id}/gateway-policy", h.AdminSetServicePolicy)
+		mux.HandleFunc("GET /api/admin/v1/routes/{id}/gateway-policy", h.AdminGetRoutePolicy)
+		mux.HandleFunc("PUT /api/admin/v1/routes/{id}/gateway-policy", h.AdminSetRoutePolicy)
+
+		// Routing Table APIs
+		mux.HandleFunc("GET /api/admin/v1/nodes/{id}/routing-table", h.AdminGetNodeRoutingTable)
+		mux.HandleFunc("POST /api/admin/v1/nodes/{id}/routing-table/generate", h.AdminGenerateNodeRoutingTable)
+		mux.HandleFunc("GET /api/admin/v1/routing/preview", h.AdminPreviewRoute)
+		mux.HandleFunc("GET /api/admin/v1/routing/validate", h.AdminValidateNodeRouting)
 }

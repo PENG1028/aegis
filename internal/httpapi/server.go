@@ -1,7 +1,8 @@
 package httpapi
 
 import (
-"net/http"
+	"net/http"
+
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
 	"aegis/internal/apply"
@@ -12,20 +13,25 @@ import (
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
+	"aegis/internal/gateway_link"
 	"aegis/internal/health"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
+	"aegis/internal/nodeauth"
+	"aegis/internal/topology"
+	"aegis/internal/nodestate"
+	"aegis/internal/routingpolicy"
+	"aegis/internal/routingtable"
 	"aegis/internal/project"
+	"aegis/internal/relay"
 	"aegis/internal/route"
-"aegis/internal/relay"
+	"aegis/internal/safety"
 	"aegis/internal/service"
 	"aegis/internal/space"
 	"aegis/internal/token"
-	"aegis/internal/safety"
 	"aegis/internal/trace"
-	"aegis/internal/gateway_link"
 )
 
 // Services holds all application services for the HTTP API.
@@ -48,12 +54,20 @@ type Services struct {
 	EdgeSvc       *edgemux.AppService
 	ListenerSvc   *listener.Service
 	NodeRepo      *node.Repository
+	NodeSvc       *node.Service        // v1.8C
+	NodeAuthSvc   *nodeauth.Service    // v1.8C
 	Gateway       *gateway.GatewayService
 	DepSvc        *deployment.Service
 	PendingState    *cluster.PendingState  // v1.7S
 	TraceSvc        *trace.Service         // v1.7T
 	GatewayLinkSvc  *gatewaylink.Service   // v1.7AB
 	SafetySvc       *safety.Service        // v1.8A
-RelaySvc        *relay.Resolver        // v1.8B
+	RelaySvc        *relay.Resolver        // v1.8B
+	NodeStateSvc    *nodestate.Service        // v1.8C-2
+	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
+	GatewayInvSvc   *gateway.InventoryService   // v1.8C-2
+	TopologySvc     *topology.Service           // v1.8C-2
+	PolicySvc       *routingpolicy.Service       // v1.8C-3
+	RoutingTableSvc *routingtable.Service        // v1.8C-3
 	RelayHTTPHandler http.Handler           // v1.8B relay dispatch
 }
