@@ -18,12 +18,15 @@ import (
 
 // Relay header names.
 const (
-	HeaderRouteID      = "X-Aegis-Route-ID"
-	HeaderGatewayID    = "X-Aegis-Gateway-ID"
-	HeaderGatewayToken = "X-Aegis-Gateway-Token"
-	HeaderSourceNode   = "X-Aegis-Source-Node"
-	HeaderHop          = "X-Aegis-Hop"
-	HeaderRequestID    = "X-Aegis-Request-ID"
+	HeaderRouteID        = "X-Aegis-Route-ID"
+	HeaderGatewayID      = "X-Aegis-Gateway-ID"
+	HeaderGatewayToken   = "X-Aegis-Gateway-Token"
+	HeaderSourceNode     = "X-Aegis-Source-Node"
+	HeaderHop            = "X-Aegis-Hop"
+	HeaderRequestID      = "X-Aegis-Request-ID"
+	HeaderOriginalPath   = "X-Aegis-Original-Path"   // v1.8C-8A: original request path
+	HeaderOriginalQuery  = "X-Aegis-Original-Query"  // v1.8C-8A: original request query
+	HeaderOriginalMethod = "X-Aegis-Original-Method" // v1.8C-8A: original request method
 )
 
 // MaxHopLimit is the maximum allowed relay hops.
@@ -191,8 +194,25 @@ func (h *RelayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.logRelayEvent("relay_forward", routeID, sourceNodeID, gatewayID, "forwarding", reqID)
 
-	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method,
-		fmt.Sprintf("http://%s%s", targetAddr, r.URL.Path), r.Body)
+	// Determine target path: use X-Aegis-Original-Path if provided (v1.8C-8A),
+	// otherwise fall back to r.URL.Path for backward compatibility.
+	targetPath := r.Header.Get(HeaderOriginalPath)
+	if targetPath == "" {
+		targetPath = r.URL.Path
+	}
+	targetQuery := r.Header.Get(HeaderOriginalQuery)
+	targetURL := fmt.Sprintf("http://%s%s", targetAddr, targetPath)
+	if targetQuery != "" {
+		targetURL += "?" + targetQuery
+	}
+
+	// Use original method if provided (v1.8C-8A), fall back to r.Method for backward compat
+	targetMethod := r.Header.Get(HeaderOriginalMethod)
+	if targetMethod == "" {
+		targetMethod = r.Method
+	}
+
+	proxyReq, err := http.NewRequestWithContext(r.Context(), targetMethod, targetURL, r.Body)
 	if err != nil {
 		writeRelayError(w, http.StatusInternalServerError, "PROXY_ERROR", err.Error())
 		return

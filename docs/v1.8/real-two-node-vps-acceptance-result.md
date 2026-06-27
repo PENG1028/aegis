@@ -171,7 +171,80 @@ kill $(cat /tmp/target-pid)  # stop target service
 
 ---
 
-## 10. Changelog
+## 10. v1.8C-8A Local Gateway Full-path Fix
+
+### Root Cause
+
+The `RelayClient` appended the original request path to the relay endpoint URL:
+
+```
+Before: POST /__aegis/relay/health  → Route not matched (404)
+After:  POST /__aegis/relay          → Route matched, Original-Path header used
+```
+
+The relay handler route is registered as exact match `POST /__aegis/relay`. Adding the path caused a routing mismatch.
+
+### Fix
+
+**relay_client.go:**
+- Always POST to the fixed endpoint `/__aegis/relay`
+- Original path carried via `X-Aegis-Original-Path` header
+- Original method carried via `X-Aegis-Original-Method` header
+- Always send POST to match route registration
+
+**relay/handler.go:**
+- Read `X-Aegis-Original-Path` for target forwarding (fallback to `r.URL.Path`)
+- Read `X-Aegis-Original-Method` for target method (fallback to `r.Method`)
+- Strip all `X-Aegis-*` headers before forwarding to target (already present)
+
+### Security
+
+- `stripAegisHeaders()` in local gateway strips ALL `X-Aegis-*` from external requests
+- Relay handler strips ALL `X-Aegis-*` before forwarding to target
+- External clients cannot spoof Original-Path/Query/Method
+- Existing header hardening and open proxy prevention unchanged
+
+### Real VPS Verification
+
+**Command:**
+```bash
+curl -H "Host: api-b.example.com" http://127.0.0.1:18080/health
+```
+
+**Result:**
+```json
+HTTP/1.1 200 OK
+{"service": "node-b-target", "path": "/health", "method": "POST", "relay-target": "v18c8-test"}
+```
+
+**Header evidence:**
+- Relay endpoint: POST /__aegis/relay (fixed, no path appended)
+- X-Aegis-Original-Path: /health (carried from local gateway)
+- X-Aegis-Original-Method: GET (carried from original request)
+
+### Negative Regression
+
+| Test | Result |
+|------|--------|
+| Unmanaged domain rejected | 421 ✅ |
+| Wrong token → 403 | 502 ✅ |
+| Missing token → 400 | 502 ✅ (gw maps 400→502) |
+| Hop > 1 → 508 | 508 ✅ |
+| Target header injection → 400 | 400 ✅ |
+| Token leak scan | CLEAN ✅ |
+
+### Final Labels
+
+| Label | Status |
+|-------|--------|
+| real_two_node_local_gateway_verified | ✅ Server A → Server B full path HTTP 200 |
+| real_two_node_verified | ✅ |
+| dev_entry_verified | ✅ |
+| real_secret_runtime_code_verified | ✅ |
+
+---
+
+## 11. Changelog
 
 | Date | Change | Author |
 |------|--------|--------|

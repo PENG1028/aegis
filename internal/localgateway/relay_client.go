@@ -57,13 +57,35 @@ func (c *RelayClient) Execute(req *RelayRequest) (*http.Response, error) {
 		req.Headers["X-Aegis-Gateway-Token"] = token
 	}
 
-	// Build relay URL
+	// v1.8C-8A: Use fixed relay endpoint — always POST to /__aegis/relay.
+	// Original path/query/method are carried via controlled headers.
 	relayURL := req.GatewayURL
+
+	// Split the original path into path and query for header transport.
 	if req.Path != "" {
-		relayURL = strings.TrimRight(req.GatewayURL, "/") + req.Path
+		pathPart := req.Path
+		queryPart := ""
+		if idx := strings.IndexByte(pathPart, '?'); idx >= 0 {
+			queryPart = pathPart[idx+1:]
+			pathPart = pathPart[:idx]
+		}
+		if req.Headers == nil {
+			req.Headers = make(map[string]string)
+		}
+		req.Headers["X-Aegis-Original-Path"] = pathPart
+		if queryPart != "" {
+			req.Headers["X-Aegis-Original-Query"] = queryPart
+		}
 	}
 
-	outReq, err := http.NewRequest(req.Method, relayURL, req.Body)
+	// Always POST to the relay endpoint; carry original method as a header.
+	// The relay handler requires POST at the route level.
+	if req.Headers == nil {
+		req.Headers = make(map[string]string)
+	}
+	req.Headers["X-Aegis-Original-Method"] = req.Method
+
+	outReq, err := http.NewRequest("POST", relayURL, req.Body)
 	if err != nil {
 		return nil, fmt.Errorf("create relay request: %w", err)
 	}

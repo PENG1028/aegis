@@ -85,7 +85,11 @@ func main() {
 	}
 	cfg := localgateway.DefaultConfig()
 	cfg.Port = portInt
-	cfg.NodeID = "node-a"
+		nodeID := os.Getenv("NODE_ID")
+	if nodeID == "" {
+		nodeID = "node-a"
+	}
+	cfg.NodeID = nodeID
 
 	fmt.Print("[3] Starting local HTTP gateway ... ")
 	gateway := localgateway.NewGateway(cfg, resolver, secretProvider)

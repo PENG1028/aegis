@@ -1,7 +1,7 @@
 # v1.8C-6 — Real Multi-node Local Gateway Acceptance
 
 > **Phase:** v1.8C — Multi-node Aegis Runtime
-> **Status:** v1.8C-8 IMPLEMENTED (real_two_node_verified + dev_entry_verified) ✅
+> **Status:** v1.8C-8A IMPLEMENTED (real_two_node_local_gateway_verified) ✅
 > **Date:** 2026-06-27
 > **Type:** Acceptance Verification
 
