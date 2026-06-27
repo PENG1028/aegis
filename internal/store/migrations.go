@@ -152,6 +152,31 @@ func AllMigrations() []Migration {
 			Name:    "add_gateway_link_encryption",
 			UpSQL:   migration027,
 		},
+		{
+			Version: "028",
+			Name:    "add_node_runtime",
+			UpSQL:   migration028,
+		},
+		{
+			Version: "029",
+			Name:    "add_node_desired_actual_state",
+			UpSQL:   migration029,
+		},
+		{
+			Version: "030",
+			Name:    "add_gateway_inventory",
+			UpSQL:   migration030,
+		},
+		{
+			Version: "031",
+			Name:    "add_topology_edges",
+			UpSQL:   migration031,
+		},
+		{
+			Version: "032",
+			Name:    "add_gateway_policies",
+			UpSQL:   migration032,
+		},
 	}
 }
 
@@ -810,6 +835,52 @@ CREATE INDEX IF NOT EXISTS idx_endpoints_node_id ON endpoints(node_id);
 CREATE INDEX IF NOT EXISTS idx_trusted_gateways_target_node ON trusted_gateways(target_node_id);
 `
 
+// migration028 adds node runtime fields, join tokens, and node credentials for v1.8C-1.
+const migration028 = `
+-- 1. Expand nodes table with v1.8C fields
+ALTER TABLE nodes ADD COLUMN name TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN role TEXT NOT NULL DEFAULT 'worker';
+ALTER TABLE nodes ADD COLUMN status TEXT NOT NULL DEFAULT 'unknown';
+ALTER TABLE nodes ADD COLUMN region TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN network_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN os TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN arch TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN agent_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN last_heartbeat_at TEXT DEFAULT '';
+ALTER TABLE nodes ADD COLUMN last_error TEXT DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status);
+CREATE INDEX IF NOT EXISTS idx_nodes_role ON nodes(role);
+
+-- 2. Create node_join_tokens table
+CREATE TABLE IF NOT EXISTS node_join_tokens (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    allowed_roles TEXT NOT NULL DEFAULT '[]',
+    expected_node_name TEXT NOT NULL DEFAULT '',
+    allowed_source_cidr TEXT NOT NULL DEFAULT '',
+    expires_at TEXT NOT NULL,
+    used_at TEXT DEFAULT '',
+    used_by_node_id TEXT DEFAULT '',
+    revoked_at TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_join_tokens_token_hash ON node_join_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_join_tokens_expires ON node_join_tokens(expires_at);
+
+-- 3. Create node_credentials table
+CREATE TABLE IF NOT EXISTS node_credentials (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT DEFAULT '',
+    revoked_at TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_node_credentials_node_id ON node_credentials(node_id);
+CREATE INDEX IF NOT EXISTS idx_node_credentials_token_hash ON node_credentials(token_hash);
+`
+
 // migration027 adds encrypted secret fields to trusted_gateways for secret-at-rest.
 const migration027 = `
 ALTER TABLE trusted_gateways ADD COLUMN encrypted_secret TEXT NOT NULL DEFAULT '';
@@ -818,4 +889,137 @@ ALTER TABLE trusted_gateways ADD COLUMN secret_version INTEGER NOT NULL DEFAULT 
 ALTER TABLE trusted_gateways ADD COLUMN secret_created_at TEXT NOT NULL DEFAULT '';
 ALTER TABLE trusted_gateways ADD COLUMN secret_rotated_at TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_trusted_gateways_encrypted ON trusted_gateways(encrypted_secret);
+`
+
+// migration029 adds node_desired_states and node_actual_states tables.
+const migration029 = `
+CREATE TABLE IF NOT EXISTS node_desired_states (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 0,
+    state_hash TEXT NOT NULL DEFAULT '',
+    state_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'active',
+    reason TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    superseded_at TEXT DEFAULT '',
+    UNIQUE(node_id, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_desired_states_node_id ON node_desired_states(node_id);
+CREATE INDEX IF NOT EXISTS idx_desired_states_status ON node_desired_states(status);
+
+CREATE TABLE IF NOT EXISTS node_actual_states (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL UNIQUE,
+    applied_revision INTEGER NOT NULL DEFAULT 0,
+    state_hash TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'unknown',
+    last_apply_at TEXT DEFAULT '',
+    last_success_at TEXT DEFAULT '',
+    last_error TEXT DEFAULT '',
+    provider_status TEXT DEFAULT '{}',
+    relay_status TEXT DEFAULT '{}',
+    gateway_status TEXT DEFAULT '{}',
+    diagnostics_status TEXT DEFAULT '{}',
+    reported_at TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_actual_states_node_id ON node_actual_states(node_id);
+CREATE INDEX IF NOT EXISTS idx_actual_states_status ON node_actual_states(status);
+`
+
+// migration030 adds the gateways inventory table.
+const migration030 = `
+CREATE TABLE IF NOT EXISTS gateways (
+    gateway_id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    type TEXT NOT NULL DEFAULT 'local',
+    provider TEXT NOT NULL DEFAULT 'aegis',
+    bind_addr TEXT NOT NULL DEFAULT '0.0.0.0',
+    host TEXT NOT NULL DEFAULT '',
+    port INTEGER NOT NULL DEFAULT 80,
+    scheme TEXT NOT NULL DEFAULT 'http',
+    public_accessible INTEGER NOT NULL DEFAULT 0,
+    private_accessible INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 100,
+    status TEXT NOT NULL DEFAULT 'unknown',
+    last_verified_at TEXT DEFAULT '',
+    last_error TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gateways_node_id ON gateways(node_id);
+CREATE INDEX IF NOT EXISTS idx_gateways_type ON gateways(type);
+CREATE INDEX IF NOT EXISTS idx_gateways_status ON gateways(status);
+`
+
+// migration031 adds the topology_edges table.
+const migration031 = `
+CREATE TABLE IF NOT EXISTS topology_edges (
+    id TEXT PRIMARY KEY,
+    from_node_id TEXT NOT NULL,
+    to_node_id TEXT NOT NULL,
+    private_reachable INTEGER NOT NULL DEFAULT 0,
+    public_reachable INTEGER NOT NULL DEFAULT 0,
+    preferred_gateway_id TEXT DEFAULT '',
+    gateway_link_id TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'unknown',
+    last_verified_at TEXT DEFAULT '',
+    last_error TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(from_node_id, to_node_id)
+);
+CREATE INDEX IF NOT EXISTS idx_topology_edges_from ON topology_edges(from_node_id);
+CREATE INDEX IF NOT EXISTS idx_topology_edges_to ON topology_edges(to_node_id);
+CREATE INDEX IF NOT EXISTS idx_topology_edges_status ON topology_edges(status);
+`
+
+// migration032 adds gateway policy tables for v1.8C-3.
+const migration032 = `
+CREATE TABLE IF NOT EXISTS service_gateway_policies (
+    policy_id TEXT PRIMARY KEY,
+    service_id TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'auto',
+    primary_gateway_id TEXT DEFAULT '',
+    fallback_gateway_ids_json TEXT DEFAULT '[]',
+    allow_local INTEGER NOT NULL DEFAULT 1,
+    allow_private INTEGER NOT NULL DEFAULT 1,
+    allow_public INTEGER NOT NULL DEFAULT 0,
+    require_gateway_link INTEGER NOT NULL DEFAULT 1,
+    require_relay INTEGER NOT NULL DEFAULT 1,
+    preserve_host INTEGER NOT NULL DEFAULT 1,
+    tls_mode TEXT NOT NULL DEFAULT 'http_only',
+    priority INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_svc_gw_policy_service_id ON service_gateway_policies(service_id);
+CREATE INDEX IF NOT EXISTS idx_svc_gw_policy_mode ON service_gateway_policies(mode);
+
+CREATE TABLE IF NOT EXISTS route_gateway_policies (
+    policy_id TEXT PRIMARY KEY,
+    route_id TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'auto',
+    primary_gateway_id TEXT DEFAULT '',
+    fallback_gateway_ids_json TEXT DEFAULT '[]',
+    allow_local INTEGER NOT NULL DEFAULT 1,
+    allow_private INTEGER NOT NULL DEFAULT 1,
+    allow_public INTEGER NOT NULL DEFAULT 0,
+    require_gateway_link INTEGER NOT NULL DEFAULT 1,
+    require_relay INTEGER NOT NULL DEFAULT 1,
+    preserve_host INTEGER NOT NULL DEFAULT 1,
+    tls_mode TEXT NOT NULL DEFAULT 'http_only',
+    priority INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_route_gw_policy_route_id ON route_gateway_policies(route_id);
+CREATE INDEX IF NOT EXISTS idx_route_gw_policy_mode ON route_gateway_policies(mode);
 `
