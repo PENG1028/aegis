@@ -17,40 +17,40 @@ export default function NodeDetailPage() {
   });
 
   if (isLoading) return <div className="text-center py-10 text-a-muted font-mono text-sm">加载中...</div>;
-  if (error || !data) return <div className="text-center py-10 text-a-danger text-sm">Node not found</div>;
+  if (error || !data) return <div className="text-center py-10 text-a-danger text-sm">节点未找到</div>;
 
   return (
     <div>
       <button onClick={() => navigate('/nodes')} className="inline-flex items-center gap-1 text-xs text-a-muted hover:text-a-fg mb-3 bg-transparent border-none cursor-pointer p-0">
-        ← Nodes
+        ← 节点
       </button>
       <PageHeader title={data.name} subtitle={`node_id: ${data.node_id}`} helpKey="nodes" />
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <Card title="基本信息">
-          <MetaRow label="Node ID" value={data.node_id} mono color="text-a-accent" />
-          <MetaRow label="Name" value={data.name} />
-          <MetaRow label="Hostname" value={data.hostname} mono />
-          <MetaRow label="Public IP" value={data.public_ip} mono />
-          <MetaRow label="Private IP" value={data.private_ip} mono />
-          <MetaRow label="OS / Arch" value={`${data.os} / ${data.arch}`} mono />
-          <MetaRow label="Agent Version" value={data.agent_version} mono />
-          <MetaRow label="Status" value={<StatusBadge status={data.status} />} />
-          <MetaRow label="Last Heartbeat" value={fmtRel(data.last_heartbeat_at)} mono />
+          <MetaRow label="节点 ID" value={data.node_id} mono color="text-a-accent" />
+          <MetaRow label="名称" value={data.name} />
+          <MetaRow label="主机名" value={data.hostname} mono />
+          <MetaRow label="公网 IP" value={data.public_ip} mono />
+          <MetaRow label="内网 IP" value={data.private_ip} mono />
+          <MetaRow label="系统 / 架构" value={`${data.os} / ${data.arch}`} mono />
+          <MetaRow label="代理版本" value={data.agent_version} mono />
+          <MetaRow label="状态" value={<StatusBadge status={data.status} />} />
+          <MetaRow label="上次心跳" value={fmtRel(data.last_heartbeat_at)} mono />
         </Card>
 
         <Card title="Sync 状态">
-          <MetaRow label="Status" value={<StatusBadge status={data.sync.status} />} />
-          <MetaRow label="Desired Revision" value={data.sync.desired_revision} mono />
-          <MetaRow label="Applied Revision" value={data.sync.applied_revision} mono />
-          <MetaRow label="Desired Hash" value={data.sync.desired_hash} mono />
-          <MetaRow label="Actual Hash" value={data.sync.actual_hash} mono />
-          <MetaRow label="Last Apply" value={data.sync.last_apply_at ? fmtRel(data.sync.last_apply_at) : '—'} mono />
-          <MetaRow label="Last Error" value={data.sync.last_error || '—'} color={data.sync.last_error ? 'text-a-danger' : ''} />
+          <MetaRow label="状态" value={<StatusBadge status={data.sync.status} />} />
+          <MetaRow label="期望版本" value={data.sync.desired_revision} mono />
+          <MetaRow label="实际版本" value={data.sync.applied_revision} mono />
+          <MetaRow label="期望哈希" value={data.sync.desired_hash} mono />
+          <MetaRow label="实际哈希" value={data.sync.actual_hash} mono />
+          <MetaRow label="上次推送" value={data.sync.last_apply_at ? fmtRel(data.sync.last_apply_at) : '—'} mono />
+          <MetaRow label="上次错误" value={data.sync.last_error || '—'} color={data.sync.last_error ? 'text-a-danger' : ''} />
         </Card>
       </div>
 
-      <Card title="Capabilities" subtitle="节点运行时能力" className="mb-4">
+      <Card title="能力" subtitle="节点运行时能力" className="mb-4">
         <div className="flex flex-wrap gap-2">
           {Object.entries(data.capabilities).map(([key, val]) => (
             <CapabilityBadge key={key} name={key} enabled={val} />
@@ -59,7 +59,7 @@ export default function NodeDetailPage() {
       </Card>
 
       {data.gateways.length > 0 && (
-        <Card title="Gateways" subtitle={`${data.gateways.length} gateways on this node`} className="mb-4">
+        <Card title="网关" subtitle={`${data.gateways.length} gateways on this node`} className="mb-4">
           <div className="space-y-2">
             {data.gateways.map((gw) => (
               <div key={gw.gateway_id} className="flex items-center gap-3 py-2 border-b border-a-border-soft last:border-b-0 text-xs">
@@ -79,15 +79,15 @@ export default function NodeDetailPage() {
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         {data.local_gateway && (
-          <Card title="Local Gateway Runtime">
-            <MetaRow label="Bind" value={`${data.local_gateway.bind_addr}:${data.local_gateway.port}`} mono />
-            <MetaRow label="Status" value={<StatusBadge status={data.local_gateway.status} />} />
-            <MetaRow label="Routing Table Loaded" value={data.local_gateway.routing_table_loaded ? '✓' : '✗'} />
-            <MetaRow label="Routing Revision" value={data.local_gateway.routing_table_revision ?? '—'} mono />
-            <MetaRow label="Cache" value={data.local_gateway.cache_status} />
+          <Card title="本地网关运行时">
+            <MetaRow label="绑定地址" value={`${data.local_gateway.bind_addr}:${data.local_gateway.port}`} mono />
+            <MetaRow label="状态" value={<StatusBadge status={data.local_gateway.status} />} />
+            <MetaRow label="路由表已加载" value={data.local_gateway.routing_table_loaded ? '✓' : '✗'} />
+            <MetaRow label="路由版本" value={data.local_gateway.routing_table_revision ?? '—'} mono />
+            <MetaRow label="缓存" value={data.local_gateway.cache_status} />
           </Card>
         )}
-        <Card title="Diagnostics">
+        <Card title="诊断">
           {data.diagnostics.map((d, i) => (
             <div key={i} className="flex items-center gap-2 py-1.5 border-b border-a-border-soft last:border-b-0 text-xs">
               <StatusBadge status={d.status === 'ok' ? 'ok' : d.status === 'warning' ? 'warning' : 'error'} />
@@ -107,19 +107,19 @@ export default function NodeDetailPage() {
           onClick={() => navigate(`/sync?nodeId=${nodeId}`)}
           className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-a-md bg-a-surface border border-a-border text-a-fg hover:bg-a-border-soft cursor-pointer"
         >
-          Sync Detail
+          同步详情
         </button>
         <button
           onClick={() => navigate(`/routing?nodeId=${nodeId}`)}
           className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-a-md bg-a-surface border border-a-border text-a-fg hover:bg-a-border-soft cursor-pointer"
         >
-          Routing Table
+          路由表
         </button>
         <button
           onClick={() => navigate(`/local-gateway?nodeId=${nodeId}`)}
           className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-a-md bg-a-surface border border-a-border text-a-fg hover:bg-a-border-soft cursor-pointer"
         >
-          Local Gateway
+          本地网关
         </button>
       </div>
     </div>

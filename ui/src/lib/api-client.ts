@@ -35,7 +35,7 @@ import type {
   JoinToken, DashboardData,
 } from '@/types';
 
-const MOCK_LABEL = 'Mock';
+const MOCK_LABEL = '模拟';
 
 function delay(ms = 300): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

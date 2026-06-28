@@ -14,7 +14,7 @@ export default function SafetyPage() {
 
   return (
     <div>
-      <PageHeader title="Route Safety" helpKey="safety" sub="安全检查与路径评估" actions={
+      <PageHeader title="路由安全" helpKey="safety" sub="安全检查与路径评估" actions={
         <Btn sm onClick={() => safetyApi.traceEgress('', '')}>新检测</Btn>
       } />
 
@@ -35,7 +35,7 @@ export default function SafetyPage() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                {['Domain', 'Target', 'GWLink', 'Risks', 'Recommendation'].map((h) => (
+                {['域名', '目标', '网关链接', '风险', '建议'].map((h) => (
                   <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -69,10 +69,10 @@ export default function SafetyPage() {
 
       {tab === 'summary' && safety && (
         <div className="grid grid-cols-4 gap-3 mb-4">
-          <StatCard label="Total Routes" value={safety.length} accent />
-          <StatCard label="Safe" value={safety.filter((r: any) => !r.risks?.length).length} success />
-          <StatCard label="Has Risks" value={safety.filter((r: any) => r.risks?.length).length} warn />
-          <StatCard label="GWLink Bypass" value={safety.filter((r: any) => r.gateway_link_required && !r.has_gateway_link).length} danger />
+          <StatCard label="总路由数" value={safety.length} accent />
+          <StatCard label="安全" value={safety.filter((r: any) => !r.risks?.length).length} success />
+          <StatCard label="有风险" value={safety.filter((r: any) => r.risks?.length).length} warn />
+          <StatCard label="GWLink 绕过" value={safety.filter((r: any) => r.gateway_link_required && !r.has_gateway_link).length} danger />
         </div>
       )}
     </div>

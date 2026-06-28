@@ -29,7 +29,7 @@ export default function LoginPage() {
             <path d="M8 12h8M12 8v8" />
           </svg>
           <h1 className="font-mono text-2xl font-bold text-a-accent tracking-tight">Aegis</h1>
-          <p className="text-xs text-a-muted mt-1">Gateway Admin Console</p>
+          <p className="text-xs text-a-muted mt-1">网关管理控制台</p>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -91,7 +91,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-[10px] text-a-muted text-center mt-5">
-          默认凭据: admin / admin
+          默认凭据：admin / admin
         </p>
       </div>
     </div>

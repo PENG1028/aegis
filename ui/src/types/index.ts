@@ -431,3 +431,28 @@ export interface DashboardError {
   error: string;
   last_seen: string;
 }
+
+// ─── DNS (v1.8E) ───
+
+export interface DnsResolvedEntry {
+  domain: string;
+  target_ip: string;
+  target_node: string;
+  node_ip: string;
+  public_ip: string;
+  is_local: boolean;
+  route_id: string;
+  service_id: string;
+  endpoint_id: string;
+}
+
+export interface DnsStatus {
+  running: boolean;
+  listen_addr: string;
+  upstream: string;
+  enabled: boolean;
+  local_hits: number;
+  upstream_calls: number;
+  managed_count: number;
+  entries?: DnsResolvedEntry[];
+}

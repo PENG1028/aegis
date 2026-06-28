@@ -80,6 +80,7 @@ import {
   providerApi,
   adminApi,
   fetchListeners as realFetchListeners,
+  dnsApi as realDnsApi,
 } from './real-api-client';
 
 import type { auth as AuthType, system as SystemType } from './real-api-client';
@@ -129,6 +130,24 @@ export const fetchListeners: typeof realFetchListeners = useMock
     }
   : realFetchListeners;
 
+// ─── DNS (v1.8E) ───
+export const dnsApi = useMock
+  ? {
+      status: async () => ({
+        running: false,
+        listen_addr: ':5353',
+        upstream: '1.1.1.1:53',
+        enabled: false,
+        local_hits: 0,
+        upstream_calls: 0,
+        managed_count: 0,
+      }),
+      enable: async () => ({}),
+      disable: async () => ({}),
+      refresh: async () => ({}),
+    }
+  : realDnsApi;
+
 // ─── Auth & System exports ───
 export const auth: typeof realAuth = useMock
   ? {
@@ -137,9 +156,9 @@ export const auth: typeof realAuth = useMock
         if (u === 'admin' && p === 'admin') {
           return { user: { id: '1', username: 'admin' }, expires_at: new Date(Date.now() + 86400000).toISOString() };
         }
-        throw Object.assign(new Error('Invalid credentials'), { status: 401 });
+        throw Object.assign(new Error('无效凭据'), { status: 401 });
       },
-      logout: async () => { await new Promise(r => setTimeout(r, 200)); return { message: 'logged out' }; },
+      logout: async () => { await new Promise(r => setTimeout(r, 200)); return { message: '已登出' }; },
       me: async () => ({ user: { id: '1', username: 'admin' } }),
     }
   : realAuth;
@@ -164,8 +183,8 @@ export const system: typeof realSystem = useMock
         pending_apply: { pending: false, since: '', reason: '' },
         last_apply: { status: 'success', version: 'v17', created_at: new Date().toISOString() },
       }),
-      doctor: async () => ({ message: 'doctor triggered' }),
-      apply: async () => ({ message: 'apply completed', routes: 3, warnings: 0 }),
+      doctor: async () => ({ message: '诊断已触发' }),
+      apply: async () => ({ message: '应用已完成', routes: 3, warnings: 0 }),
     }
   : realSystem;
 

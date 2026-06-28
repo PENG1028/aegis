@@ -29,7 +29,7 @@ const (
 
 // GeneratesConfig returns true if this exposure type generates real proxy config.
 func GeneratesConfig(exposureType string) bool {
-	return exposureType == TypeHTTP || exposureType == TypeTCP
+	return exposureType == TypeHTTP
 }
 
 // Exposure represents an external service exposure request.

@@ -42,10 +42,10 @@ export default function JoinTokensPage() {
 
   const columns: DataTableColumn<JoinToken>[] = [
     { key: 'name', label: '名称' },
-    { key: 'token_prefix', label: 'Token Prefix', mono: true, muted: true },
+    { key: 'token_prefix', label: '令牌前缀', mono: true, muted: true },
     {
       key: 'allowed_roles',
-      label: 'Roles',
+      label: '角色',
       render: (row) => row.allowed_roles.join(', '),
     },
     {
@@ -82,7 +82,7 @@ export default function JoinTokensPage() {
   return (
     <div>
       <PageHeader
-        title="Join Tokens"
+        title="加入令牌"
         subtitle="节点注册令牌管理"
         helpKey="join-tokens"
         actions={
@@ -103,7 +103,7 @@ export default function JoinTokensPage() {
       </Alert>
 
       <Card>
-        <DataTable columns={columns} data={data || []} emptyMessage="暂无 Join Token" keyExtractor={(r) => r.id} />
+        <DataTable columns={columns} data={data || []} emptyMessage="暂无加入令牌" keyExtractor={(r) => r.id} />
       </Card>
 
       {/* Create Modal */}
@@ -117,10 +117,10 @@ export default function JoinTokensPage() {
             <div className="p-5 space-y-3">
               <div>
                 <label className="block text-xs font-medium text-a-muted mb-1">名称</label>
-                <input className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. node-c join" />
+                <input className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例：node-c 加入" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-a-muted mb-1">Allowed Roles</label>
+                <label className="block text-xs font-medium text-a-muted mb-1">允许角色</label>
                 <input className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent" value={form.roles} onChange={(e) => setForm({ ...form, roles: e.target.value })} placeholder="gateway, relay_target" />
               </div>
               <div>

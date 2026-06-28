@@ -41,7 +41,7 @@ export function ApplyConfigPage() {
 
   return (
     <div>
-      <PageHeader title="Apply" helpKey="apply" sub="配置部署与渲染" actions={
+      <PageHeader title="推送配置" helpKey="apply" sub="配置部署与渲染" actions={
         <Btn primary onClick={doApply} disabled={!pending}>Apply</Btn>
       } />
 
@@ -49,41 +49,41 @@ export function ApplyConfigPage() {
 
       {status && (
         <div className="grid grid-cols-4 gap-3 mb-4">
-          <StatCard label="Services" value={status.counts.services} accent />
-          <StatCard label="Routes" value={status.counts.routes} success />
-          <StatCard label="Managed Domains" value={status.counts.managed_domains} />
-          <StatCard label="Pending" value={pending ? '是' : '否'} warn={!!pending} />
+          <StatCard label="服务" value={status.counts.services} accent />
+          <StatCard label="路由" value={status.counts.routes} success />
+          <StatCard label="管理域名" value={status.counts.managed_domains} />
+          <StatCard label="待处理" value={pending ? '是' : '否'} warn={!!pending} />
         </div>
       )}
 
       <TabBar
         tabs={[
-          { key: 'status', label: 'Status' },
-          { key: 'preview', label: 'Preview' },
-          { key: 'history', label: 'History' },
+          { key: 'status', label: '状态' },
+          { key: 'preview', label: '预览' },
+          { key: 'history', label: '历史' },
         ]}
         active={tab}
         onChange={setTab}
       />
 
       {tab === 'status' && status && (
-        <Card title="System Status">
+        <Card title="系统状态">
           <div className="p-[18px] grid grid-cols-2 gap-3">
-            <MetaRow label="Name" value={status.name} mono />
-            <MetaRow label="Version" value={status.version} mono />
-            <MetaRow label="Provider" value={status.proxy?.provider || '—'} />
-            <MetaRow label="Config Path" value={status.proxy?.config_path || '—'} mono />
-            <MetaRow label="Validate Available" value={status.proxy?.validate_available ? '✓' : '✗'} />
-            <MetaRow label="Reload Command" value={status.proxy?.reload_command_configured ? '✓' : '✗'} />
+            <MetaRow label="名称" value={status.name} mono />
+            <MetaRow label="版本" value={status.version} mono />
+            <MetaRow label="提供商" value={status.proxy?.provider || '—'} />
+            <MetaRow label="配置路径" value={status.proxy?.config_path || '—'} mono />
+            <MetaRow label="验证可用" value={status.proxy?.validate_available ? '✓' : '✗'} />
+            <MetaRow label="重载命令" value={status.proxy?.reload_command_configured ? '✓' : '✗'} />
             {status.last_apply && (
-              <MetaRow label="Last Apply" value={`${status.last_apply.status} @ ${status.last_apply.version}`} />
+              <MetaRow label="上次推送" value={`${status.last_apply.status} @ ${status.last_apply.version}`} />
             )}
           </div>
         </Card>
       )}
 
       {tab === 'preview' && preview && (
-        <Card title="Rendered Config Preview">
+        <Card title="渲染配置预览">
           <div className="p-[18px]">
             <div className="text-xs text-a-muted mb-2">{preview.route_count} routes, {preview.managed_domain_count} managed domains</div>
             <pre className="bg-a-bg border border-a-border rounded-a-sm p-3 text-xs font-mono text-a-muted overflow-x-auto max-h-[500px] whitespace-pre-wrap">
@@ -94,11 +94,11 @@ export function ApplyConfigPage() {
       )}
 
       {tab === 'history' && (
-        <Card title="Apply History">
+        <Card title="推送历史">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                {['Version', 'Status', 'Created'].map((h) => (
+                {['版本', '状态', '创建时间'].map((h) => (
                   <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -145,17 +145,17 @@ export function ConfigPage() {
 
   return (
     <div>
-      <PageHeader title="Config Preview / Diff" helpKey="config" sub="配置证据页面，非编辑器" helpKey="doctor" />
+      <PageHeader title="配置预览 / 对比" helpKey="config" sub="配置证据页面，非编辑器" />
       <div className="grid grid-cols-4 gap-3 mb-4">
-        <div><div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">Provider</div><div className="font-mono text-sm mt-0.5">{status?.proxy?.provider || '—'}</div></div>
-        <div><div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">Config Path</div><div className="font-mono text-sm mt-0.5">{status?.proxy?.config_path || '—'}</div></div>
-        <div><div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">Schema</div><div className="font-mono text-sm mt-0.5">{status?.store?.schema_version || '—'}</div></div>
-        <div><div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">Routes</div><div className="font-mono text-sm mt-0.5">{status?.counts?.routes || '—'}</div></div>
+        <div><div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">提供者</div><div className="font-mono text-sm mt-0.5">{status?.proxy?.provider || '—'}</div></div>
+        <div><div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">配置路径</div><div className="font-mono text-sm mt-0.5">{status?.proxy?.config_path || '—'}</div></div>
+        <div><div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">模式版本</div><div className="font-mono text-sm mt-0.5">{status?.store?.schema_version || '—'}</div></div>
+        <div><div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">路由数</div><div className="font-mono text-sm mt-0.5">{status?.counts?.routes || '—'}</div></div>
       </div>
       <TabBar
         tabs={[
-          { key: 'current', label: 'Current Config' },
-          { key: 'preview', label: 'Preview' },
+          { key: 'current', label: '当前配置' },
+          { key: 'preview', label: '预览' },
         ]}
         active={tab}
         onChange={setTab}

@@ -80,11 +80,7 @@ func (r *Registry) SelectForProtocol(protocol string) (Provider, bool) {
 	case "http", "https":
 		return r.Get("caddy_http")
 	case "tcp":
-		// Prefer haproxy_tcp, fallback to caddy_layer4 or builtin_tcp
 		if p, ok := r.Get("haproxy_tcp"); ok {
-			return p, ok
-		}
-		if p, ok := r.Get("caddy_layer4"); ok {
 			return p, ok
 		}
 	case "udp", "tunnel":

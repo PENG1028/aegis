@@ -1,9 +1,15 @@
 # Binary (root only)
 /aegis
 /aegis.exe
+/aegis-linux
+/aegis-linux.gz
+/simulated-acceptance
+/simulated-acceptance.exe
+*~
 
 # Development data
 .aegis/
+.aegis-test/
 
 # IDE
 .vscode/
@@ -14,6 +20,12 @@
 # OS
 .DS_Store
 Thumbs.db
-verifier-linux
-aegis-linux
-aegis.exe
+
+# Node
+ui/node_modules/
+ui/dist/
+
+# Python
+_fix_policy_test.py
+__pycache__/
+*.pyc

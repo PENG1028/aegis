@@ -1,11 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchDashboard } from '@/lib/api-bridge';
+import { fetchDashboard, dnsApi } from '@/lib/api-bridge';
 import { StatCard, Card, StatusBadge, Alert } from '@/components/shared';
 
 export default function DashboardPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard'],
     queryFn: fetchDashboard,
+  });
+
+  const { data: dnsStatus } = useQuery({
+    queryKey: ['dns-status'],
+    queryFn: () => dnsApi.status(),
+    refetchInterval: 15000,
   });
 
   if (isLoading) {
@@ -38,14 +44,15 @@ export default function DashboardPage() {
         <>
           {/* Stats row */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-            <StatCard label="Nodes 在线" value={`${data.nodes_online}/${data.nodes_total}`} sub={data.nodes_total - data.nodes_online > 0 ? `${data.nodes_total - data.nodes_online} offline` : '全部在线'} success={data.nodes_online === data.nodes_total} warn={data.nodes_online < data.nodes_total} />
-            <StatCard label="Gateways 在线" value={`${data.gateways_online}/${data.gateways_total}`} accent />
-            <StatCard label="Managed Routes" value={data.managed_routes} success />
-            <StatCard label="Routing Tables" value={`${data.routing_tables_synced}/${data.routing_tables_total}`} sub={data.routing_tables_synced === data.routing_tables_total ? '全部同步' : '部分未同步'} success={data.routing_tables_synced === data.routing_tables_total} warn={data.routing_tables_synced < data.routing_tables_total} />
-            <StatCard label="Local Gateway" value={`${data.local_gateway_online}/${data.local_gateway_total}`} sub={data.local_gateway_online > 0 ? `${data.local_gateway_online} running` : '无'} accent />
-            <StatCard label="Relay 验收" value={data.relay_acceptance === 'real_two_node_local_gateway_verified' ? '通过' : data.relay_acceptance} success />
+            <StatCard label="节点在线" value={`${data.nodes_online}/${data.nodes_total}`} sub={data.nodes_total - data.nodes_online > 0 ? `${data.nodes_total - data.nodes_online} offline` : '全部在线'} success={data.nodes_online === data.nodes_total} warn={data.nodes_online < data.nodes_total} />
+            <StatCard label="网关在线" value={`${data.gateways_online}/${data.gateways_total}`} accent />
+            <StatCard label="管理路由" value={data.managed_routes} success />
+            <StatCard label="路由表" value={`${data.routing_tables_synced}/${data.routing_tables_total}`} sub={data.routing_tables_synced === data.routing_tables_total ? '全部同步' : '部分未同步'} success={data.routing_tables_synced === data.routing_tables_total} warn={data.routing_tables_synced < data.routing_tables_total} />
+            <StatCard label="本地网关" value={`${data.local_gateway_online}/${data.local_gateway_total}`} sub={data.local_gateway_online > 0 ? `${data.local_gateway_online} running` : '无'} accent />
+            <StatCard label="中继验收" value={data.relay_acceptance === 'real_two_node_local_gateway_verified' ? '通过' : data.relay_acceptance} success />
             <StatCard label="密钥运行时" value={data.secret_runtime === 'code_verified' ? '代码已验证' : data.secret_runtime} accent />
-            <StatCard label="Pending 能力" value={data.pending_capabilities.length} warn />
+            <StatCard label="待处理能力" value={data.pending_capabilities.length} warn />
+            <StatCard label="DNS 解析" value={dnsStatus?.running ? '运行中' : '已停用'} sub={`本地 ${dnsStatus?.managed_count ?? 0} 域名`} success={!!dnsStatus?.running} accent={!!dnsStatus?.running} />
           </div>
 
           {/* Attention areas */}
@@ -53,19 +60,19 @@ export default function DashboardPage() {
             <Card title="路由健康">
               <div className="space-y-2">
                 <div className="flex justify-between text-xs py-1.5 border-b border-a-border-soft">
-                  <span className="text-a-muted">Routes Unavailable</span>
+                  <span className="text-a-muted">路由不可用</span>
                   <span className={data.routes_unavailable > 0 ? 'text-a-danger font-mono' : 'text-a-success font-mono'}>
                     {data.routes_unavailable === 0 ? '0 ✓' : data.routes_unavailable}
                   </span>
                 </div>
                 <div className="flex justify-between text-xs py-1.5 border-b border-a-border-soft">
-                  <span className="text-a-muted">Missing GatewayLinks</span>
+                  <span className="text-a-muted">缺失网关链接</span>
                   <span className={data.missing_gateway_links > 0 ? 'text-a-warn font-mono' : 'text-a-success font-mono'}>
                     {data.missing_gateway_links === 0 ? '0 ✓' : data.missing_gateway_links}
                   </span>
                 </div>
                 <div className="flex justify-between text-xs py-1.5 border-b border-a-border-soft">
-                  <span className="text-a-muted">Outdated Nodes</span>
+                  <span className="text-a-muted">过期节点</span>
                   <span className={data.outdated_nodes > 0 ? 'text-a-warn font-mono' : 'text-a-success font-mono'}>
                     {data.outdated_nodes === 0 ? '0 ✓' : data.outdated_nodes}
                   </span>
@@ -73,7 +80,7 @@ export default function DashboardPage() {
               </div>
             </Card>
 
-            <Card title="Pending Capabilities">
+            <Card title="待处理能力">
               <div className="space-y-1.5">
                 {data.pending_capabilities.map((cap) => (
                   <div key={cap} className="flex items-center gap-2">

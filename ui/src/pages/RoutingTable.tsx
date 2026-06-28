@@ -23,13 +23,13 @@ export default function RoutingTablePage() {
 
   const columns: DataTableColumn<RoutingEntry>[] = [
     { key: 'domain', label: '域名', mono: true },
-    { key: 'route_id', label: 'Route', mono: true, muted: true },
-    { key: 'from_node_id', label: 'From', mono: true },
-    { key: 'target_node_id', label: 'Target Node', mono: true },
-    { key: 'policy_mode', label: 'Policy', render: (r) => <StatusBadge status={r.policy_mode} /> },
+    { key: 'route_id', label: '路由', mono: true, muted: true },
+    { key: 'from_node_id', label: '来源', mono: true },
+    { key: 'target_node_id', label: '目标节点', mono: true },
+    { key: 'policy_mode', label: '策略', render: (r) => <StatusBadge status={r.policy_mode} /> },
     {
       key: 'candidates',
-      label: 'Candidates',
+      label: '候选',
       render: (r) => (
         <div className="flex gap-1 flex-wrap">
           {r.candidates.map((c, i) => (
@@ -63,21 +63,21 @@ export default function RoutingTablePage() {
 
   return (
     <div>
-      <PageHeader title="Routing Table" helpKey="routing" subtitle="按 Node / Domain 查看路由条目"  />
+      <PageHeader title="路由表" helpKey="routing" subtitle="按 Node / Domain 查看路由条目"  />
 
       <div className="grid grid-cols-4 gap-3 mb-5">
-        <StatCard label="Total Entries" value={entries?.length || 0} accent />
-        <StatCard label="Available" value={availableCount} success />
-        <StatCard label="Unavailable" value={(entries?.length || 0) - availableCount} danger={(entries?.length || 0) > availableCount} />
-        <StatCard label="Validation Errors" value={validation?.error_count || 0} danger={(validation?.error_count || 0) > 0} />
+        <StatCard label="总条目" value={entries?.length || 0} accent />
+        <StatCard label="可用" value={availableCount} success />
+        <StatCard label="不可用" value={(entries?.length || 0) - availableCount} danger={(entries?.length || 0) > availableCount} />
+        <StatCard label="验证错误" value={validation?.error_count || 0} danger={(validation?.error_count || 0) > 0} />
       </div>
 
       {/* Tabs */}
       <div className="flex gap-0 mb-4 border-b border-a-border">
         {[
-          { key: 'table', label: 'Routing Table' },
-          { key: 'preview', label: 'Preview' },
-          { key: 'validate', label: 'Validate' },
+          { key: 'table', label: '路由表' },
+          { key: 'preview', label: '预览' },
+          { key: 'validate', label: '验证' },
         ].map((t: { key: 'table' | 'preview' | 'validate'; label: string }) => (
           <button key={t.key}
             className={`px-4 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap bg-transparent cursor-pointer ${
@@ -115,7 +115,7 @@ export default function RoutingTablePage() {
                   setPreviewResult({ available: false, domain: previewDomain, entries: [], summary: `查询失败: ${e}`, unavailable_reason: String(e) });
                 }
               }}>
-              Preview
+              预览
             </button>
           </div>
           {previewResult && (
@@ -132,19 +132,19 @@ export default function RoutingTablePage() {
                       <StatusBadge status={entry.status} />
                     </div>
                     <div className="text-[11px] text-a-muted space-y-1">
-                      <div>Route: {entry.route_id} → Endpoint: {entry.endpoint_id}</div>
-                      <div>Target: {entry.target_local_host}:{entry.target_local_port}</div>
-                      <div>Policy mode: {entry.policy_mode}</div>
+                      <div>路由: {entry.route_id} → Endpoint: {entry.endpoint_id}</div>
+                      <div>目标: {entry.target_local_host}:{entry.target_local_port}</div>
+                      <div>策略模式: {entry.policy_mode}</div>
                     </div>
                     {entry.candidates.length > 0 && (
                       <div className="mt-2 space-y-1">
-                        <div className="text-[11px] font-semibold text-a-fg">Candidates:</div>
+                        <div className="text-[11px] font-semibold text-a-fg">候选:</div>
                         {entry.candidates.map((c: any, i: number) => (
                           <div key={i} className="flex items-center gap-2 text-[11px] font-mono text-a-muted pl-3">
                             <StatusBadge status={c.mode} />
                             <span>{c.gateway_url || '—'}</span>
                             {c.requires_gateway_link && <span className={c.gateway_link_id ? 'text-a-accent' : 'text-a-danger'}>{c.gateway_link_id || 'missing link'}</span>}
-                            <span className="ml-auto">priority: {c.priority}</span>
+                            <span className="ml-auto">优先级: {c.priority}</span>
                           </div>
                         ))}
                       </div>
@@ -166,7 +166,7 @@ export default function RoutingTablePage() {
         <div>
           {validation && (
             <div className="space-y-4">
-              <Card title="Validation Result">
+              <Card title="验证结果">
                 <div className="flex items-center gap-2 mb-3">
                   <StatusBadge status={validation.valid ? 'pass' : 'fail'} />
                   <span className="text-xs text-a-fg2">{validation.total_entries} entries, {validation.valid_count} valid</span>
@@ -174,7 +174,7 @@ export default function RoutingTablePage() {
               </Card>
 
               {validation.errors.length > 0 && (
-                <Card title={`Errors (${validation.error_count})`}>
+                <Card title={`错误 (${validation.error_count})`}>
                   {validation.errors.map((e, i) => (
                     <div key={i} className="flex items-start gap-2 py-1.5 border-b border-a-border-soft last:border-b-0 text-xs">
                       <span className="text-a-danger shrink-0">✗</span>
@@ -187,7 +187,7 @@ export default function RoutingTablePage() {
               )}
 
               {validation.warnings.length > 0 && (
-                <Card title={`Warnings (${validation.warning_count})`}>
+                <Card title={`警告 (${validation.warning_count})`}>
                   {validation.warnings.map((w, i) => (
                     <div key={i} className="flex items-start gap-2 py-1.5 border-b border-a-border-soft last:border-b-0 text-xs">
                       <span className="text-[#e8b830] shrink-0">⚠</span>
@@ -200,7 +200,7 @@ export default function RoutingTablePage() {
               )}
 
               {validation.errors.length === 0 && validation.warnings.length === 0 && (
-                <Alert type="success">✓ All entries valid</Alert>
+                <Alert type="success">✓ 所有条目有效</Alert>
               )}
             </div>
           )}

@@ -13,12 +13,12 @@ export default function ListenersPage() {
 
   return (
     <div>
-      <PageHeader title="Listeners" helpKey="listeners" sub={`${(data || []).length} 个监听器`} />
+      <PageHeader title="监听器" helpKey="listeners" sub={`${(data || []).length} 个监听器`} />
       <Card>
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr>
-              {['Bind IP', 'Port', 'Provider', 'Purpose', 'Status'].map((h) => (
+              {['绑定 IP', '端口', '提供商', '用途', '状态'].map((h) => (
                 <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -34,7 +34,7 @@ export default function ListenersPage() {
               </tr>
             ))}
             {(!data || data.length === 0) && (
-              <tr><td colSpan={5} className="text-center py-10 text-a-muted text-xs">暂无 Listener 数据</td></tr>
+              <tr><td colSpan={5} className="text-center py-10 text-a-muted text-xs">暂无监听器数据</td></tr>
             )}
           </tbody>
         </table>

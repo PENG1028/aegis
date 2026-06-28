@@ -26,6 +26,7 @@ import (
 	"aegis/internal/routingtable"
 	"aegis/internal/project"
 	"aegis/internal/relay"
+	"aegis/internal/dns"
 	"aegis/internal/route"
 	"aegis/internal/safety"
 	"aegis/internal/service"
@@ -70,4 +71,5 @@ type Services struct {
 	PolicySvc       *routingpolicy.Service       // v1.8C-3
 	RoutingTableSvc *routingtable.Service        // v1.8C-3
 	RelayHTTPHandler http.Handler           // v1.8B relay dispatch
+	DNSMgmt         *dns.Manager            // v1.8E DNS resolver
 }

@@ -23,8 +23,8 @@ export default function LogsPage() {
 
       <TabBar
         tabs={[
-          { key: 'operations', label: 'Op Logs' },
-          { key: 'audit', label: 'Audit' },
+          { key: 'operations', label: '操作日志' },
+          { key: 'audit', label: '审计日志' },
         ]}
         active={tab}
         onChange={setTab}
@@ -37,7 +37,7 @@ export default function LogsPage() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr>
-                  {['Action', 'Target', 'Result', 'Actor', 'Time'].map((h) => (
+                  {['操作', '目标', '结果', '操作者', '时间'].map((h) => (
                     <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -68,7 +68,7 @@ export default function LogsPage() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr>
-                  {['Event', 'Actor', 'Target', 'Result', 'IP', 'Time'].map((h) => (
+                  {['事件', '操作者', '目标', '结果', 'IP', '时间'].map((h) => (
                     <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
                   ))}
                 </tr>

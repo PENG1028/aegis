@@ -9,7 +9,7 @@ import { fmtRel } from '@/lib/utils';
 const columns: DataTableColumn<Node>[] = [
   {
     key: 'node_id',
-    label: 'Node ID',
+    label: '节点 ID',
     mono: true,
     render: (row) => (
       <button
@@ -21,11 +21,11 @@ const columns: DataTableColumn<Node>[] = [
     ),
   },
   { key: 'name', label: '名称' },
-  { key: 'hostname', label: 'Hostname', mono: true, muted: true },
-  { key: 'public_ip', label: 'Public IP', mono: true },
+  { key: 'hostname', label: '主机名', mono: true, muted: true },
+  { key: 'public_ip', label: '公网 IP', mono: true },
   {
     key: 'roles',
-    label: 'Roles',
+    label: '角色',
     render: (row) => (
       <div className="flex gap-1 flex-wrap">
         {row.roles.map((r) => (
@@ -43,7 +43,7 @@ const columns: DataTableColumn<Node>[] = [
   },
   {
     key: 'sync_status',
-    label: 'Sync',
+    label: '同步',
     render: (row) => <StatusBadge status={row.sync_status} />,
   },
   {
@@ -55,7 +55,7 @@ const columns: DataTableColumn<Node>[] = [
   },
   {
     key: 'capabilities',
-    label: 'Capabilities',
+    label: '能力',
     render: (row) => (
       <div className="flex gap-1 flex-wrap max-w-[200px]">
         {Object.entries(row.capabilities)
@@ -89,7 +89,7 @@ export default function NodesPage() {
 
   return (
     <div>
-      <PageHeader title="Nodes" helpKey="nodes" subtitle={`${data?.length || 0} 个节点`}  />
+      <PageHeader title="节点" helpKey="nodes" subtitle={`${data?.length || 0} 个节点`}  />
       <Card>
         <DataTable columns={columns} data={data || []} keyExtractor={(r) => r.node_id} />
       </Card>

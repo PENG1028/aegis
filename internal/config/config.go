@@ -16,6 +16,7 @@ type Config struct {
 	Store          StoreConfig          `yaml:"store"`
 	Server         ServerConfig         `yaml:"server"`
 	ManagedDomain  ManagedDomainConfig  `yaml:"managed_domain"`
+	DNS            DNSConfig            `yaml:"dns"`
 	Runtime        RuntimeConfig        `yaml:"runtime"`
 }
 
@@ -47,6 +48,14 @@ type ManagedDomainConfig struct {
 	GatewayDomain string `yaml:"gateway_domain"`
 }
 
+// DNSConfig holds local DNS resolver settings.
+type DNSConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	ListenAddr  string `yaml:"listen_addr"`
+	Upstream    string `yaml:"upstream"`
+	RefreshSec  int    `yaml:"refresh_sec"`
+}
+
 // RuntimeConfig holds runtime paths.
 type RuntimeConfig struct {
 	ConfigDir string `yaml:"config_dir"`
@@ -75,6 +84,12 @@ func DefaultConfig() *Config {
 			Addr:          "127.0.0.1:7380",
 			AdminToken:    generateAdminToken(),
 			SessionSecure: false, // dev: no TLS by default
+		},
+		DNS: DNSConfig{
+			Enabled:    false,
+			ListenAddr: ":5353", // non-privileged for dev
+			Upstream:   "1.1.1.1:53",
+			RefreshSec: 30,
 		},
 		ManagedDomain: ManagedDomainConfig{
 			GatewayDomain: "",
@@ -105,6 +120,12 @@ func ProductionConfig() *Config {
 			Addr:          "127.0.0.1:7380",
 			AdminToken:    generateAdminToken(),
 			SessionSecure: true, // prod: assume TLS
+		},
+		DNS: DNSConfig{
+			Enabled:    false,
+			ListenAddr: ":53",
+			Upstream:   "1.1.1.1:53",
+			RefreshSec: 30,
 		},
 		ManagedDomain: ManagedDomainConfig{
 			GatewayDomain: "gateway.example.com",

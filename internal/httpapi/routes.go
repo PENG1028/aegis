@@ -40,6 +40,16 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		RelayResolver: &handlers.RelayResolver{Resolver: svcs.RelaySvc},
 	}
 
+	// DNS handler
+	dnsH := &handlers.DNSHandler{
+		DNSMgmt: svcs.DNSMgmt,
+	}
+	if svcs.DNSMgmt != nil {
+		dnsH.Server = svcs.DNSMgmt.Server
+		dnsH.Resolver = svcs.DNSMgmt.Resolver
+		dnsH.Config = svcs.Config
+	}
+
 	// System
 	mux.HandleFunc("GET /api/system/status", h.SystemStatus)
 
@@ -259,4 +269,11 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("POST /api/admin/v1/nodes/{id}/routing-table/generate", h.AdminGenerateNodeRoutingTable)
 		mux.HandleFunc("GET /api/admin/v1/routing/preview", h.AdminPreviewRoute)
 		mux.HandleFunc("GET /api/admin/v1/routing/validate", h.AdminValidateNodeRouting)
+	// ============================================================================
+	// v1.8E DNS Resolver
+	// ============================================================================
+	mux.HandleFunc("GET /api/admin/v1/dns/status", dnsH.DNSStatus)
+	mux.HandleFunc("POST /api/admin/v1/dns/enable", dnsH.DNSEnable)
+	mux.HandleFunc("POST /api/admin/v1/dns/disable", dnsH.DNSDisable)
+	mux.HandleFunc("POST /api/admin/v1/dns/refresh", dnsH.DNSRefresh)
 }
