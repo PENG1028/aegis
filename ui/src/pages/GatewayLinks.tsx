@@ -9,6 +9,7 @@ import { fmtDate } from '@/lib/utils';
 export function GatewayLinksPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [tokenModal, setTokenModal] = useState<any>(null);
 
@@ -70,6 +71,14 @@ export function GatewayLinksPage() {
                             toast('已轮换');
                           } catch (e: any) { toast(e.message, 'error'); }
                         }}>轮换</Btn>
+                        <Btn sm danger onClick={async () => {
+                          if (!confirm(`确定删除 ${l.id}？`)) return;
+                          try {
+                            await gatewayLinkApi.delete(l.id);
+                            toast('已删除');
+                            qc.invalidateQueries({ queryKey: ['gateway-links'] });
+                          } catch (e: any) { toast(e.message, 'error'); }
+                        }}>删除</Btn>
                       </div>
                     </td>
                   </tr>

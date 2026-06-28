@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { fetchRoutingTable, validateRouting, previewRouting } from '@/lib/api-bridge';
-import { PageHeader, Card, DataTable, StatusBadge, Alert, WarningCard, StatCard } from '@/components/shared';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchRoutingTable, validateRouting, previewRouting, nodeApi } from '@/lib/api-bridge';
+import { PageHeader, Card, DataTable, StatusBadge, Alert, WarningCard, StatCard, Btn } from '@/components/shared';
+import { useToast } from '@/components/shared/Toast';
 import type { DataTableColumn } from '@/components/shared';
 import type { RoutingEntry } from '@/types';
 
@@ -10,11 +11,24 @@ export default function RoutingTablePage() {
   const [previewDomain, setPreviewDomain] = useState('api-b.example.com');
   const [previewNode, setPreviewNode] = useState('node-a');
   const [previewResult, setPreviewResult] = useState<any>(null);
+  const [generating, setGenerating] = useState(false);
+  const toast = useToast();
+  const qc = useQueryClient();
 
   const { data: entries, isLoading, error } = useQuery({
     queryKey: ['routing-table'],
     queryFn: () => fetchRoutingTable(),
   });
+
+  const handleGenerate = async (nodeId: string) => {
+    setGenerating(true);
+    try {
+      await nodeApi.generateRoutingTable(nodeId);
+      toast(`路由表已重新生成 (${nodeId})`);
+      qc.invalidateQueries({ queryKey: ['routing-table'] });
+    } catch (e: any) { toast(e.message, 'error'); }
+    setGenerating(false);
+  };
 
   const { data: validation } = useQuery({
     queryKey: ['routing-validate'],
@@ -63,7 +77,12 @@ export default function RoutingTablePage() {
 
   return (
     <div>
-      <PageHeader title="路由表" helpKey="routing" subtitle="按 Node / Domain 查看路由条目"  />
+      <PageHeader title="路由表" helpKey="routing" subtitle="按 Node / Domain 查看路由条目" actions={
+        <div className="flex gap-2">
+          <Btn sm onClick={() => handleGenerate('node-a')} disabled={generating}>重新生成 (A)</Btn>
+          <Btn sm onClick={() => handleGenerate('node-b')} disabled={generating}>重新生成 (B)</Btn>
+        </div>
+      } />
 
       <div className="grid grid-cols-4 gap-3 mb-5">
         <StatCard label="总条目" value={entries?.length || 0} accent />
