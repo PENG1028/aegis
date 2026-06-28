@@ -20,7 +20,7 @@ export function Card({ title, subtitle, actions, children, className }: CardProp
           {actions && <div className="flex gap-2 shrink-0 ml-4">{actions}</div>}
         </div>
       )}
-      <div className={cn('p-5', !title && !actions && '')}>{children}</div>
+      <div className={cn('p-5 overflow-x-auto min-w-0', !title && !actions && '')}>{children}</div>
     </div>
   );
 }
