@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchSettings } from '@/lib/api-bridge';
 import { PageHeader, Card, MetaRow } from '@/components/shared';
+import DnsSettingsPanel from '@/components/dns/DnsSettingsPanel';
 
 export default function SettingsPage() {
   const { data, isLoading, error } = useQuery({
@@ -13,8 +14,12 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" helpKey="settings" subtitle="系统配置（Mock）"  />
+      <PageHeader title="设置" helpKey="settings" subtitle="系统配置" />
       <div className="space-y-4">
+        {/* DNS Resolver Panel */}
+        <DnsSettingsPanel />
+
+        {/* Existing settings groups */}
         {data && Object.entries(data).map(([group, values]) => (
           <Card key={group} title={group.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}>
             <div>

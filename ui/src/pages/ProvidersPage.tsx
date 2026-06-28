@@ -27,23 +27,33 @@ export default function ProvidersPage() {
 
   return (
     <div>
-      <PageHeader title="Providers" helpKey="providers" sub={`${providers.length} 个`} actions={
+      <PageHeader title="提供商" helpKey="providers" sub={`${providers.length} 个`} actions={
         <Btn primary onClick={doDiagnose}>重新诊断</Btn>
       } />
 
       {providers.map((p: any) => (
         <Card key={p.name || p.provider} title={p.name || p.provider} className="mb-4">
           <div className="p-[18px] grid grid-cols-3 gap-3">
-            {['installed', 'version', 'service_running', 'config_valid', 'listener_ok', 'runtime_verify_ok'].map((k) => (
-              <div key={k}>
-                <div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">{k}</div>
-                <div className="text-sm mt-0.5">
-                  {typeof p[k] === 'boolean'
-                    ? <StatusBadge status={p[k] ? 'ok' : 'error'} />
-                    : p[k] || '—'}
+            {['installed', 'version', 'service_running', 'config_valid', 'listener_ok', 'runtime_verify_ok'].map((k) => {
+              const labels: Record<string, string> = {
+                installed: '已安装',
+                version: '版本',
+                service_running: '服务运行',
+                config_valid: '配置有效',
+                listener_ok: '监听正常',
+                runtime_verify_ok: '运行时验证',
+              };
+              return (
+                <div key={k}>
+                  <div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">{labels[k] || k}</div>
+                  <div className="text-sm mt-0.5">
+                    {typeof p[k] === 'boolean'
+                      ? <StatusBadge status={p[k] ? 'ok' : 'error'} />
+                      : p[k] || '—'}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {p.last_error_message && (
             <div className="px-[18px] pb-[18px]">

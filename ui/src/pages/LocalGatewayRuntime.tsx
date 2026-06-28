@@ -16,12 +16,12 @@ export default function LocalGatewayRuntimePage() {
 
   return (
     <div>
-      <PageHeader title="Local Gateway Runtime" helpKey="local-gateway" subtitle="本地 HTTP 网关运行时状态"  />
+      <PageHeader title="本地网关运行时" helpKey="local-gateway" subtitle="本地 HTTP 网关运行时状态"  />
 
       <div className="grid grid-cols-3 gap-3 mb-5">
-        <StatCard label="Nodes" value={data?.length || 0} accent />
-        <StatCard label="Running" value={runningCount} success={runningCount > 0} />
-        <StatCard label="Entries Loaded" value={data?.reduce((s, g) => s + g.entries_count, 0) || 0} />
+        <StatCard label="节点" value={data?.length || 0} accent />
+        <StatCard label="运行中" value={runningCount} success={runningCount > 0} />
+        <StatCard label="已加载条目" value={data?.reduce((s, g) => s + g.entries_count, 0) || 0} />
       </div>
 
       {data && data.map((gw) => (
@@ -30,20 +30,20 @@ export default function LocalGatewayRuntimePage() {
             <div className="flex items-center gap-3">
               <StatusBadge status={gw.status} />
               <span className="text-xs text-a-muted font-mono">
-                Routing: {gw.routing_table_loaded ? '✓ loaded' : '✗ not loaded'}
+                Routing: {gw.routing_table_loaded ? '✓ 已加载' : '✗ 未加载'}
                 {gw.routing_table_revision !== null && ` (rev ${gw.routing_table_revision})`}
               </span>
-              <span className="text-xs text-a-muted">{gw.entries_count} entries</span>
+              <span className="text-xs text-a-muted">{gw.entries_count} 条</span>
               <StatusBadge status={gw.cache_status === 'fresh' ? 'ok' : gw.cache_status === 'stale' ? 'warning' : 'error'} />
             </div>
 
             <div className="text-xs text-a-muted">
-              Cache: {gw.cache_status} · Last error: {gw.last_error || 'none'}
+              Cache: {gw.cache_status} · 上次错误: {gw.last_error || '无'}
             </div>
 
             {gw.diagnostics.length > 0 && (
               <div className="bg-a-bg border border-a-border rounded-a-sm p-3">
-                <div className="text-[11px] font-semibold text-a-fg mb-2">Diagnostics</div>
+                <div className="text-[11px] font-semibold text-a-fg mb-2">诊断</div>
                 <div className="space-y-1">
                   {gw.diagnostics.map((d, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs">

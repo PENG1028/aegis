@@ -17,7 +17,7 @@ const columns: DataTableColumn<Service>[] = [
       </button>
     ),
   },
-  { key: 'service_id', label: 'Service ID', mono: true, muted: true },
+  { key: 'service_id', label: '服务 ID', mono: true, muted: true },
   { key: 'kind', label: '类型', render: (row) => <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-a-border/40 text-a-muted">{row.kind}</span> },
   { key: 'upstream_url', label: '上游', mono: true, muted: true },
   {
@@ -36,8 +36,8 @@ const columns: DataTableColumn<Service>[] = [
     label: '状态',
     render: (row) => <StatusBadge status={row.status} />,
   },
-  { key: 'routes_count', label: 'Routes', mono: true },
-  { key: 'endpoints_count', label: 'Endpoints', mono: true },
+  { key: 'routes_count', label: '路由', mono: true },
+  { key: 'endpoints_count', label: '端点', mono: true },
 ];
 
 export default function ServicesPage() {
@@ -54,7 +54,7 @@ export default function ServicesPage() {
 
   return (
     <div>
-      <PageHeader title="Services" helpKey="services" subtitle={`${data?.length || 0} 个服务`}  />
+      <PageHeader title="服务" helpKey="services" subtitle={`${data?.length || 0} 个服务`}  />
       <Card>
         <DataTable columns={columns} data={data || []} keyExtractor={(r) => r.service_id} />
       </Card>

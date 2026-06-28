@@ -7,12 +7,12 @@ import { fmtRel } from '@/lib/utils';
 
 const columns: DataTableColumn<Endpoint>[] = [
   { key: 'endpoint_id', label: 'Endpoint ID', mono: true, render: (row) => <span className="text-a-accent font-mono text-xs">{row.endpoint_id}</span> },
-  { key: 'service_id', label: 'Service', mono: true, muted: true },
-  { key: 'node_name', label: 'Node', muted: true },
+  { key: 'service_id', label: '服务', mono: true, muted: true },
+  { key: 'node_name', label: '节点', muted: true },
   { key: 'protocol', label: '协议', render: (row) => <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-a-border/40 text-a-muted">{row.protocol}</span> },
   {
     key: 'target_local_host',
-    label: 'Target',
+    label: '目标',
     mono: true,
     render: (row) => `${row.target_local_host}:${row.target_local_port}`,
   },
@@ -23,7 +23,7 @@ const columns: DataTableColumn<Endpoint>[] = [
   },
   {
     key: 'relay_eligible',
-    label: 'Relay',
+    label: '中继',
     render: (row) => row.relay_eligible ? <span className="text-[#4cd964]">✓</span> : '—',
   },
   {
@@ -58,7 +58,7 @@ export default function EndpointsPage() {
 
   return (
     <div>
-      <PageHeader title="Endpoints" helpKey="endpoints" subtitle={`${data?.length || 0} 个 endpoint`}  />
+      <PageHeader title="端点" helpKey="endpoints" subtitle={`${data?.length || 0} 个端点`}  />
       <Card>
         <DataTable columns={columns} data={data || []} keyExtractor={(r) => r.endpoint_id} />
       </Card>

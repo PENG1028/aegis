@@ -50,10 +50,10 @@ export default function HealthCheckPage() {
           </div>
           <Card title="系统状态">
             <div className="p-[18px] grid grid-cols-2 gap-3 text-xs">
-              <div><span className="text-a-muted">Server:</span> {status.server_time}</div>
-              <div><span className="text-a-muted">Provider:</span> {status.proxy?.provider || '—'}</div>
-              <div><span className="text-a-muted">Config:</span> {status.proxy?.config_path || '—'}</div>
-              <div><span className="text-a-muted">Schema:</span> {status.store?.schema_version || '—'}</div>
+              <div><span className="text-a-muted">服务器:</span> {status.server_time}</div>
+              <div><span className="text-a-muted">提供商:</span> {status.proxy?.provider || '—'}</div>
+              <div><span className="text-a-muted">配置:</span> {status.proxy?.config_path || '—'}</div>
+              <div><span className="text-a-muted">模式版本:</span> {status.store?.schema_version || '—'}</div>
             </div>
           </Card>
         </div>

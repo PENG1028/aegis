@@ -15,21 +15,10 @@ func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 		buf.WriteString("{\n    email " + email + "\n}\n\n")
 	}
 
-	// Split routes: HTTP vs TCP/UDP port forwarding
-	var httpRoutes []proxy.RouteConfig
-	var tcpRoutes []proxy.RouteConfig
-	for _, r := range gwCfg.Routes {
-		if r.Kind == "tcp_proxy" {
-			tcpRoutes = append(tcpRoutes, r)
-		} else {
-			httpRoutes = append(httpRoutes, r)
-		}
-	}
-
-	// Render HTTP routes (existing logic)
+	// Render all routes as HTTP site blocks (no TCP/UDP port forwarding)
 	domainRoutes := make(map[string][]proxy.RouteConfig)
 	var domainOrder []string
-	for _, r := range httpRoutes {
+	for _, r := range gwCfg.Routes {
 		if _, ok := domainRoutes[r.Domain]; !ok {
 			domainOrder = append(domainOrder, r.Domain)
 		}
@@ -94,17 +83,6 @@ func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 		buf.WriteString("}\n")
 	}
 
-	// Render TCP/UDP port forwarding routes (layer4 blocks)
-	if len(tcpRoutes) > 0 {
-		buf.WriteString("\n# TCP/UDP port forwarding (caddy_layer4)\n")
-		for _, r := range tcpRoutes {
-			buf.WriteString(fmt.Sprintf("%s {\n", r.Domain))
-			buf.WriteString(fmt.Sprintf("    layer4 {\n"))
-			buf.WriteString(fmt.Sprintf("        proxy %s\n", r.UpstreamURL))
-			buf.WriteString("    }\n")
-			buf.WriteString("}\n\n")
-		}
-	}
 
 	return buf.String()
 }

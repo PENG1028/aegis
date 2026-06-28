@@ -28,12 +28,12 @@ export default function TracePage() {
 
   return (
     <div>
-      <PageHeader title="Trace" helpKey="trace" sub="跟踪请求路径 — domain / SNI / route" />
+      <PageHeader title="跟踪" helpKey="trace" sub="跟踪请求路径 — domain / SNI / route" />
 
       <TabBar
         tabs={[
-          { key: 'ingress', label: 'Ingress Trace' },
-          { key: 'egress', label: 'Egress Trace' },
+          { key: 'ingress', label: '入站跟踪' },
+          { key: 'egress', label: '出站跟踪' },
         ]}
         active={tab}
         onChange={setTab}
@@ -49,7 +49,7 @@ export default function TracePage() {
               placeholder="输入域名..."
               onKeyDown={(e) => e.key === 'Enter' && doTrace()}
             />
-            <Btn primary onClick={doTrace}>Trace</Btn>
+            <Btn primary onClick={doTrace}>跟踪</Btn>
           </div>
 
           {error && <Alert type="err">{error}</Alert>}
@@ -59,8 +59,8 @@ export default function TracePage() {
               <Card title={`Trace: ${traceResult.input}`} className="mb-4">
                 <div className="p-[18px]">
                   <div className="grid grid-cols-2 gap-3 text-xs mb-4">
-                    <div><span className="text-a-muted">Input Type:</span> {traceResult.input_type}</div>
-                    <div><span className="text-a-muted">Status:</span> <StatusBadge status={traceResult.trace_status} /></div>
+                    <div><span className="text-a-muted">输入类型:</span> {traceResult.input_type}</div>
+                    <div><span className="text-a-muted">状态:</span> <StatusBadge status={traceResult.trace_status} /></div>
                   </div>
 
                   {steps.length > 0 && <PathChain steps={steps} className="mb-4" />}
@@ -83,12 +83,12 @@ export default function TracePage() {
               </Card>
 
               {traceResult.final_target && (
-                <Card title="Final Target">
+                <Card title="最终目标">
                   <div className="p-[18px] grid grid-cols-2 gap-3 text-xs">
-                    <div><span className="text-a-muted">Host:</span> <span className="font-mono">{traceResult.final_target.host}</span></div>
-                    <div><span className="text-a-muted">Port:</span> <span className="font-mono">{traceResult.final_target.port}</span></div>
-                    <div><span className="text-a-muted">Protocol:</span> {traceResult.final_target.protocol}</div>
-                    <div><span className="text-a-muted">Reachable:</span> {traceResult.final_target.reachable ? '✓' : '—'}</div>
+                    <div><span className="text-a-muted">主机:</span> <span className="font-mono">{traceResult.final_target.host}</span></div>
+                    <div><span className="text-a-muted">端口:</span> <span className="font-mono">{traceResult.final_target.port}</span></div>
+                    <div><span className="text-a-muted">协议:</span> {traceResult.final_target.protocol}</div>
+                    <div><span className="text-a-muted">可达:</span> {traceResult.final_target.reachable ? '✓' : '—'}</div>
                   </div>
                 </Card>
               )}
@@ -128,7 +128,7 @@ function EgressTrace() {
           value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="域名" />
         <input className="w-32 font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
           value={fromNode} onChange={(e) => setFromNode(e.target.value)} placeholder="源节点" />
-        <Btn primary onClick={doEgress}>Trace</Btn>
+        <Btn primary onClick={doEgress}>跟踪</Btn>
       </div>
 
       {error && <Alert type="err">{error}</Alert>}
@@ -136,16 +136,16 @@ function EgressTrace() {
       {result && (
         <Card title={`Egress: ${result.domain}`}>
           <div className="p-[18px] grid grid-cols-2 gap-3 text-xs">
-            <div><span className="text-a-muted">Resolved IPs:</span> <span className="font-mono">{(result.resolved_ips || []).join(', ')}</span></div>
-            <div><span className="text-a-muted">Classified:</span> {result.ip_classification || '—'}</div>
-            <div><span className="text-a-muted">Aegis Managed:</span> {result.is_aegis_managed_domain ? '✓' : '✗'}</div>
-            <div><span className="text-a-muted">Gateway Link:</span> {result.gateway_link_id || '—'}</div>
+            <div><span className="text-a-muted">解析 IP:</span> <span className="font-mono">{(result.resolved_ips || []).join(', ')}</span></div>
+            <div><span className="text-a-muted">分类:</span> {result.ip_classification || '—'}</div>
+            <div><span className="text-a-muted">Aegis 管理:</span> {result.is_aegis_managed_domain ? '✓' : '✗'}</div>
+            <div><span className="text-a-muted">网关链接:</span> {result.gateway_link_id || '—'}</div>
             {result.internal_target_available && (
               <div className="col-span-2"><Alert type="warn">目标指向本机内网地址；考虑加 GatewayLink 约束。</Alert></div>
             )}
             {result.recommendation && (
               <div className="col-span-2">
-                <span className="text-a-muted">Recommendation:</span>
+                <span className="text-a-muted">建议:</span>
                 <div className="text-a-accent mt-0.5 text-[11px]">{result.recommendation}</div>
               </div>
             )}

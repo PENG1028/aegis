@@ -41,9 +41,9 @@ const SECTIONS: NavSection[] = [
   {
     label: '资源',
     items: [
-      { href: '/services', label: 'Services',
+      { href: '/services', label: '服务',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="14" height="10" rx="2"/><circle cx="12" cy="8" r="1" fill="currentColor"/></svg>' },
-      { href: '/endpoints', label: 'Endpoints',
+      { href: '/endpoints', label: '端点',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="1.5"/><path d="M2 8h4M10 8h4M8 2v4M8 10v4"/></svg>' },
     ],
   },
@@ -83,7 +83,7 @@ const SECTIONS: NavSection[] = [
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="10" height="10" rx="2"/><circle cx="8" cy="8" r="2"/></svg>' },
       { href: '/sync', label: '同步状态',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v12M2 8h12"/></svg>' },
-      { href: '/apply', label: 'Apply',
+      { href: '/apply', label: '推送配置',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h4v2H2zM10 4h4v2h-4zM2 10h3v2H2zM9 10h5v2H9z"/></svg>' },
       { href: '/import', label: '导入配置',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v12M2 8h12"/><path d="M5 8l3 3 3-3"/></svg>' },
@@ -92,7 +92,7 @@ const SECTIONS: NavSection[] = [
   {
     label: '诊断',
     items: [
-      { href: '/doctor', label: 'Doctor',
+      { href: '/doctor', label: '诊断工具',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 14A6 6 0 108 2a6 6 0 000 12z"/><path d="M5.5 8l2 2 3-4"/></svg>' },
       { href: '/smoke', label: '冒烟测试',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14c1-4 3-6 6-6s5 2 6 6"/></svg>' },
@@ -103,11 +103,11 @@ const SECTIONS: NavSection[] = [
   {
     label: '安全',
     items: [
-      { href: '/scopes', label: 'Scopes',
+      { href: '/scopes', label: '作用域',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l6 4-6 4-6-4 6-4z"/></svg>' },
-      { href: '/api-keys', label: 'API Keys',
+      { href: '/api-keys', label: 'API 密钥',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2a4 4 0 014 4v1h1a1 1 0 011 1v4a1 1 0 01-1 1H3a1 1 0 01-1-1V8a1 1 0 011-1h1V6a4 4 0 014-4z"/></svg>' },
-      { href: '/providers', label: 'Providers',
+      { href: '/providers', label: '提供商',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M3.1 12.9l1.4-1.4M11.5 4.5l1.4-1.4"/></svg>' },
     ],
   },
@@ -189,7 +189,7 @@ export function Sidebar({ pendingApply }: { pendingApply?: boolean }) {
       {/* Status indicator */}
       <div className="p-3 border-t border-a-border shrink-0 flex items-center gap-2 text-[11px] text-a-muted">
         <span className="w-1.5 h-1.5 rounded-full bg-[#4cd964] animate-pulse"></span>
-        {pendingApply ? '待应用' : 'Aegis running'}
+        {pendingApply ? '待应用' : 'Aegis 运行中'}
       </div>
     </aside>
   );

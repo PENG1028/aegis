@@ -44,17 +44,17 @@ export function AppLayout() {
           {overview ? (
             <>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-a-muted uppercase tracking-[0.06em]">State</span>
+                <span className="text-[11px] text-a-muted uppercase tracking-[0.06em]">状态</span>
                 <span className="font-mono text-xs text-a-accent">{overview.stateVersion}</span>
               </div>
               <div className="w-px h-5 bg-a-border" />
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-a-muted uppercase tracking-[0.06em]">Leader</span>
+                <span className="text-[11px] text-a-muted uppercase tracking-[0.06em]">主节点</span>
                 <span className="font-mono text-xs">{overview.leaderNode}</span>
               </div>
               <div className="w-px h-5 bg-a-border" />
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-a-muted uppercase tracking-[0.06em]">Apply</span>
+                <span className="text-[11px] text-a-muted uppercase tracking-[0.06em]">推送</span>
                 <span className={`inline-flex items-center gap-1 font-mono text-[11px] px-2.5 py-0.5 rounded-[10px] ${
                   overview.pendingApply
                     ? 'bg-[#e8b830]/20 text-[#e8b830]'
@@ -66,7 +66,7 @@ export function AppLayout() {
             </>
           ) : (
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-a-muted uppercase tracking-[0.06em]">Console</span>
+              <span className="text-[11px] text-a-muted uppercase tracking-[0.06em]">控制台</span>
               <span className="w-px h-4 bg-a-border" />
               <span className="font-mono text-xs text-a-muted">v1.8C</span>
             </div>

@@ -17,8 +17,8 @@ const columns: DataTableColumn<Route>[] = [
       </button>
     ),
   },
-  { key: 'route_id', label: 'Route ID', mono: true, muted: true },
-  { key: 'service_name', label: 'Service', muted: true },
+  { key: 'route_id', label: '路由 ID', mono: true, muted: true },
+  { key: 'service_name', label: '服务', muted: true },
   {
     key: 'tls_mode',
     label: 'TLS',
@@ -31,7 +31,7 @@ const columns: DataTableColumn<Route>[] = [
       ? <span className="text-[#e8b830] text-xs">✓</span>
       : <span className="text-a-muted text-xs">✗</span>,
   },
-  { key: 'preserve_host', label: 'Preserve Host', render: (row) => row.preserve_host ? '✓' : '✗' },
+  { key: 'preserve_host', label: '保留 Host', render: (row) => row.preserve_host ? '✓' : '✗' },
   {
     key: 'status',
     label: '状态',
@@ -53,7 +53,7 @@ export default function RoutesPage() {
 
   return (
     <div>
-      <PageHeader title="Routes" helpKey="routes" subtitle={`${data?.length || 0} 条路由`}  />
+      <PageHeader title="路由" helpKey="routes" subtitle={`${data?.length || 0} 条路由`}  />
       <Card>
         <DataTable columns={columns} data={data || []} keyExtractor={(r) => r.route_id} />
       </Card>

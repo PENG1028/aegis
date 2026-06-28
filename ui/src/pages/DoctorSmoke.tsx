@@ -20,7 +20,7 @@ export function DoctorPage() {
 
   return (
     <div>
-      <PageHeader title="Doctor" sub="系统诊断与一致性检查" actions={
+      <PageHeader title="诊断工具" sub="系统诊断与一致性检查" actions={
         <Btn primary onClick={doCheck} disabled={loading}>运行诊断</Btn>
       } />
 
@@ -61,12 +61,12 @@ export function SmokePage() {
 
   return (
     <div>
-      <PageHeader title="Smoke" sub="冒烟测试状态" helpKey="smoke" />
+      <PageHeader title="冒烟测试" sub="冒烟测试状态" helpKey="smoke" />
       <Card>
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr>
-              {['Check', 'Source', 'Status'].map((h) => (
+              {['检查项', '来源', '状态'].map((h) => (
                 <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
               ))}
             </tr>

@@ -6,26 +6,26 @@ import type { SyncStatus as SyncStatusType } from '@/types';
 import { fmtRel } from '@/lib/utils';
 
 const columns: DataTableColumn<SyncStatusType>[] = [
-  { key: 'node_name', label: 'Node', mono: true },
+  { key: 'node_name', label: '节点', mono: true },
   {
     key: 'status',
     label: 'Sync 状态',
     render: (r) => <StatusBadge status={r.status} />,
   },
-  { key: 'desired_revision', label: 'Desired Rev', mono: true },
-  { key: 'applied_revision', label: 'Applied Rev', mono: true },
-  { key: 'desired_hash', label: 'Desired Hash', mono: true, muted: true, render: (r) => r.desired_hash ? r.desired_hash.slice(0, 12) : '—' },
-  { key: 'actual_hash', label: 'Actual Hash', mono: true, muted: true, render: (r) => r.actual_hash ? r.actual_hash.slice(0, 12) : '—' },
+  { key: 'desired_revision', label: '期望版本', mono: true },
+  { key: 'applied_revision', label: '实际版本', mono: true },
+  { key: 'desired_hash', label: '期望哈希', mono: true, muted: true, render: (r) => r.desired_hash ? r.desired_hash.slice(0, 12) : '—' },
+  { key: 'actual_hash', label: '实际哈希', mono: true, muted: true, render: (r) => r.actual_hash ? r.actual_hash.slice(0, 12) : '—' },
   {
     key: 'last_apply_at',
-    label: 'Last Apply',
+    label: '上次推送',
     mono: true,
     muted: true,
     render: (r) => fmtRel(r.last_apply_at),
   },
   {
     key: 'last_error',
-    label: 'Error',
+    label: '错误',
     render: (r) => r.last_error ? <span className="text-a-danger text-[11px]">{r.last_error}</span> : '—',
   },
 ];
@@ -43,12 +43,12 @@ export default function SyncStatusPage() {
 
   return (
     <div>
-      <PageHeader title="Desired / Actual / Sync Status" helpKey="sync" subtitle="控制面与节点间状态同步"  />
+      <PageHeader title="期望 / 实际 / 同步状态" helpKey="sync" subtitle="控制面与节点间状态同步"  />
 
       <div className="grid grid-cols-3 gap-3 mb-5">
-        <StatCard label="Nodes" value={data?.length || 0} accent />
-        <StatCard label="In Sync" value={inSyncCount} success={inSyncCount === data?.length} />
-        <StatCard label="Outdated / Failed" value={(data?.length || 0) - inSyncCount} warn={(data?.length || 0) > inSyncCount} />
+        <StatCard label="节点" value={data?.length || 0} accent />
+        <StatCard label="已同步" value={inSyncCount} success={inSyncCount === data?.length} />
+        <StatCard label="未同步 / 失败" value={(data?.length || 0) - inSyncCount} warn={(data?.length || 0) > inSyncCount} />
       </div>
 
       <Alert type="info">
@@ -66,22 +66,22 @@ export default function SyncStatusPage() {
               <div className="space-y-3 text-xs">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <div className="text-a-muted mb-1">Provider</div>
+                    <div className="text-a-muted mb-1">提供者</div>
                     <StatusBadge status={node.provider_status.status} />
                     <div className="text-a-muted mt-0.5">{node.provider_status.message}</div>
                   </div>
                   <div>
-                    <div className="text-a-muted mb-1">Relay</div>
+                    <div className="text-a-muted mb-1">中继</div>
                     <StatusBadge status={node.relay_status.status} />
                     <div className="text-a-muted mt-0.5">{node.relay_status.message}</div>
                   </div>
                   <div>
-                    <div className="text-a-muted mb-1">Gateway</div>
+                    <div className="text-a-muted mb-1">网关</div>
                     <StatusBadge status={node.gateway_status.status} />
                     <div className="text-a-muted mt-0.5">{node.gateway_status.message}</div>
                   </div>
                   <div>
-                    <div className="text-a-muted mb-1">Diagnostics</div>
+                    <div className="text-a-muted mb-1">诊断</div>
                     <StatusBadge status={node.diagnostics_status.status} />
                     <div className="text-a-muted mt-0.5">{node.diagnostics_status.message}</div>
                   </div>

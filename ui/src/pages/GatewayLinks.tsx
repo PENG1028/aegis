@@ -21,7 +21,7 @@ export function GatewayLinksPage() {
 
   return (
     <div>
-      <PageHeader title="Gateway Links" helpKey="gateway-links" sub="跨节点网关认证" actions={
+      <PageHeader title="网关链接" helpKey="gateway-links" sub="跨节点网关认证" actions={
         <Btn primary onClick={() => setShowCreate(true)}>+ 创建</Btn>
       } />
 
@@ -31,16 +31,16 @@ export function GatewayLinksPage() {
       {!isLoading && (
         <>
           <div className="grid grid-cols-3 gap-3 mb-5">
-            <StatCard label="Total" value={links.length} accent />
-            <StatCard label="Active" value={links.filter((l: any) => l.status === 'active').length} success />
-            <StatCard label="Errors" value={links.filter((l: any) => l.status === 'error').length} danger />
+            <StatCard label="总数" value={links.length} accent />
+            <StatCard label="活跃" value={links.filter((l: any) => l.status === 'active').length} success />
+            <StatCard label="错误" value={links.filter((l: any) => l.status === 'error').length} danger />
           </div>
 
           <Card>
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr>
-                  {['Link ID', 'Name', 'Host', 'Type', 'Ver', 'Status'].map((h) => (
+                  {['链接 ID', '名称', '主机', '类型', '版本', '状态'].map((h) => (
                     <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
                   ))}
                   <th className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">操作</th>
@@ -75,7 +75,7 @@ export function GatewayLinksPage() {
                   </tr>
                 ))}
                 {links.length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-10 text-a-muted text-xs">暂无 Gateway Links</td></tr>
+                  <tr><td colSpan={7} className="text-center py-10 text-a-muted text-xs">暂无网关链接</td></tr>
                 )}
               </tbody>
             </table>
@@ -147,13 +147,13 @@ export function GatewayLinkDetailPage() {
 
   if (isLoading) return <div className="text-center py-10 text-a-muted font-mono text-sm">加载中...</div>;
   if (error) return <Alert type="err">加载失败: {(error as any).message}</Alert>;
-  if (!data) return <div className="text-center py-10 text-a-muted text-xs">Gateway Link not found</div>;
+  if (!data) return <div className="text-center py-10 text-a-muted text-xs">网关链接未找到</div>;
 
   return (
     <div>
       <button onClick={() => navigate('/gateway-links')}
         className="inline-flex items-center gap-1 text-xs text-a-muted hover:text-a-fg mb-3 bg-transparent border-none cursor-pointer p-0">
-        ← Gateway Links
+        ← 网关链接
       </button>
       <PageHeader title={data.name || data.id} sub={`Link: ${data.id}`} actions={
         <Btn sm danger onClick={async () => {
@@ -167,23 +167,23 @@ export function GatewayLinkDetailPage() {
       <div className="grid grid-cols-2 gap-4">
         <Card title="基本信息">
           <div className="p-[18px]">
-            <MetaRow label="Link ID" value={data.id} mono color="text-a-accent" />
-            <MetaRow label="Name" value={data.name} />
-            <MetaRow label="Host" value={data.host} mono />
-            <MetaRow label="Private IP" value={data.private_ip || '—'} mono />
-            <MetaRow label="Port" value={data.port} mono />
-            <MetaRow label="Type" value={data.gateway_type || data.auth_type} />
-            <MetaRow label="Target Node" value={data.target_node_id || '—'} mono />
-            <MetaRow label="Auto Route" value={data.auto_route ? '✓ 是' : '✗ 否'} />
-            <MetaRow label="Status" value={<StatusBadge status={data.status} />} />
+            <MetaRow label="链接 ID" value={data.id} mono color="text-a-accent" />
+            <MetaRow label="名称" value={data.name} />
+            <MetaRow label="主机" value={data.host} mono />
+            <MetaRow label="内网 IP" value={data.private_ip || '—'} mono />
+            <MetaRow label="端口" value={data.port} mono />
+            <MetaRow label="类型" value={data.gateway_type || data.auth_type} />
+            <MetaRow label="目标节点" value={data.target_node_id || '—'} mono />
+            <MetaRow label="自动路由" value={data.auto_route ? '✓ 是' : '✗ 否'} />
+            <MetaRow label="状态" value={<StatusBadge status={data.status} />} />
           </div>
         </Card>
-        <Card title="Secret">
+        <Card title="密钥">
           <div className="p-[18px]">
-            <MetaRow label="Auth Type" value={data.auth_type} />
-            <MetaRow label="Secret Version" value={data.secret_version} mono />
-            <MetaRow label="Secret Created" value={data.secret_created_at ? fmtDate(data.secret_created_at) : '—'} />
-            <MetaRow label="Last Rotated" value={data.secret_rotated_at ? fmtDate(data.secret_rotated_at) : '—'} />
+            <MetaRow label="认证方式" value={data.auth_type} />
+            <MetaRow label="密钥版本" value={data.secret_version} mono />
+            <MetaRow label="密钥创建时间" value={data.secret_created_at ? fmtDate(data.secret_created_at) : '—'} />
+            <MetaRow label="上次轮换" value={data.secret_rotated_at ? fmtDate(data.secret_rotated_at) : '—'} />
           </div>
         </Card>
       </div>

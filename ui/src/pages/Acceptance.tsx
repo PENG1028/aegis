@@ -34,14 +34,14 @@ export default function AcceptancePage() {
 
       {/* Summary stats */}
       <div className="grid grid-cols-4 gap-3 mb-5">
-        <StatCard label="All Labels" value={summary.total_labels} accent />
-        <StatCard label="Pass" value={summary.pass_count} success />
-        <StatCard label="Pending" value={summary.pending_count} warn />
-        <StatCard label="Deferred" value={summary.deferred_count} />
+        <StatCard label="全部标签" value={summary.total_labels} accent />
+        <StatCard label="通过" value={summary.pass_count} success />
+        <StatCard label="待验证" value={summary.pending_count} warn />
+        <StatCard label="已延期" value={summary.deferred_count} />
       </div>
 
       {/* Verification Labels */}
-      <Card title="Verification Labels" subtitle="各能力维度的验证状态" className="mb-4">
+      <Card title="验证标签" subtitle="各能力维度的验证状态" className="mb-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {labels.map((l) => (
             <div key={l.key} className="bg-a-bg border border-a-border rounded-a-sm p-3.5 flex items-start gap-3">
@@ -70,29 +70,29 @@ export default function AcceptancePage() {
         <Card title="最近一次验收" className="mb-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="text-[11px] text-a-muted">Command</div>
+              <div className="text-[11px] text-a-muted">命令</div>
               <code className="block bg-a-bg border border-a-border rounded-a-sm p-2 mt-1 font-mono text-[11px] text-a-accent">{last.command}</code>
             </div>
             <div>
-              <div className="text-[11px] text-a-muted">HTTP Status</div>
+              <div className="text-[11px] text-a-muted">HTTP 状态</div>
               <div className="text-2xl font-mono font-bold text-[#4cd964]">{last.http_status}</div>
             </div>
             <div>
-              <div className="text-[11px] text-a-muted">Response</div>
+              <div className="text-[11px] text-a-muted">响应</div>
               <code className="block bg-a-bg border border-a-border rounded-a-sm p-2 mt-1 font-mono text-[10px] text-a-fg2">{last.response_summary}</code>
             </div>
             <div>
-              <div className="text-[11px] text-a-muted">Candidate</div>
+              <div className="text-[11px] text-a-muted">候选</div>
               <div className="text-xs mt-1">{last.selected_candidate}</div>
               <div className="text-[11px] text-a-muted mt-2">GatewayLink</div>
               <div className="font-mono text-xs text-a-accent">{last.gateway_link_id}</div>
             </div>
             <div>
-              <div className="text-[11px] text-a-muted">Token Leak Scan</div>
+              <div className="text-[11px] text-a-muted">令牌泄漏扫描</div>
               <StatusBadge status={last.token_leak_scan === 'clean' ? 'pass' : 'fail'} />
             </div>
             <div>
-              <div className="text-[11px] text-a-muted">Negative Smoke</div>
+              <div className="text-[11px] text-a-muted">安全负面测试</div>
               <StatusBadge status={last.negative_smoke_result === 'pass' ? 'pass' : last.negative_smoke_result === 'partial' ? 'warning' : 'fail'} />
             </div>
             <div className="col-span-2">
@@ -108,7 +108,7 @@ export default function AcceptancePage() {
       )}
 
       {/* Negative Smoke */}
-      <Card title="Negative Security Smoke" subtitle="安全边界测试结果">
+      <Card title="安全负面测试" subtitle="安全边界测试结果">
         <div className="space-y-2">
           {smoke.map((t) => (
             <div key={t.id} className="flex items-start gap-3 py-2 border-b border-a-border-soft last:border-b-0 text-xs">

@@ -9,7 +9,7 @@ import { fmtRel } from '@/lib/utils';
 const columns: DataTableColumn<Gateway>[] = [
   {
     key: 'gateway_id',
-    label: 'Gateway ID',
+    label: '网关 ID',
     mono: true,
     render: (row) => (
       <button className="text-a-accent font-mono text-xs bg-transparent border-none cursor-pointer p-0 hover:underline"
@@ -19,15 +19,15 @@ const columns: DataTableColumn<Gateway>[] = [
     ),
   },
   { key: 'name', label: '名称' },
-  { key: 'node_name', label: 'Node', muted: true },
+  { key: 'node_name', label: '节点', muted: true },
   {
     key: 'type',
     label: '类型',
     render: (row) => <StatusBadge status={row.type === 'local' ? 'local_gateway' : row.type === 'private' ? 'private_gateway' : 'public_gateway'} />,
   },
-  { key: 'provider', label: 'Provider', render: (row) => <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-a-border/40 text-a-muted">{row.provider}</span> },
-  { key: 'host', label: 'Host', mono: true, muted: true },
-  { key: 'port', label: 'Port', mono: true },
+  { key: 'provider', label: '提供商', render: (row) => <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-a-border/40 text-a-muted">{row.provider}</span> },
+  { key: 'host', label: '主机', mono: true, muted: true },
+  { key: 'port', label: '端口', mono: true },
   {
     key: 'public_accessible',
     label: '公网',
@@ -61,7 +61,7 @@ export default function GatewaysPage() {
 
   return (
     <div>
-      <PageHeader title="Gateways" helpKey="gateways" subtitle={`${data?.length || 0} 个网关`}  />
+      <PageHeader title="网关" helpKey="gateways" subtitle={`${data?.length || 0} 个网关`}  />
       <Card>
         <DataTable columns={columns} data={data || []} keyExtractor={(r) => r.gateway_id} />
       </Card>

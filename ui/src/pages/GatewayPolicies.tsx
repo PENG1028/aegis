@@ -18,21 +18,21 @@ const columns: DataTableColumn<GatewayPolicy>[] = [
   },
   {
     key: 'allow_local',
-    label: 'Local',
+    label: '本地',
     render: (r) => r.allow_local ? <span className="text-[#4cd964]">✓</span> : <span className="text-a-muted">—</span>,
   },
   {
     key: 'allow_private',
-    label: 'Private',
+    label: '内网',
     render: (r) => r.allow_private ? <span className="text-[#4cd964]">✓</span> : <span className="text-a-muted">—</span>,
   },
   {
     key: 'allow_public',
-    label: 'Public',
+    label: '公网',
     render: (r) => r.allow_public ? <span className="text-[#e8b830]">✓</span> : <span className="text-a-muted">—</span>,
   },
-  { key: 'require_gateway_link', label: 'Req GWLink', render: (r) => r.require_gateway_link ? '✓' : '—' },
-  { key: 'require_relay', label: 'Req Relay', render: (r) => r.require_relay ? '✓' : '—' },
+  { key: 'require_gateway_link', label: '需 GWLink', render: (r) => r.require_gateway_link ? '✓' : '—' },
+  { key: 'require_relay', label: '需中继', render: (r) => r.require_relay ? '✓' : '—' },
   {
     key: 'tls_mode',
     label: 'TLS',
@@ -56,7 +56,7 @@ export default function GatewayPoliciesPage() {
 
   return (
     <div>
-      <PageHeader title="Gateway Policies" helpKey="policies" subtitle="Service / Route 网关策略配置"  />
+      <PageHeader title="网关策略" helpKey="policies" subtitle="Service / Route 网关策略配置"  />
 
       <Alert type="info">
         <div className="flex-1">

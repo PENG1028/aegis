@@ -8,6 +8,7 @@ import (
 	"aegis/internal/apply"
 	"aegis/internal/cluster"
 	"aegis/internal/config"
+	"aegis/internal/dns"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
@@ -215,6 +216,25 @@ func main() {
 		GatewayLinkRepo: gwLinkRepo,
 	})
 	authMiddleware := token.NewAuthMiddleware(cfg.Server.AdminToken, tokenRepo)
+
+	// --- DNS Resolver (v1.8E) ---
+	dnsMgmt := dns.NewManager(
+		routeRepo,
+		service.NewRepository(db),
+		endpointRepo,
+		nodeRepo,
+		cfg.DNS.ListenAddr,
+		cfg.DNS.Upstream,
+		cfg.DNS.RefreshSec,
+	)
+	if cfg.DNS.Enabled {
+		if err := dnsMgmt.Enable(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: dns resolver start failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "info: dns resolver started on %s\n", cfg.DNS.ListenAddr)
+		}
+	}
+
 	httpSvcs := &httpapi.Services{
 		Config:        cfg,
 		Project:       projectSvc,
@@ -255,6 +275,7 @@ func main() {
 			LogSvc:        logSvc,
 			MasterKey:     masterKey,
 		})),
+		DNSMgmt:         dnsMgmt,
 	}
 	cliSvcs := &cli.Services{
 		Config:        cfg,

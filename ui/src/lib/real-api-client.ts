@@ -90,9 +90,9 @@ async function request<T>(
     clearTimeout(timer);
     if (err instanceof ApiError) throw err;
     if ((err as Error).name === 'AbortError') {
-      throw new ApiError('Request timeout', 408);
+      throw new ApiError('请求超时', 408);
     }
-    throw new ApiError((err as Error).message || 'Network error', 0);
+    throw new ApiError((err as Error).message || '网络错误', 0);
   }
 }
 
@@ -383,11 +383,11 @@ export async function fetchNodeDetail(nodeId: string): Promise<NodeDetail> {
 function buildDiagnostics(raw: any): NodeDiagnostic[] {
   const diag: NodeDiagnostic[] = [];
   if (raw.status === 'online') {
-    diag.push({ name: 'heartbeat', status: 'ok', message: 'Node is reachable' });
+    diag.push({ name: 'heartbeat', status: 'ok', message: '节点可达' });
   } else if (raw.last_heartbeat_at) {
-    diag.push({ name: 'heartbeat', status: 'warning', message: 'Last heartbeat: ' + raw.last_heartbeat_at });
+    diag.push({ name: 'heartbeat', status: 'warning', message: '上次心跳: ' + raw.last_heartbeat_at });
   } else {
-    diag.push({ name: 'heartbeat', status: 'error', message: 'No heartbeat received' });
+    diag.push({ name: 'heartbeat', status: 'error', message: '未收到心跳' });
   }
   if (raw.last_error) {
     diag.push({ name: 'last_error', status: 'error', message: raw.last_error });
@@ -685,7 +685,7 @@ export async function fetchEndpointDetail(id: string): Promise<EndpointDetail> {
   // Try to find from services
   const all = await fetchEndpoints();
   const ep = all.find((e) => e.endpoint_id === id);
-  if (!ep) throw new ApiError(`Endpoint ${id} not found`, 404);
+  if (!ep) throw new ApiError(`端点 ${id} 未找到`, 404);
 
   return {
     ...ep,
@@ -963,33 +963,33 @@ export async function fetchAcceptance(): Promise<AcceptanceStatus> {
   const labels: VerificationLabel[] = [
     {
       key: 'two_node_verified',
-      label: 'Two-node Verified',
+      label: '双节点已验证',
       status: safetyRes && safetyRes.length > 0 ? 'pass' : 'pending',
-      evidence: safetyRes ? `${safetyRes.length} routes checked` : 'No data',
+      evidence: safetyRes ? `${safetyRes.length} 条路由已检查` : '无数据',
     },
     {
       key: 'local_gateway_verified',
-      label: 'Local Gateway',
+      label: '本地网关',
       status: statusRes?.proxy?.provider ? 'pass' : 'pending',
-      evidence: `Provider: ${statusRes?.proxy?.provider || '—'}`,
+      evidence: `提供者: ${statusRes?.proxy?.provider || '—'}`,
     },
     {
       key: 'secret_runtime_code_verified',
-      label: 'Secret Runtime Code',
+      label: '密钥运行时代码',
       status: 'deferred',
-      evidence: 'Deferred to v1.9',
+      evidence: '延期至 v1.9',
     },
     {
       key: 'https_deferred',
       label: 'HTTPS',
       status: 'deferred',
-      evidence: 'Deferred to v1.9',
+      evidence: '延期至 v1.9',
     },
     {
       key: 'raw_tcp_deferred',
       label: 'Raw TCP',
       status: 'deferred',
-      evidence: 'Deferred to v2.0',
+      evidence: '延期至 v2.0',
     },
   ];
 
@@ -1109,6 +1109,24 @@ export async function fetchSettings(): Promise<Record<string, any>> {
     ...settings,
   };
 }
+
+// ─── DNS (v1.8E) ───
+
+import type { DnsStatus } from '@/types';
+
+export const dnsApi = {
+  status: (detail?: boolean) =>
+    get<DnsStatus>(`/api/admin/v1/dns/status${detail ? '?detail=1' : ''}`),
+
+  enable: () =>
+    post<Record<string, any>>('/api/admin/v1/dns/enable'),
+
+  disable: () =>
+    post<Record<string, any>>('/api/admin/v1/dns/disable'),
+
+  refresh: () =>
+    post<Record<string, any>>('/api/admin/v1/dns/refresh'),
+};
 
 // ─── Trace (v1.8A) ───
 

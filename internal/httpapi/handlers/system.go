@@ -7,6 +7,7 @@ import (
 	"aegis/internal/cluster"
 	"aegis/internal/config"
 	"aegis/internal/deployment"
+	"aegis/internal/dns"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
@@ -69,6 +70,7 @@ type Handlers struct {
 	NodeStateSvc    *nodestate.Service        // v1.8C-2
 	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
 	GatewayInvSvc   *gateway.InventoryService       // v1.8C-2
+	DNSMgmt         *dns.Manager                    // v1.8E
 	TopologySvc     *topology.Service           // v1.8C-2
 		PolicySvc       *routingpolicy.Service       // v1.8C-3
 		RoutingTableSvc *routingtable.Service        // v1.8C-3

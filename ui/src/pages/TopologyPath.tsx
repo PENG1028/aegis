@@ -17,7 +17,7 @@ export default function TopologyPathPage() {
 
   return (
     <div>
-      <button onClick={() => navigate('/topology')} className="inline-flex items-center gap-1 text-xs text-a-muted hover:text-a-fg mb-3 bg-transparent border-none cursor-pointer p-0">← Topology</button>
+      <button onClick={() => navigate('/topology')} className="inline-flex items-center gap-1 text-xs text-a-muted hover:text-a-fg mb-3 bg-transparent border-none cursor-pointer p-0">← 拓扑</button>
       <PageHeader title={`路径查询: ${from} → ${to}`} helpKey="topology" />
 
       {isLoading && <div className="text-center py-10 text-a-muted font-mono text-sm">查询中...</div>}

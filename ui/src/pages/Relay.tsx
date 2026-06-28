@@ -7,11 +7,11 @@ export default function RelayPage() {
 
   return (
     <div>
-      <PageHeader title="Managed Relay" helpKey="relay" sub="中继路径解析与运行时" />
+      <PageHeader title="受管中继" helpKey="relay" sub="中继路径解析与运行时" />
       <TabBar
         tabs={[
-          { key: 'resolve', label: 'Resolve' },
-          { key: 'trace', label: 'Trace' },
+          { key: 'resolve', label: '解析' },
+          { key: 'trace', label: '跟踪' },
         ]}
         active={tab}
         onChange={setTab}
@@ -46,7 +46,7 @@ function RelayResolve() {
           value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="域名" />
         <input className="w-32 font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
           value={fromNode} onChange={(e) => setFromNode(e.target.value)} placeholder="源节点" />
-        <Btn primary onClick={doResolve}>Resolve</Btn>
+        <Btn primary onClick={doResolve}>解析</Btn>
       </div>
 
       {error && <Alert type="err">{error}</Alert>}
@@ -54,22 +54,22 @@ function RelayResolve() {
       {result && (
         <Card title={result.domain}>
           <div className="p-[18px] grid grid-cols-2 gap-3 text-xs">
-            <div><span className="text-a-muted">Mode:</span> <StatusBadge status={result.mode} /></div>
-            <div><span className="text-a-muted">Target Node:</span> <span className="font-mono">{result.target_node_id || '—'}</span></div>
-            <div><span className="text-a-muted">Gateway URL:</span> <span className="font-mono text-[11px] break-all">{result.gateway_url || '—'}</span></div>
-            <div><span className="text-a-muted">Gateway Link:</span> <span className="font-mono">{result.gateway_link_id || '—'}</span></div>
+            <div><span className="text-a-muted">模式:</span> <StatusBadge status={result.mode} /></div>
+            <div><span className="text-a-muted">目标节点:</span> <span className="font-mono">{result.target_node_id || '—'}</span></div>
+            <div><span className="text-a-muted">网关 URL:</span> <span className="font-mono text-[11px] break-all">{result.gateway_url || '—'}</span></div>
+            <div><span className="text-a-muted">网关链接:</span> <span className="font-mono">{result.gateway_link_id || '—'}</span></div>
             {result.direct_target_suppressed && (
               <div className="col-span-2"><Alert type="warn">远端真实端口已被隐藏</Alert></div>
             )}
             {result.final_local_target && (
               <div className="col-span-2">
-                <span className="text-a-muted">Final Target (Admin):</span>
+                <span className="text-a-muted">最终目标:</span>
                 <span className="font-mono text-a-accent ml-1">{result.final_local_target}</span>
               </div>
             )}
             {result.recommendation && (
               <div className="col-span-2">
-                <span className="text-a-muted">Recommendation:</span>
+                <span className="text-a-muted">建议:</span>
                 <div className="text-a-accent mt-0.5">{result.recommendation}</div>
               </div>
             )}
@@ -101,7 +101,7 @@ function RelayTrace() {
       <div className="flex gap-2 mb-4">
         <input className="flex-1 font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
           value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="域名" />
-        <Btn primary onClick={doTrace}>Trace Relay</Btn>
+        <Btn primary onClick={doTrace}>跟踪中继</Btn>
       </div>
       {error && <Alert type="err">{error}</Alert>}
       {result?.steps?.map((s: any, i: number) => (

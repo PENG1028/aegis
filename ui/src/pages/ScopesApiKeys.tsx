@@ -29,7 +29,7 @@ export function ScopesPage() {
 
   return (
     <div>
-      <PageHeader title="Scopes" helpKey="scopes" sub="API 作用域隔离 — 每个 Scope 内的资源相互隔离" actions={
+      <PageHeader title="作用域" helpKey="scopes" sub="API 作用域隔离 — 每个 Scope 内的资源相互隔离" actions={
         <Btn primary onClick={() => setShowCreate(true)}>+ 创建</Btn>
       } />
 
@@ -41,7 +41,7 @@ export function ScopesPage() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                {['Name', 'Description', 'Status', 'Created'].map((h) => (
+                {['名称', '描述', '状态', '创建时间'].map((h) => (
                   <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -56,7 +56,7 @@ export function ScopesPage() {
                 </tr>
               ))}
               {scopes.length === 0 && (
-                <tr><td colSpan={4} className="text-center py-10 text-a-muted text-xs">暂无 Scopes — 点击「+ 创建」新建一个</td></tr>
+                <tr><td colSpan={4} className="text-center py-10 text-a-muted text-xs">暂无作用域 — 点击「+ 创建」新建一个</td></tr>
               )}
             </tbody>
           </table>
@@ -125,10 +125,10 @@ export function ApiKeysPage() {
 
   return (
     <div>
-      <PageHeader title="API Keys" helpKey="api-keys" sub="每个 API Key 绑定到一个 Scope，隔离资源访问" actions={
+      <PageHeader title="API 密钥" helpKey="api-keys" sub="每个 API Key 绑定到一个 Scope，隔离资源访问" actions={
         <><select className="font-mono text-xs px-2.5 py-1.5 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none mr-2"
           value={scopeFilter} onChange={(e) => setScopeFilter(e.target.value)}>
-          <option value="">全部 Scope</option>
+          <option value="">全部作用域</option>
           {scopes.map((s: any) => <option key={s.id} value={s.space_id || s.id}>{s.name}</option>)}
         </select><Btn primary onClick={() => setShowCreate(true)}>+ 创建</Btn></>
       } />
@@ -137,7 +137,7 @@ export function ApiKeysPage() {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr>
-              {['Prefix', 'Scope', 'Type', 'Status', '操作'].map((h) => (
+              {['前缀', '作用域', '类型', '状态', '操作'].map((h) => (
                 <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -155,7 +155,7 @@ export function ApiKeysPage() {
               </tr>
             ))}
             {keys.length === 0 && (
-              <tr><td colSpan={5} className="text-center py-10 text-a-muted text-xs">暂无 API Keys</td></tr>
+              <tr><td colSpan={5} className="text-center py-10 text-a-muted text-xs">暂无 API 密钥</td></tr>
             )}
           </tbody>
         </table>
@@ -202,7 +202,7 @@ function SelectScopeModal({ scopes, onClose, onCreate }: { scopes: any[]; onClos
           value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="例如：my-api-key" autoFocus />
       </div>
       <div className="mb-3">
-        <label className="block text-xs font-medium text-a-muted mb-1.5">选择 Scope</label>
+        <label className="block text-xs font-medium text-a-muted mb-1.5">选择作用域</label>
         <select className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none"
           value={selected} onChange={(e) => setSelected(e.target.value)}>
           {scopes.map((s: any) => <option key={s.id} value={s.space_id || s.id}>{s.name}</option>)}
