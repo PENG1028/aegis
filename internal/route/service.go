@@ -10,16 +10,27 @@ import (
 	"aegis/internal/logs"
 )
 
+// MutationHook is called after route mutations to trigger desired state regeneration.
+type MutationHook interface {
+	OnRouteChanged(ctx context.Context, routeID string) error
+}
+
 // AppService defines the route application service interface.
 type AppService struct {
 	repo    *Repository
 	logSvc  *logs.AppService
 	edgeSvc *edgemux.AppService
+	hook    MutationHook
 }
 
 // NewAppService creates a new route application service.
 func NewAppService(repo *Repository, logSvc *logs.AppService, edgeSvc *edgemux.AppService) *AppService {
 	return &AppService{repo: repo, logSvc: logSvc, edgeSvc: edgeSvc}
+}
+
+// SetMutationHook sets the mutation hook for desired state regeneration.
+func (s *AppService) SetMutationHook(hook MutationHook) {
+	s.hook = hook
 }
 
 // CreateRoute creates a new route.
@@ -73,13 +84,23 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		}
 	}
 
+	if s.hook != nil {
+		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+	}
+
 	return rt, nil
 }
 
 // CreateRouteDirect creates a pre-built route directly via the repository.
 // Used by the action service to create routes with ownership fields set.
 func (s *AppService) CreateRouteDirect(rt *Route) error {
-	return s.repo.Create(rt)
+	if err := s.repo.Create(rt); err != nil {
+		return err
+	}
+	if s.hook != nil {
+		_ = s.hook.OnRouteChanged(context.Background(), rt.ID)
+	}
+	return nil
 }
 
 // ListRoutesBySpaceID returns all routes for a specific space.
@@ -144,6 +165,10 @@ func (s *AppService) EnableRoute(ctx context.Context, idOrDomain string) error {
 		return fmt.Errorf("enable route: %w", err)
 	}
 
+	if s.hook != nil {
+		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+	}
+
 	s.logSvc.Log(ctx, "route.enable", "route", rt.ID, "success",
 		fmt.Sprintf("enabled route for %q", rt.Domain), "cli")
 	if s.edgeSvc != nil {
@@ -168,6 +193,10 @@ func (s *AppService) DisableRoute(ctx context.Context, idOrDomain string) error 
 
 	if err := s.repo.Update(rt); err != nil {
 		return fmt.Errorf("disable route: %w", err)
+	}
+
+	if s.hook != nil {
+		_ = s.hook.OnRouteChanged(ctx, rt.ID)
 	}
 
 	s.logSvc.Log(ctx, "route.disable", "route", rt.ID, "success",
@@ -198,6 +227,10 @@ func (s *AppService) DeleteRoute(ctx context.Context, idOrDomain string) error {
 		return fmt.Errorf("delete route: %w", err)
 	}
 
+	if s.hook != nil {
+		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+	}
+
 	s.logSvc.Log(ctx, "route.delete", "route", rt.ID, "success",
 		fmt.Sprintf("deleted route for domain %q", rt.Domain), "cli")
 	return nil
@@ -218,6 +251,10 @@ func (s *AppService) SwitchRoute(ctx context.Context, idOrDomain string, service
 		return fmt.Errorf("switch route: %w", err)
 	}
 
+	if s.hook != nil {
+		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+	}
+
 	s.logSvc.Log(ctx, "route.switch", "route", rt.ID, "success",
 		fmt.Sprintf("switched route %q from service %q to %q", rt.Domain, oldServiceID, serviceID), "cli")
 	return nil
@@ -236,6 +273,10 @@ func (s *AppService) SetMaintenance(ctx context.Context, idOrDomain string, enab
 
 	if err := s.repo.Update(rt); err != nil {
 		return fmt.Errorf("set maintenance: %w", err)
+	}
+
+	if s.hook != nil {
+		_ = s.hook.OnRouteChanged(ctx, rt.ID)
 	}
 
 	action := "maintenance.off"

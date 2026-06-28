@@ -49,4 +49,5 @@ type CreateEndpointInput struct {
 	ServiceID string
 	Type      string
 	Address   string
+	NodeID    string // v1.8F — which node this endpoint runs on
 }

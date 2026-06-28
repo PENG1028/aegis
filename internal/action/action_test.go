@@ -66,8 +66,10 @@ func setupActionService(t *testing.T) (*ActionService, *sql.DB) {
 	// We need the real one for the apply lock test, but for most tests we just verify
 	// the action logic (ownership checks, domain checks, resource creation).
 
+	endpointSvc := endpoint.NewAppService(endpointRepo, logSvc)
+
 	return NewActionService(
-		serviceSvc, routeSvc, edgeSvc, endpointRepo,
+		serviceSvc, routeSvc, edgeSvc, endpointRepo, endpointSvc,
 		nil, // applySvc — nil for tests without apply
 		spaceRepo, logSvc, listenerSvc,
 	), db

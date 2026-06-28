@@ -34,6 +34,7 @@ type Services struct {
 	Service       *service.AppService
 	Route         *route.AppService
 	EndpointRepo  *endpoint.Repository
+	EndpointSvc   *endpoint.AppService
 	ManagedDomain *manageddomain.AppService
 	Exposure      *exposure.AppService
 	ListenerSvc   *listener.Service
@@ -77,7 +78,7 @@ v0.x — Production-hardened gateway control with HTTP API.`,
 	cmd.AddCommand(newCleanupCommand(svcs.DB))
 	cmd.AddCommand(newProjectCommand(svcs.Project))
 	cmd.AddCommand(newServiceCommand(svcs.Service, svcs.Project))
-	cmd.AddCommand(newEndpointCommand(svcs.EndpointRepo, svcs.Service, svcs.Logs))
+	cmd.AddCommand(newEndpointCommand(svcs.EndpointRepo, svcs.EndpointSvc, svcs.Service))
 	cmd.AddCommand(newRouteCommand(svcs.Route, svcs.Service, svcs.Project))
 	cmd.AddCommand(newManagedDomainCommand(svcs.ManagedDomain, svcs.Service))
 	cmd.AddCommand(newExposureCommand(svcs.Exposure, svcs.Service))

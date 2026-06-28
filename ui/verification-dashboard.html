@@ -63,44 +63,44 @@ const LABELS = [
 ];
 
 const POSITIVE_TESTS = [
-  { id: 'T1',  desc: 'Direct relay (Server A → Server B)',                              method: 'POST /__aegis/relay',  status: 'pass', http: 200, note: 'private_gateway selected' },
-  { id: 'T2',  desc: 'Local gateway → relay → target (full path)',                      method: 'GET /health via 18080', status: 'pass', http: 200, note: 'X-Aegis-Original-Path: /health' },
-  { id: 'T3',  desc: 'Route api-b.example.com resolved',                                method: 'Host header routing',   status: 'pass', http: 200, note: 'svc-api-b → ep-api-b:18081' },
-  { id: 'T4',  desc: 'GatewayLink HMAC-SHA256 auth match',                              method: 'CheckAuthEncrypted()',  status: 'pass', http: 200, note: 'gl-a-b token verified' },
-  { id: 'T5',  desc: 'Source node node_VM-0-4-ubuntu verified',                         method: 'Node lookup',           status: 'pass', http: 200, note: 'NodeRepo.FindByNodeID' },
-  { id: 'T6',  desc: 'Local endpoint dispatch (node-b → 127.0.0.1:18081)',              method: 'Endpoint filter',       status: 'pass', http: 200, note: 'node_id enforcement' },
-  { id: 'T7',  desc: 'Target service response relayed back',                            method: 'Proxy forward',         status: 'pass', http: 200, note: 'relay-target: v18c8-test' },
+  { id: 'T1',  desc: '直接中继（Server A → Server B）',                                    method: 'POST /__aegis/relay',  status: 'pass', http: 200, note: 'private_gateway selected' },
+  { id: 'T2',  desc: '本地网关 → 中继 → 目标（全路径）',                                     method: 'GET /health via 18080', status: 'pass', http: 200, note: 'X-Aegis-Original-Path: /health' },
+  { id: 'T3',  desc: '路由 api-b.example.com 解析成功',                                     method: 'Host header routing',   status: 'pass', http: 200, note: 'svc-api-b → ep-api-b:18081' },
+  { id: 'T4',  desc: 'GatewayLink HMAC-SHA256 认证匹配',                                  method: 'CheckAuthEncrypted()',  status: 'pass', http: 200, note: 'gl-a-b token verified' },
+  { id: 'T5',  desc: '源节点 node_VM-0-4-ubuntu 已验证',                                   method: 'Node lookup',           status: 'pass', http: 200, note: 'NodeRepo.FindByNodeID' },
+  { id: 'T6',  desc: '本地端点分发（node-b → 127.0.0.1:18081）',                            method: 'Endpoint filter',       status: 'pass', http: 200, note: 'node_id enforcement' },
+  { id: 'T7',  desc: '目标服务响应中继回传',                                               method: 'Proxy forward',         status: 'pass', http: 200, note: 'relay-target: v18c8-test' },
 ];
 
 const NEGATIVE_TESTS = [
-  { id: 'N1',  desc: 'Wrong GatewayLink token',           expected: '403/502', actual: '403 INVALID_GATEWAY_TOKEN',          status: 'pass' },
-  { id: 'N2',  desc: 'Missing GatewayLink token',         expected: '400',     actual: '400 MISSING_GATEWAY_TOKEN',         status: 'pass' },
-  { id: 'N3',  desc: 'Hop count exceeded (99)',           expected: '508',     actual: '508 MAX_HOPS_EXCEEDED',             status: 'pass' },
-  { id: 'N4',  desc: 'Target header injection',           expected: '400',     actual: '400 TARGET_HEADER_REJECTED',        status: 'pass' },
-  { id: 'N5',  desc: 'Target down (service stopped)',     expected: '502',     actual: '需端口冲突测试',                      status: 'partial' },
-  { id: 'N6',  desc: 'Direct remote fallback',            expected: 'Blocked', actual: '未实现（仅 relay）',                  status: 'pass' },
-  { id: 'N7',  desc: 'Unmanaged domain rejection',        expected: '421',     actual: 'Handler 拒绝未知域名',               status: 'pass' },
-  { id: 'N8',  desc: 'Raw token leak scan',               expected: 'Clean',   actual: '响应/错误消息中无 token',             status: 'pass' },
+  { id: 'N1',  desc: '错误的 GatewayLink token',              expected: '403/502', actual: '403 INVALID_GATEWAY_TOKEN',          status: 'pass' },
+  { id: 'N2',  desc: '缺失 GatewayLink token',               expected: '400',     actual: '400 MISSING_GATEWAY_TOKEN',         status: 'pass' },
+  { id: 'N3',  desc: '跳数超限（99）',                          expected: '508',     actual: '508 MAX_HOPS_EXCEEDED',             status: 'pass' },
+  { id: 'N4',  desc: '目标 Header 注入',                      expected: '400',     actual: '400 TARGET_HEADER_REJECTED',        status: 'pass' },
+  { id: 'N5',  desc: '目标宕机（服务停止）',                     expected: '502',     actual: '需端口冲突测试',                      status: 'partial' },
+  { id: 'N6',  desc: '直接远程回退',                           expected: 'Blocked', actual: '未实现（仅 relay）',                  status: 'pass' },
+  { id: 'N7',  desc: '未管理域名拒绝',                         expected: '421',     actual: 'Handler 拒绝未知域名',               status: 'pass' },
+  { id: 'N8',  desc: '原始 Token 泄露扫描',                    expected: 'Clean',   actual: '响应/错误消息中无 token',             status: 'pass' },
 ];
 
 const VERIFICATION_CHAIN = [
-  { step: 1, label: 'POST to Caddy port 80 on Server B',               icon: '→', status: 'ok' },
-  { step: 2, label: 'Caddy proxies /__aegis/* to 127.0.0.1:9000',      icon: '⇢', status: 'ok' },
-  { step: 3, label: 'Aegis relay handler receives request',            icon: '⇢', status: 'ok' },
-  { step: 4, label: 'Route route-api-b resolved (domain match)',       icon: '⤵', status: 'ok' },
-  { step: 5, label: 'GatewayLink gl-a-b authenticated (HMAC-SHA256)',  icon: '🔑', status: 'ok' },
-  { step: 6, label: 'Source node node_VM-0-4-ubuntu verified',         icon: '✓', status: 'ok' },
-  { step: 7, label: 'Local endpoint ep-api-b:18081 found',             icon: '✓', status: 'ok' },
-  { step: 8, label: 'Request forwarded to 127.0.0.1:18081',            icon: '→', status: 'ok' },
-  { step: 9, label: 'Target service response relayed back (HTTP 200)', icon: '←', status: 'ok' },
+  { step: 1, label: '向 Server B Caddy 端口 80 发送 POST 请求',        icon: '→', status: 'ok' },
+  { step: 2, label: 'Caddy 代理 /__aegis/* 到 127.0.0.1:9000',        icon: '⇢', status: 'ok' },
+  { step: 3, label: 'Aegis 中继处理器接收请求',                         icon: '⇢', status: 'ok' },
+  { step: 4, label: '路由 route-api-b 解析成功（域名匹配）',             icon: '⤵', status: 'ok' },
+  { step: 5, label: 'GatewayLink gl-a-b 认证通过（HMAC-SHA256）',       icon: '🔑', status: 'ok' },
+  { step: 6, label: '源节点 node_VM-0-4-ubuntu 已验证',                icon: '✓', status: 'ok' },
+  { step: 7, label: '本地端点 ep-api-b:18081 已找到',                   icon: '✓', status: 'ok' },
+  { step: 8, label: '请求转发至 127.0.0.1:18081',                      icon: '→', status: 'ok' },
+  { step: 9, label: '目标服务响应中继回传（HTTP 200）',                  icon: '←', status: 'ok' },
 ];
 
 const RELAY_PATH = [
   { node: 'curl',         ip: 'Dev',         desc: 'curl -H "Host: api-b.example.com"' },
   { node: 'Local GW',     ip: '127.0.0.1:18080', desc: 'X-Aegis-Original-Path: /health' },
-  { node: 'Server B:80',  ip: '43.159.34.11:80', desc: 'Caddy reverse proxy' },
-  { node: 'Aegis Relay',  ip: '127.0.0.1:9000', desc: 'CheckAuth → route → endpoint' },
-  { node: 'Target',       ip: '127.0.0.1:18081', desc: 'HTTP 200 → relay-target: v18c8-test' },
+  { node: 'Server B:80',  ip: '43.159.34.11:80', desc: 'Caddy 反向代理' },
+  { node: 'Aegis Relay',  ip: '127.0.0.1:9000', desc: '认证检查 → 路由 → 端点分发' },
+  { node: 'Target',       ip: '127.0.0.1:18081', desc: 'HTTP 200 → 中继目标: v18c8-test' },
 ];
 
 const KNOWN_LIMITS = [
@@ -221,8 +221,8 @@ function TopologyDiagram() {
         <circle cx="90" cy="55" r="5" fill="#a865ff"/>
         <text x="100" y="59" fill="#f0ecf8" fontFamily="JetBrains Mono, monospace" fontSize="14" fontWeight="600">Server A</text>
         <text x="90" y="80" fill="#8b83a6" fontFamily="Inter, sans-serif" fontSize="11">{a.host}</text>
-        <text x="90" y="98" fill="#c9c0dc" fontFamily="Inter, sans-serif" fontSize="11">Local Gateway :18080</text>
-        <text x="90" y="116" fill="#c9c0dc" fontFamily="Inter, sans-serif" fontSize="11">Relay Client</text>
+        <text x="90" y="98" fill="#c9c0dc" fontFamily="Inter, sans-serif" fontSize="11">本地网关 :18080</text>
+        <text x="90" y="116" fill="#c9c0dc" fontFamily="Inter, sans-serif" fontSize="11">中继客户端</text>
         <text x="90" y="138" fill="#a865ff" fontFamily="Inter, sans-serif" fontSize="11" fontWeight="500">node-a</text>
 
         {/* Middle label */}
@@ -230,7 +230,7 @@ function TopologyDiagram() {
         <text x="255" y="65" fill="#8b83a6" fontFamily="JetBrains Mono, monospace" fontSize="9">X-Aegis-Gateway-ID</text>
         <text x="255" y="80" fill="#8b83a6" fontFamily="JetBrains Mono, monospace" fontSize="9">X-Aegis-Gateway-Token</text>
         <text x="255" y="95" fill="#8b83a6" fontFamily="JetBrains Mono, monospace" fontSize="9">X-Aegis-Source-Node</text>
-        <text x="255" y="110" fill="#8b83a6" fontFamily="JetBrains Mono, monospace" fontSize="9">Hop: 1</text>
+        <text x="255" y="110" fill="#8b83a6" fontFamily="JetBrains Mono, monospace" fontSize="9">跳数: 1</text>
 
         {/* Flow arrow A → B */}
         <defs><marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4cd964"/></marker></defs>
@@ -242,8 +242,8 @@ function TopologyDiagram() {
         <circle cx="510" cy="55" r="5" fill="#4cd964"/>
         <text x="520" y="59" fill="#f0ecf8" fontFamily="JetBrains Mono, monospace" fontSize="14" fontWeight="600">Server B</text>
         <text x="510" y="80" fill="#8b83a6" fontFamily="Inter, sans-serif" fontSize="11">{b.host}</text>
-        <text x="510" y="98" fill="#c9c0dc" fontFamily="Inter, sans-serif" fontSize="11">Caddy :80</text>
-        <text x="510" y="116" fill="#c9c0dc" fontFamily="Inter, sans-serif" fontSize="11">Aegis Relay Handler</text>
+        <text x="510" y="98" fill="#c9c0dc" fontFamily="Inter, sans-serif" fontSize="11">Caddy 代理 :80</text>
+        <text x="510" y="116" fill="#c9c0dc" fontFamily="Inter, sans-serif" fontSize="11">Aegis 中继处理</text>
         <text x="510" y="138" fill="#4cd964" fontFamily="Inter, sans-serif" fontSize="11" fontWeight="500">node-b</text>
 
         {/* Target bubble */}
@@ -361,9 +361,9 @@ function App() {
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-3 mb-6">
-        <StatCard label="Verification Labels" value="7" sub={`${passCount} pass · ${pendingCount} pending`} accent/>
+        <StatCard label="验证标签" value="7" sub={`${passCount} 通过 · ${pendingCount} 待验证`} accent/>
         <StatCard label="正向测试" value={`${testPassCount}/${POSITIVE_TESTS.length}`} sub="全部通过" success/>
-        <StatCard label="安全测试" value={`${negPassCount}/${NEGATIVE_TESTS.length}`} sub={`${NEGATIVE_TESTS.length - negPassCount} partial`} warn/>
+        <StatCard label="安全测试" value={`${negPassCount}/${NEGATIVE_TESTS.length}`} sub={`${NEGATIVE_TESTS.length - negPassCount} 部分通过`} warn/>
         <StatCard label="验证链步数" value={VERIFICATION_CHAIN.length} sub="全部验证通过" success/>
       </div>
 
@@ -434,10 +434,10 @@ function App() {
                     <span className="font-mono font-semibold">{s.label}</span>
                   </div>
                   <div className="space-y-1.5 text-xs">
-                    <MetaRow label="Node ID" value={s.id} mono color={s.color === 'accent' ? 'text-a-accent' : 'text-a-success'}/>
-                    <MetaRow label="IP" value={s.host} mono/>
-                    <MetaRow label="Role" value={s.role}/>
-                    <MetaRow label="Gateway Port" value={s.port} mono/>
+                    <MetaRow label="节点 ID" value={s.id} mono color={s.color === 'accent' ? 'text-a-accent' : 'text-a-success'}/>
+                    <MetaRow label="IP 地址" value={s.host} mono/>
+                    <MetaRow label="角色" value={s.role}/>
+                    <MetaRow label="网关端口" value={s.port} mono/>
                   </div>
                 </div>
               ))}

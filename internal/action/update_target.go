@@ -59,7 +59,7 @@ func (s *ActionService) updateServiceTarget(ctx context.Context, ac *ActionConte
 	ep := &endpoints[0]
 	ep.Address = fmt.Sprintf("%s:%d", input.TargetHost, input.TargetPort)
 	ep.UpdatedAt = time.Now()
-	if err := s.endpointRepo.Update(ep); err != nil {
+	if err := s.endpointSvc.UpdateEndpoint(ctx, ep); err != nil {
 		return nil, fmt.Errorf("update endpoint: %w", err)
 	}
 
