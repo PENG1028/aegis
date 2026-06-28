@@ -133,6 +133,48 @@ func (p *Planner) Plan(email string) (*ApplyPlan, error) {
 		plan.Warnings = append(plan.Warnings, warns...)
 	}
 
+	// Phase 4: Process active TCP exposures (port forwarding via caddy_layer4)
+	tcpExposures, err := p.exposureRepo.FindActiveTCP()
+	if err != nil {
+		return nil, fmt.Errorf("find active tcp exposures: %w", err)
+	}
+	for _, exp := range tcpExposures {
+		serviceIDSet[exp.ServiceID] = struct{}{}
+	}
+	if len(tcpExposures) > 0 {
+		allIDs := make([]string, 0, len(serviceIDSet))
+		for id := range serviceIDSet {
+			allIDs = append(allIDs, id)
+		}
+		serviceMap, err = p.serviceRepo.FindByIDs(allIDs)
+		if err != nil {
+			return nil, fmt.Errorf("batch load services for tcp: %w", err)
+		}
+	}
+	for _, exp := range tcpExposures {
+		svc := serviceMap[exp.ServiceID]
+		if svc == nil {
+			plan.Warnings = append(plan.Warnings, ApplyWarning{
+				Code: WarningRouteSkipped, Severity: "error",
+				Message: fmt.Sprintf("tcp exposure %s:%d: service %s not found", exp.Host, exp.Port, exp.ServiceID),
+			})
+			plan.SkippedCount++
+			continue
+		}
+		target := fmt.Sprintf("%s:%d", exp.TargetHost, exp.TargetPort)
+		entryPort := fmt.Sprintf("%d", exp.Port)
+		if exp.Host != "" && exp.Host != "0.0.0.0" {
+			entryPort = fmt.Sprintf("%s:%d", exp.Host, exp.Port)
+		}
+		rc := &proxy.RouteConfig{
+			Domain:      entryPort,
+			Kind:        "tcp_proxy",
+			UpstreamURL: target,
+		}
+		routeConfigs = append(routeConfigs, *rc)
+		plan.RouteCount++
+	}
+
 	plan.Routes = routeConfigs
 	return plan, nil
 }
