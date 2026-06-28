@@ -9,15 +9,26 @@ import (
 	"aegis/internal/logs"
 )
 
+// MutationHook is called after service mutations to trigger desired state regeneration.
+type MutationHook interface {
+	OnServiceChanged(ctx context.Context, serviceID string) error
+}
+
 // AppService defines the service application service interface.
 type AppService struct {
 	repo   *Repository
 	logSvc *logs.AppService
+	hook   MutationHook
 }
 
 // NewAppService creates a new service application service.
 func NewAppService(repo *Repository, logSvc *logs.AppService) *AppService {
 	return &AppService{repo: repo, logSvc: logSvc}
+}
+
+// SetMutationHook sets the mutation hook for desired state regeneration.
+func (s *AppService) SetMutationHook(hook MutationHook) {
+	s.hook = hook
 }
 
 // CreateService creates a new backend service.
@@ -59,6 +70,10 @@ func (s *AppService) CreateService(ctx context.Context, input CreateServiceInput
 	if err := s.repo.Create(svc); err != nil {
 		s.logSvc.Log(ctx, "service.create", "service", svc.ID, "failed", err.Error(), "cli")
 		return nil, fmt.Errorf("create service: %w", err)
+	}
+
+	if s.hook != nil {
+		_ = s.hook.OnServiceChanged(ctx, svc.ID)
 	}
 
 	s.logSvc.Log(ctx, "service.create", "service", svc.ID, "success",
@@ -116,6 +131,10 @@ func (s *AppService) EnableService(ctx context.Context, idOrName string) error {
 		return fmt.Errorf("enable service: %w", err)
 	}
 
+	if s.hook != nil {
+		_ = s.hook.OnServiceChanged(ctx, svc.ID)
+	}
+
 	s.logSvc.Log(ctx, "service.enable", "service", svc.ID, "success",
 		fmt.Sprintf("enabled service %q", svc.Name), "cli")
 	return nil
@@ -139,6 +158,10 @@ func (s *AppService) DisableService(ctx context.Context, idOrName string) error 
 		return fmt.Errorf("disable service: %w", err)
 	}
 
+	if s.hook != nil {
+		_ = s.hook.OnServiceChanged(ctx, svc.ID)
+	}
+
 	s.logSvc.Log(ctx, "service.disable", "service", svc.ID, "success",
 		fmt.Sprintf("disabled service %q", svc.Name), "cli")
 	return nil
@@ -147,7 +170,13 @@ func (s *AppService) DisableService(ctx context.Context, idOrName string) error 
 // CreateServiceDirect creates a pre-built service directly via the repository.
 // Used by the action service to create services with ownership fields set.
 func (s *AppService) CreateServiceDirect(svc *Service) error {
-	return s.repo.Create(svc)
+	if err := s.repo.Create(svc); err != nil {
+		return err
+	}
+	if s.hook != nil {
+		_ = s.hook.OnServiceChanged(context.Background(), svc.ID)
+	}
+	return nil
 }
 
 // ListServicesBySpaceID returns all services for a specific space.
@@ -192,6 +221,10 @@ func (s *AppService) UpdateService(ctx context.Context, idOrName string, input U
 	if err := s.repo.Update(svc); err != nil {
 		s.logSvc.Log(ctx, "service.update", "service", svc.ID, "failed", err.Error(), "cli")
 		return nil, fmt.Errorf("update service: %w", err)
+	}
+
+	if s.hook != nil {
+		_ = s.hook.OnServiceChanged(ctx, svc.ID)
 	}
 
 	s.logSvc.Log(ctx, "service.update", "service", svc.ID, "success",

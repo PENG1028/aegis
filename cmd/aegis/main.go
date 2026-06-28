@@ -1,6 +1,7 @@
 package main
 import (
 	"aegis/internal/id"
+	"context"
 	"fmt"
 	"os"
 	"aegis/internal/action"
@@ -29,6 +30,8 @@ import (
 	"aegis/internal/proxy"
 	"aegis/internal/proxy/caddy"
 	"aegis/internal/route"
+	"aegis/internal/routingpolicy"
+	"aegis/internal/routingtable"
 	"aegis/internal/secrets"
 	"aegis/internal/safety"
 	"aegis/internal/service"
@@ -204,7 +207,23 @@ func main() {
 	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, "gw_main", "main-gateway", masterKey)
 	spaceRepo := space.NewRepository(db)
 	spaceSvc := space.NewAppService(spaceRepo, logSvc)
-	actionSvc := action.NewActionService(serviceSvc, routeSvc, edgeSvc, endpointRepo, applySvc, spaceRepo, logSvc, listenerSvc)
+	endpointSvc := endpoint.NewAppService(endpointRepo, logSvc)
+	actionSvc := action.NewActionService(serviceSvc, routeSvc, edgeSvc, endpointRepo, endpointSvc, applySvc, spaceRepo, logSvc, listenerSvc)
+
+	// --- Desired State Generator (v1.8F multi-node) ---
+	routingPolicyRepo := routingpolicy.NewRepository(db)
+	routingPolicySvc := routingpolicy.NewService(routingPolicyRepo)
+	routingTableSvc := routingtable.NewService()
+	dsDataSource := nodestate.NewDBDataSource(
+		nodeRepo, routeRepo, endpointRepo, gatewayInvRepo, gwLinkRepo, topologyRepo, routingPolicySvc,
+	)
+	dsGenerator := nodestate.NewGenerator(nodeStateSvc, dsDataSource)
+
+	// Wire mutation hooks: any change triggers desired state regeneration
+	routeSvc.SetMutationHook(&desiredStateHook{gen: dsGenerator})
+	serviceSvc.SetMutationHook(&desiredStateHook{gen: dsGenerator})
+	endpointSvc.SetMutationHook(&desiredStateHook{gen: dsGenerator})
+
 	token.SetAuditLogger(logSvc)
 	adminauth.SetAuditLogger(logSvc)
 	traceSvc := trace.NewService(trace.Dependencies{
@@ -240,6 +259,7 @@ func main() {
 		Project:       projectSvc,
 		Service:       serviceSvc,
 		EndpointRepo:  endpointRepo,
+		EndpointSvc:   endpointSvc,
 		Route:         routeSvc,
 		ManagedDomain: mdSvc,
 		Exposure:      exposureSvc,
@@ -260,6 +280,8 @@ func main() {
 		GatewayInvRepo: gatewayInvRepo,
 		GatewayInvSvc:  gatewayInvSvc,
 		TopologySvc:    topologySvc,
+		PolicySvc:       routingPolicySvc,
+		RoutingTableSvc: routingTableSvc,
 		Gateway:       nil,
 		DepSvc:        nil,
 		PendingState:  pendingState,
@@ -284,6 +306,7 @@ func main() {
 		Route:         routeSvc,
 		EndpointRepo:  endpointRepo,
 		ManagedDomain: mdSvc,
+		EndpointSvc:   endpointSvc,
 		Exposure:      exposureSvc,
 		ListenerSvc:   listenerSvc,
 		EdgeSvc:       edgeSvc,
@@ -308,6 +331,24 @@ func main() {
 		os.Exit(1)
 	}
 }
+// desiredStateHook implements route.MutationHook, service.MutationHook,
+// and endpoint.MutationHook to trigger desired state regeneration on any change.
+type desiredStateHook struct {
+	gen *nodestate.Generator
+}
+
+func (h *desiredStateHook) OnRouteChanged(ctx context.Context, routeID string) error {
+	return h.gen.GenerateForAllNodes(ctx)
+}
+
+func (h *desiredStateHook) OnServiceChanged(ctx context.Context, serviceID string) error {
+	return h.gen.GenerateForAllNodes(ctx)
+}
+
+func (h *desiredStateHook) OnEndpointChanged(ctx context.Context, endpointID string) error {
+	return h.gen.GenerateForAllNodes(ctx)
+}
+
 // generateRandomHex returns a cryptographically random hex string of n bytes.
 // Delegates to id.GenerateRandomHex — the project's canonical random-hex generator.
 func generateRandomHex(n int) string {

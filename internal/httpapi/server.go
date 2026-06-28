@@ -41,6 +41,7 @@ type Services struct {
 	Project       *project.AppService
 	Service       *service.AppService
 	EndpointRepo  *endpoint.Repository
+	EndpointSvc   *endpoint.AppService
 	Route         *route.AppService
 	ManagedDomain *manageddomain.AppService
 	Exposure      *exposure.AppService

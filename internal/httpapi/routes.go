@@ -37,6 +37,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		TraceSvc:        svcs.TraceSvc,
 		SafetySvc:       svcs.SafetySvc,
 		GatewayLinkSvc:  svcs.GatewayLinkSvc,
+		PolicySvc:       svcs.PolicySvc,
+		RoutingTableSvc: svcs.RoutingTableSvc,
 		RelayResolver: &handlers.RelayResolver{Resolver: svcs.RelaySvc},
 	}
 

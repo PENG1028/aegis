@@ -30,6 +30,7 @@ type ActionService struct {
 	routeSvc     *route.AppService
 	edgeSvc      *edgemux.AppService
 	endpointRepo *endpoint.Repository
+	endpointSvc  *endpoint.AppService
 	applySvc     *apply.AppService
 	spaceRepo    *space.Repository
 	logSvc       *logs.AppService
@@ -42,6 +43,7 @@ func NewActionService(
 	routeSvc *route.AppService,
 	edgeSvc *edgemux.AppService,
 	endpointRepo *endpoint.Repository,
+	endpointSvc *endpoint.AppService,
 	applySvc *apply.AppService,
 	spaceRepo *space.Repository,
 	logSvc *logs.AppService,
@@ -52,6 +54,7 @@ func NewActionService(
 		routeSvc:     routeSvc,
 		edgeSvc:      edgeSvc,
 		endpointRepo: endpointRepo,
+		endpointSvc:  endpointSvc,
 		applySvc:     applySvc,
 		spaceRepo:    spaceRepo,
 		logSvc:       logSvc,

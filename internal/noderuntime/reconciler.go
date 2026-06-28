@@ -21,6 +21,7 @@ type Reconciler struct {
 	nodeID            string
 	gwStatusProvider  GatewayStatusProvider
 	secretProvider    *InMemorySecretProvider
+	caddyApplier      CaddyfileApplier
 }
 
 // NewReconciler creates a new node reconciler.
@@ -44,6 +45,11 @@ func (r *Reconciler) SetGatewayStatusProvider(p GatewayStatusProvider) {
 // Tokens exist only in memory - never written to disk cache.
 func (r *Reconciler) SetSecretProvider(p *InMemorySecretProvider) {
 	r.secretProvider = p
+}
+
+// SetCaddyfileApplier sets the Caddyfile applier for rendering and reloading proxy config.
+func (r *Reconciler) SetCaddyfileApplier(a CaddyfileApplier) {
+	r.caddyApplier = a
 }
 
 // SyncOnce performs a single sync cycle.
@@ -137,11 +143,24 @@ func (r *Reconciler) processDesiredState(ds *DesiredStateResponse) (*ActualState
 		}
 	}
 
+	// Step 8c: Apply routing table to Caddy (render → validate → backup → replace → reload)
+	caddyErr := ""
+	if r.caddyApplier != nil {
+		if err := r.caddyApplier.Apply(rtCache.Entries); err != nil {
+			caddyErr = err.Error()
+		}
+	}
+
 	// Step 9: Build diagnostics status
+	diagMode := r.config.ReconcileMode
 	diagnostics := map[string]interface{}{
 		"routing_table_entries": len(rtCache.Entries),
 		"cache_written":         true,
-		"reconcile_mode":        r.config.ReconcileMode,
+		"reconcile_mode":        diagMode,
+		"caddy_applied":         caddyErr == "",
+	}
+	if caddyErr != "" {
+		diagnostics["caddy_error"] = caddyErr
 	}
 	diagJSON := jsonMarshalSimple(diagnostics)
 
@@ -154,7 +173,14 @@ func (r *Reconciler) processDesiredState(ds *DesiredStateResponse) (*ActualState
 	}
 
 	// Step 10: Report actual state
-	actual := r.successState(ds.Revision, ds.StateHash, "applied", diagJSON)
+	overallStatus := "applied"
+	if caddyErr != "" {
+		overallStatus = "degraded"
+	}
+	actual := r.successState(ds.Revision, ds.StateHash, overallStatus, diagJSON)
+	if caddyErr != "" {
+		actual.LastError = "caddy apply failed: " + caddyErr
+	}
 
 	if err := r.client.ReportActualState(ActualStateRequest{
 		AppliedRevision:   actual.AppliedRevision,

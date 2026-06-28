@@ -79,16 +79,12 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 	}
 
 	// 5. Create endpoint
-	ep := &endpoint.Endpoint{
-		ID:        id.New("ep"),
+	_, err = s.endpointSvc.CreateEndpoint(ctx, endpoint.CreateEndpointInput{
 		ServiceID: svc.ID,
 		Type:      "private",
 		Address:   fmt.Sprintf("%s:%d", input.TargetHost, input.TargetPort),
-		Enabled:   true,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	if err := s.endpointRepo.Create(ep); err != nil {
+	})
+	if err != nil {
 		return nil, fmt.Errorf("create endpoint: %w", err)
 	}
 

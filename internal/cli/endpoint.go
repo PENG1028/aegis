@@ -5,32 +5,29 @@ import (
 	"fmt"
 	"os"
 	"text/tabwriter"
-	"time"
 
 	"aegis/internal/endpoint"
-	"aegis/internal/id"
-	"aegis/internal/logs"
 	"aegis/internal/service"
 
 	"github.com/spf13/cobra"
 )
 
-func newEndpointCommand(epRepo *endpoint.Repository, svcSvc *service.AppService, logSvc *logs.AppService) *cobra.Command {
+func newEndpointCommand(epRepo *endpoint.Repository, epSvc *endpoint.AppService, svcSvc *service.AppService) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "endpoint",
 		Short: "Manage service endpoints",
 		Long:  "Add, list, enable, and disable endpoints for services.",
 	}
 
-	cmd.AddCommand(newEndpointAddCommand(epRepo, svcSvc, logSvc))
+	cmd.AddCommand(newEndpointAddCommand(epSvc, svcSvc))
 	cmd.AddCommand(newEndpointListCommand(epRepo, svcSvc))
-	cmd.AddCommand(newEndpointEnableCommand(epRepo, logSvc))
-	cmd.AddCommand(newEndpointDisableCommand(epRepo, logSvc))
+	cmd.AddCommand(newEndpointEnableCommand(epSvc))
+	cmd.AddCommand(newEndpointDisableCommand(epSvc))
 
 	return cmd
 }
 
-func newEndpointAddCommand(epRepo *endpoint.Repository, svcSvc *service.AppService, logSvc *logs.AppService) *cobra.Command {
+func newEndpointAddCommand(epSvc *endpoint.AppService, svcSvc *service.AppService) *cobra.Command {
 	var epType, address string
 
 	cmd := &cobra.Command{
@@ -52,23 +49,14 @@ func newEndpointAddCommand(epRepo *endpoint.Repository, svcSvc *service.AppServi
 				return fmt.Errorf("--address is required")
 			}
 
-			now := time.Now()
-			ep := &endpoint.Endpoint{
-				ID:        id.New("ep"),
+			ep, err := epSvc.CreateEndpoint(ctx, endpoint.CreateEndpointInput{
 				ServiceID: svc.ID,
 				Type:      epType,
 				Address:   address,
-				Enabled:   true,
-				CreatedAt: now,
-				UpdatedAt: now,
+			})
+			if err != nil {
+				return err
 			}
-
-			if err := epRepo.Create(ep); err != nil {
-				return fmt.Errorf("create endpoint: %w", err)
-			}
-
-			logSvc.Log(ctx, "endpoint.create", "endpoint", ep.ID, "success",
-				fmt.Sprintf("added %s endpoint %s for service %s", epType, address, svc.Name), "cli")
 
 			fmt.Printf("Endpoint added to service %q (ID: %s, type: %s, address: %s)\n",
 				svc.Name, ep.ID, epType, address)
@@ -119,59 +107,33 @@ func newEndpointListCommand(epRepo *endpoint.Repository, svcSvc *service.AppServ
 	}
 }
 
-func newEndpointEnableCommand(epRepo *endpoint.Repository, logSvc *logs.AppService) *cobra.Command {
+func newEndpointEnableCommand(epSvc *endpoint.AppService) *cobra.Command {
 	return &cobra.Command{
 		Use:   "enable <endpoint-id>",
 		Short: "Enable an endpoint",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			ep, err := epRepo.FindByID(args[0])
-			if err != nil {
+			if err := epSvc.EnableEndpoint(ctx, args[0]); err != nil {
 				return err
 			}
-			if ep == nil {
-				return fmt.Errorf("endpoint %q not found", args[0])
-			}
-			if ep.Enabled {
-				return fmt.Errorf("endpoint %s is already enabled", ep.ID)
-			}
-			ep.Enabled = true
-			ep.UpdatedAt = time.Now()
-			if err := epRepo.Update(ep); err != nil {
-				return err
-			}
-			logSvc.Log(ctx, "endpoint.enable", "endpoint", ep.ID, "success", "enabled endpoint", "cli")
-			fmt.Printf("Endpoint %s enabled.\n", ep.ID)
+			fmt.Printf("Endpoint %s enabled.\n", args[0])
 			return nil
 		},
 	}
 }
 
-func newEndpointDisableCommand(epRepo *endpoint.Repository, logSvc *logs.AppService) *cobra.Command {
+func newEndpointDisableCommand(epSvc *endpoint.AppService) *cobra.Command {
 	return &cobra.Command{
 		Use:   "disable <endpoint-id>",
 		Short: "Disable an endpoint",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			ep, err := epRepo.FindByID(args[0])
-			if err != nil {
+			if err := epSvc.DisableEndpoint(ctx, args[0]); err != nil {
 				return err
 			}
-			if ep == nil {
-				return fmt.Errorf("endpoint %q not found", args[0])
-			}
-			if !ep.Enabled {
-				return fmt.Errorf("endpoint %s is already disabled", ep.ID)
-			}
-			ep.Enabled = false
-			ep.UpdatedAt = time.Now()
-			if err := epRepo.Update(ep); err != nil {
-				return err
-			}
-			logSvc.Log(ctx, "endpoint.disable", "endpoint", ep.ID, "success", "disabled endpoint", "cli")
-			fmt.Printf("Endpoint %s disabled.\n", ep.ID)
+			fmt.Printf("Endpoint %s disabled.\n", args[0])
 			return nil
 		},
 	}
