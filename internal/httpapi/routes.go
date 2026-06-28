@@ -154,6 +154,9 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/system/verify", h.AdminSystemVerify)
 	mux.HandleFunc("POST /api/admin/v1/system/apply", h.AdminSystemApply)
 
+	// v1.8D Import — Caddyfile config migration
+	mux.HandleFunc("GET /api/admin/v1/import/caddy/preview", h.AdminImportCaddyPreview)
+	mux.HandleFunc("POST /api/admin/v1/import/caddy/confirm", h.AdminImportCaddyConfirm)
 	// v1.7 Node Capabilities
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/capabilities", h.GetNodeCapabilities)
 	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/refresh-capabilities", h.RefreshNodeCapabilities)

@@ -1,0 +1,70 @@
+import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { fetchGateways } from '@/lib/api-bridge';
+import { PageHeader, Card, DataTable, StatusBadge } from '@/components/shared';
+import type { DataTableColumn } from '@/components/shared';
+import type { Gateway } from '@/types';
+import { fmtRel } from '@/lib/utils';
+
+const columns: DataTableColumn<Gateway>[] = [
+  {
+    key: 'gateway_id',
+    label: 'Gateway ID',
+    mono: true,
+    render: (row) => (
+      <button className="text-a-accent font-mono text-xs bg-transparent border-none cursor-pointer p-0 hover:underline"
+        onClick={() => window._navigate?.(`/gateways/${row.gateway_id}`)}>
+        {row.gateway_id}
+      </button>
+    ),
+  },
+  { key: 'name', label: '名称' },
+  { key: 'node_name', label: 'Node', muted: true },
+  {
+    key: 'type',
+    label: '类型',
+    render: (row) => <StatusBadge status={row.type === 'local' ? 'local_gateway' : row.type === 'private' ? 'private_gateway' : 'public_gateway'} />,
+  },
+  { key: 'provider', label: 'Provider', render: (row) => <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-a-border/40 text-a-muted">{row.provider}</span> },
+  { key: 'host', label: 'Host', mono: true, muted: true },
+  { key: 'port', label: 'Port', mono: true },
+  {
+    key: 'public_accessible',
+    label: '公网',
+    render: (row) => row.public_accessible ? <span className="text-[#e8b830]">✓</span> : <span className="text-a-muted">—</span>,
+  },
+  {
+    key: 'status',
+    label: '状态',
+    render: (row) => <StatusBadge status={row.status} />,
+  },
+  {
+    key: 'last_verified_at',
+    label: '验证',
+    mono: true,
+    muted: true,
+    render: (row) => fmtRel(row.last_verified_at),
+  },
+];
+
+export default function GatewaysPage() {
+  const navigate = useNavigate();
+  (window as any)._navigate = navigate;
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['gateways'],
+    queryFn: fetchGateways,
+  });
+
+  if (isLoading) return <div className="text-center py-10 text-a-muted font-mono text-sm">加载中...</div>;
+  if (error) return <div className="px-4 py-3 rounded-a-md text-xs border bg-[#ff5c72]/10 text-[#ff5c72] border-[#ff5c72]/20">加载失败: {error.message}</div>;
+
+  return (
+    <div>
+      <PageHeader title="Gateways" helpKey="gateways" subtitle={`${data?.length || 0} 个网关`}  />
+      <Card>
+        <DataTable columns={columns} data={data || []} keyExtractor={(r) => r.gateway_id} />
+      </Card>
+    </div>
+  );
+}
