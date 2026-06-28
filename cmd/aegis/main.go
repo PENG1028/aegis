@@ -188,7 +188,7 @@ func main() {
 	adminAuthSvc := adminauth.NewService(adminUserRepo, adminSessionRepo)
 	adminPassword := generateRandomHex(16)
 	if _, err := adminAuthSvc.EnsureAdmin("admin", adminPassword); err != nil {
-		fmt.Printf("  admin user: %v\n", err)
+		fmt.Fprintf(os.Stderr, "  admin user: %v\n", err)
 	} else {
 		fmt.Fprintf(os.Stderr, "\n=== AEGIS FIRST-RUN ADMIN CREDENTIALS ===\n")
 		fmt.Fprintf(os.Stderr, "  Username: admin\n")
