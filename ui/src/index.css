@@ -10,6 +10,24 @@
     @apply bg-a-bg text-a-fg font-body;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
+
+  /* Dark theme for native form controls (select, input, etc.) */
+  select, input, textarea {
+    color-scheme: dark;
+  }
+
+  /* Force select dropdown options to use dark background */
+  select option {
+    background-color: #181225;
+    color: #f0ecf8;
+  }
+
+  /* Firefox-specific: style select dropdown */
+  @-moz-document url-prefix() {
+    select {
+      color-scheme: dark;
+    }
+  }
 }
 
 @layer utilities {
