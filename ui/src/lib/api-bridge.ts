@@ -76,7 +76,9 @@ import {
   safetyApi,
   traceApi,
   relayApi,
+  gatewayApi,
   gatewayLinkApi,
+  nodeApi,
   providerApi,
   adminApi,
   fetchListeners as realFetchListeners,
@@ -189,4 +191,4 @@ export const system: typeof realSystem = useMock
   : realSystem;
 
 // ─── API service exports (always real - new pages) ───
-export { safetyApi, traceApi, relayApi, gatewayLinkApi, providerApi, adminApi };
+export { safetyApi, traceApi, relayApi, gatewayApi, gatewayLinkApi, nodeApi, providerApi, adminApi };

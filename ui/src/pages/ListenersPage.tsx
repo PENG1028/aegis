@@ -18,7 +18,7 @@ export default function ListenersPage() {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr>
-              {['绑定 IP', '端口', '提供商', '用途', '状态'].map((h) => (
+              {['绑定 IP', '端口', '提供商', '用途', '节点', '网关', '状态'].map((h) => (
                 <th key={h} className="text-left px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-muted bg-a-bg border-b border-a-border whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -30,11 +30,13 @@ export default function ListenersPage() {
                 <td className="px-3.5 py-2.5 border-b border-a-border-soft font-mono text-xs">{l.port}</td>
                 <td className="px-3.5 py-2.5 border-b border-a-border-soft font-mono text-xs">{l.provider}</td>
                 <td className="px-3.5 py-2.5 border-b border-a-border-soft text-xs">{l.purpose}</td>
+                <td className="px-3.5 py-2.5 border-b border-a-border-soft font-mono text-xs text-a-muted">{l.node_id || '—'}</td>
+                <td className="px-3.5 py-2.5 border-b border-a-border-soft font-mono text-xs text-a-muted">{l.gateway_id ? l.gateway_id.slice(0, 12) + '...' : '—'}</td>
                 <td className="px-3.5 py-2.5 border-b border-a-border-soft"><StatusBadge status={l.status} /></td>
               </tr>
             ))}
             {(!data || data.length === 0) && (
-              <tr><td colSpan={5} className="text-center py-10 text-a-muted text-xs">暂无监听器数据</td></tr>
+              <tr><td colSpan={7} className="text-center py-10 text-a-muted text-xs">暂无监听器数据</td></tr>
             )}
           </tbody>
         </table>
