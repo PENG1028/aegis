@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchRoutingTable, validateRouting, previewRouting, nodeApi } from '@/lib/api-bridge';
+import { fetchRoutingTable, validateRouting, previewRouting, nodeApi, fetchNodes } from '@/lib/api-bridge';
 import { PageHeader, Card, DataTable, StatusBadge, Alert, WarningCard, StatCard, Btn } from '@/components/shared';
 import { useToast } from '@/components/shared/Toast';
 import type { DataTableColumn } from '@/components/shared';
@@ -9,16 +9,24 @@ import type { RoutingEntry } from '@/types';
 export default function RoutingTablePage() {
   const [tab, setTab] = useState<'table' | 'preview' | 'validate'>('table');
   const [previewDomain, setPreviewDomain] = useState('api-b.example.com');
-  const [previewNode, setPreviewNode] = useState('node-a');
+  const [previewNode, setPreviewNode] = useState('');
   const [previewResult, setPreviewResult] = useState<any>(null);
   const [generating, setGenerating] = useState(false);
   const toast = useToast();
   const qc = useQueryClient();
 
+  const { data: nodes } = useQuery({
+    queryKey: ['nodes'],
+    queryFn: () => fetchNodes(),
+  });
+
   const { data: entries, isLoading, error } = useQuery({
     queryKey: ['routing-table'],
     queryFn: () => fetchRoutingTable(),
   });
+
+  // Set default preview node from nodes list
+  const activePreviewNode = previewNode || (nodes && nodes.length > 0 ? nodes[0].node_id : '');
 
   const handleGenerate = async (nodeId: string) => {
     setGenerating(true);
@@ -79,8 +87,11 @@ export default function RoutingTablePage() {
     <div>
       <PageHeader title="路由表" helpKey="routing" subtitle="按 Node / Domain 查看路由条目" actions={
         <div className="flex gap-2">
-          <Btn sm onClick={() => handleGenerate('node-a')} disabled={generating}>重新生成 (A)</Btn>
-          <Btn sm onClick={() => handleGenerate('node-b')} disabled={generating}>重新生成 (B)</Btn>
+          {(nodes || []).slice(0, 4).map((n: any) => (
+            <Btn key={n.node_id} sm onClick={() => handleGenerate(n.node_id)} disabled={generating}>
+              重新生成 ({n.hostname || n.node_id?.slice(-4) || '?'})
+            </Btn>
+          ))}
         </div>
       } />
 
@@ -120,9 +131,10 @@ export default function RoutingTablePage() {
             <input className="flex-1 font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
               value={previewDomain} onChange={(e) => setPreviewDomain(e.target.value)} placeholder="domain" />
             <select className="font-mono text-xs px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none"
-              value={previewNode} onChange={(e) => setPreviewNode(e.target.value)}>
-              <option value="node-a">Server A</option>
-              <option value="node-b">Server B</option>
+              value={activePreviewNode} onChange={(e) => setPreviewNode(e.target.value)}>
+              {(nodes || []).map((n: any) => (
+                <option key={n.node_id} value={n.node_id}>{n.hostname || n.node_id}</option>
+              ))}
             </select>
             <button
               className="inline-flex items-center gap-1 text-xs px-3 py-2 rounded-a-md bg-a-accent text-white hover:opacity-90 cursor-pointer border-none font-medium"

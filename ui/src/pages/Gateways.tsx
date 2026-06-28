@@ -70,13 +70,13 @@ export default function GatewaysPage() {
       label: '开关',
       render: (row) => (
         <button
-          onClick={() => toggleGateway(row.gateway_id, (row as any).enabled !== false)}
+          onClick={() => toggleGateway(row.gateway_id, row.enabled)}
           className={`font-mono text-[11px] px-2.5 py-1 rounded-a-sm border cursor-pointer transition-colors ${
-            (row as any).enabled !== false
+            row.enabled
               ? 'bg-[#4cd964]/15 text-[#4cd964] border-[#4cd964]/30 hover:bg-[#4cd964]/25'
               : 'bg-a-border/30 text-a-muted border-a-border hover:bg-a-border/50'
           }`}>
-          {(row as any).enabled !== false ? 'ON' : 'OFF'}
+          {row.enabled ? 'ON' : 'OFF'}
         </button>
       ),
     },
