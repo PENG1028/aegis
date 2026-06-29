@@ -86,16 +86,22 @@ Does NOT:
 				fmt.Printf("  warning: could not save config: %v\n", err)
 			}
 
-			// 5. Generate panel Caddyfile for public access
-			panelCaddyfile := filepath.Join(cfg.Runtime.ConfigDir, "Caddyfile.panel")
+			// 5. Seed the main Caddyfile with the panel reverse proxy.
+			// This file will later be managed by Aegis (user routes get appended).
+			// MUST be the main caddyfile path — both panel and user routes
+			// share the same :80 block inside Caddy.
+			caddyfilePath := cfg.Proxy.CaddyfilePath
+			if caddyfilePath == "" {
+				caddyfilePath = filepath.Join(cfg.Runtime.ConfigDir, "Caddyfile")
+			}
 			caddyContent := cfg.PanelCaddyfile()
-			if err := os.WriteFile(panelCaddyfile, []byte(caddyContent), 0644); err != nil {
-				fmt.Printf("  warning: could not write panel Caddyfile: %v\n", err)
+			if err := os.WriteFile(caddyfilePath, []byte(caddyContent), 0644); err != nil {
+				fmt.Printf("  warning: could not write Caddyfile: %v\n", err)
 			} else {
-				fmt.Printf("[caddy] panel Caddyfile → %s\n", panelCaddyfile)
+				fmt.Printf("[caddy] initial Caddyfile → %s\n", caddyfilePath)
 			}
 
-			// 6. Production mode: auto-integrate with Caddy
+			// 6. Production mode: auto-integrate with system Caddy
 			if production {
 				fmt.Println()
 				fmt.Println("--- Production Setup ---")
@@ -104,22 +110,25 @@ Does NOT:
 				if caddyFound {
 					fmt.Printf("  Caddy binary: %s\n", caddyPath)
 
-					// Install Caddy systemd service if needed
-					caddyConfigDir := "/etc/caddy"
-					if _, err := os.Stat(caddyConfigDir); err == nil {
-						symlink := filepath.Join(caddyConfigDir, "aegis-panel.conf")
-						os.Remove(symlink)
-						if err := os.Symlink(panelCaddyfile, symlink); err != nil {
-							// Symlink failed — copy instead
-							data, _ := os.ReadFile(panelCaddyfile)
-							if err := os.WriteFile(symlink, data, 0644); err != nil {
-								fmt.Printf("  warning: could not install panel Caddyfile: %v\n", err)
-							} else {
-								fmt.Printf("  Installed: %s\n", symlink)
-							}
-						} else {
-							fmt.Printf("  Symlinked: %s → %s\n", symlink, panelCaddyfile)
+					// Symlink Aegis-managed Caddyfile into Caddy's config dir.
+					// Caddy in production uses /etc/caddy/Caddyfile by default.
+					// We symlink the Aegis-managed file so 'caddy reload' picks it up.
+					caddySysPath := "/etc/caddy/Caddyfile"
+					if _, err := os.Stat(filepath.Dir(caddySysPath)); err == nil {
+						// Back up existing Caddyfile if present
+						if _, err := os.Stat(caddySysPath); err == nil {
+							backup := caddySysPath + ".bak"
+							os.Rename(caddySysPath, backup)
+							fmt.Printf("  Backed up existing: %s → %s\n", caddySysPath, backup)
 						}
+						// Symlink Aegis-managed file
+						os.Remove(caddySysPath)
+						if err := os.Symlink(caddyfilePath, caddySysPath); err != nil {
+							// Symlink failed — copy instead
+							data, _ := os.ReadFile(caddyfilePath)
+							os.WriteFile(caddySysPath, data, 0644)
+						}
+						fmt.Printf("  Linked: %s → %s\n", caddySysPath, caddyfilePath)
 
 						// Reload Caddy
 						if out, err := exec.Command("systemctl", "reload", "caddy").CombinedOutput(); err != nil {
@@ -128,14 +137,11 @@ Does NOT:
 							fmt.Println("  Caddy reloaded ✓")
 						}
 					} else {
-						fmt.Printf("  Note: Caddy config dir not found (%s)\n", caddyConfigDir)
-						fmt.Printf("  To serve the panel, run:\n")
-						fmt.Printf("    caddy run --config %s\n", panelCaddyfile)
+						fmt.Printf("  Note: /etc/caddy not found — run: caddy run --config %s\n", caddyfilePath)
 					}
 				} else {
 					fmt.Println("  Caddy not found. Install it to serve the panel on port 80:")
 					fmt.Println("    sudo apt-get install -y caddy")
-					fmt.Printf("    caddy run --config %s\n", panelCaddyfile)
 				}
 			}
 
