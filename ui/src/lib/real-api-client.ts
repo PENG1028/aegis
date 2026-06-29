@@ -1328,6 +1328,79 @@ export interface TransparentRule {
   bytes_out: number;
 }
 
+// ─── Cluster Health (v1.8G) ───
+
+export interface ClusterHealthResponse {
+  node_count: number;
+  leader_node_id: string;
+  split_brain: boolean;
+  nodes: ClusterNodeHealth[];
+  overall_healthy: boolean;
+  issues?: string[];
+}
+
+export interface ClusterNodeHealth {
+  node_id: string;
+  hostname: string;
+  role: string;
+  status: string;
+  is_leader: boolean;
+  sync_status: string;
+  desired_revision: number;
+  applied_revision: number;
+  heartbeat_age?: string;
+}
+
+export const clusterHealthApi = {
+  get: (): Promise<ClusterHealthResponse> =>
+    get('/api/admin/v1/cluster/health'),
+};
+
+// ─── Port Conflict Detection (v1.8G) ───
+
+export interface PortConflictResponse {
+  conflicts: Array<{
+    port: number;
+    bind_ip: string;
+    status: string;
+    message: string;
+  }>;
+  total: number;
+}
+
+export const portCheckApi = {
+  scan: (): Promise<PortConflictResponse> =>
+    get('/api/admin/v1/ports/scan'),
+};
+
+// ─── System Health (v1.8G) ───
+
+export interface SystemHealthResponse {
+  sqlite_ok: boolean;
+  sqlite_size_bytes: number;
+  disk_free_bytes: number;
+  disk_total_bytes: number;
+  memory_used_mb: number;
+  memory_total_mb: number;
+  go_version: string;
+  goroutines: number;
+  uptime_seconds: number;
+}
+
+export const systemHealthApi = {
+  get: (): Promise<SystemHealthResponse> =>
+    get('/api/admin/v1/system/health'),
+};
+
+// ─── Health Check Actions ───
+
+export const healthCheckApi = {
+  checkAll: (): Promise<{ results: any[]; count: number }> =>
+    post('/api/health/check-all'),
+  getLatest: (): Promise<any> =>
+    get('/api/health'),
+};
+
 // ─── Listeners ───
 // Derived from gateways
 

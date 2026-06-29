@@ -84,6 +84,10 @@ import {
   fetchListeners as realFetchListeners,
   dnsApi as realDnsApi,
   transparentApi as realTransparentApi,
+  clusterHealthApi as realClusterHealthApi,
+  portCheckApi as realPortCheckApi,
+  systemHealthApi as realSystemHealthApi,
+  healthCheckApi as realHealthCheckApi,
 } from './real-api-client';
 
 import type { auth as AuthType, system as SystemType } from './real-api-client';
@@ -154,6 +158,22 @@ export const dnsApi = useMock
 // ─── Transparent Proxy (v1.8F) ───
 import { transparentApi as mockTransparentApi } from './api-client';
 export const transparentApi = useMock ? mockTransparentApi : realTransparentApi;
+
+// ─── Cluster Health (v1.8G) ───
+import { clusterHealthApi as mockClusterHealthApi } from './api-client';
+export const clusterHealthApi = useMock ? mockClusterHealthApi : realClusterHealthApi;
+
+// ─── Port Conflict Detection (v1.8G) ───
+import { portCheckApi as mockPortCheckApi } from './api-client';
+export const portCheckApi = useMock ? mockPortCheckApi : realPortCheckApi;
+
+// ─── System Health (v1.8G) ───
+import { systemHealthApi as mockSystemHealthApi } from './api-client';
+export const systemHealthApi = useMock ? mockSystemHealthApi : realSystemHealthApi;
+
+// ─── Health Check Actions ───
+import { healthCheckApi as mockHealthCheckApi } from './api-client';
+export const healthCheckApi = useMock ? mockHealthCheckApi : realHealthCheckApi;
 
 // ─── Auth & System exports ───
 export const auth: typeof realAuth = useMock

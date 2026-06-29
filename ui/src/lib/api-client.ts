@@ -198,3 +198,53 @@ export const transparentApi = {
     return { status: 'removed', rule_id: _id };
   },
 };
+
+// ─── Cluster Health (v1.8G) ───
+export const clusterHealthApi = {
+  get: async () => {
+    await delay();
+    return {
+      node_count: 3, leader_node_id: 'node-a', split_brain: false,
+      nodes: [
+        { node_id: 'node-a', hostname: 'vps1', role: 'worker', status: 'online', is_leader: true, sync_status: 'in_sync', desired_revision: 5, applied_revision: 5 },
+        { node_id: 'node-b', hostname: 'vps2', role: 'worker', status: 'online', is_leader: false, sync_status: 'in_sync', desired_revision: 5, applied_revision: 5 },
+        { node_id: 'node-c', hostname: 'vps3', role: 'worker', status: 'offline', is_leader: false, sync_status: 'out_of_sync', desired_revision: 5, applied_revision: 3, heartbeat_age: '2m30s' },
+      ],
+      overall_healthy: false,
+      issues: ['node-c: node is offline (heartbeat 2m30s ago)'],
+    };
+  },
+};
+
+// ─── Port Conflict Detection (v1.8G) ───
+export const portCheckApi = {
+  scan: async () => {
+    await delay();
+    return { conflicts: [], total: 0 };
+  },
+};
+
+// ─── System Health (v1.8G) ───
+export const systemHealthApi = {
+  get: async () => {
+    await delay();
+    return {
+      sqlite_ok: true, sqlite_size_bytes: 716800,
+      disk_free_bytes: 50_000_000_000, disk_total_bytes: 100_000_000_000,
+      memory_used_mb: 512, memory_total_mb: 2048,
+      go_version: 'go1.22', goroutines: 42, uptime_seconds: 86400,
+    };
+  },
+};
+
+// ─── Health Check Actions ───
+export const healthCheckApi = {
+  checkAll: async () => {
+    await delay();
+    return { results: [], count: 0 };
+  },
+  getLatest: async () => {
+    await delay();
+    return { healthy_endpoints: 3, unhealthy_endpoints: 0, unknown_endpoints: 0 };
+  },
+};
