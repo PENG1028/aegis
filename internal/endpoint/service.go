@@ -64,7 +64,9 @@ func (s *AppService) CreateEndpoint(ctx context.Context, input CreateEndpointInp
 		fmt.Sprintf("created %s endpoint %s", input.Type, input.Address), "api")
 
 	if s.hook != nil {
-		_ = s.hook.OnEndpointChanged(ctx, ep.ID)
+		if err := s.hook.OnEndpointChanged(ctx, ep.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "endpoint", ep.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	return ep, nil
@@ -92,7 +94,9 @@ func (s *AppService) EnableEndpoint(ctx context.Context, endpointID string) erro
 	s.logSvc.Log(ctx, "endpoint.enable", "endpoint", ep.ID, "success", "enabled endpoint", "api")
 
 	if s.hook != nil {
-		_ = s.hook.OnEndpointChanged(ctx, ep.ID)
+		if err := s.hook.OnEndpointChanged(ctx, ep.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "endpoint", ep.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	return nil
@@ -120,7 +124,9 @@ func (s *AppService) DisableEndpoint(ctx context.Context, endpointID string) err
 	s.logSvc.Log(ctx, "endpoint.disable", "endpoint", ep.ID, "success", "disabled endpoint", "api")
 
 	if s.hook != nil {
-		_ = s.hook.OnEndpointChanged(ctx, ep.ID)
+		if err := s.hook.OnEndpointChanged(ctx, ep.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "endpoint", ep.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	return nil
@@ -136,7 +142,9 @@ func (s *AppService) UpdateEndpoint(ctx context.Context, ep *Endpoint) error {
 	s.logSvc.Log(ctx, "endpoint.update", "endpoint", ep.ID, "success", "updated endpoint", "api")
 
 	if s.hook != nil {
-		_ = s.hook.OnEndpointChanged(ctx, ep.ID)
+		if err := s.hook.OnEndpointChanged(ctx, ep.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "endpoint", ep.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	return nil
@@ -151,7 +159,9 @@ func (s *AppService) DeleteEndpoint(ctx context.Context, endpointID string) erro
 	s.logSvc.Log(ctx, "endpoint.delete", "endpoint", endpointID, "success", "deleted endpoint", "api")
 
 	if s.hook != nil {
-		_ = s.hook.OnEndpointChanged(ctx, endpointID)
+		if err := s.hook.OnEndpointChanged(ctx, endpointID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "endpoint", endpointID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	return nil

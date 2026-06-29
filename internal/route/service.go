@@ -85,7 +85,9 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+		if err := s.hook.OnRouteChanged(ctx, rt.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "route", rt.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	return rt, nil
@@ -98,7 +100,9 @@ func (s *AppService) CreateRouteDirect(rt *Route) error {
 		return err
 	}
 	if s.hook != nil {
-		_ = s.hook.OnRouteChanged(context.Background(), rt.ID)
+		if err := s.hook.OnRouteChanged(context.Background(), rt.ID); err != nil {
+			s.logSvc.Log(context.Background(), "desired-state.regen", "route", rt.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 	return nil
 }
@@ -166,7 +170,9 @@ func (s *AppService) EnableRoute(ctx context.Context, idOrDomain string) error {
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+		if err := s.hook.OnRouteChanged(ctx, rt.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "route", rt.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	s.logSvc.Log(ctx, "route.enable", "route", rt.ID, "success",
@@ -196,7 +202,9 @@ func (s *AppService) DisableRoute(ctx context.Context, idOrDomain string) error 
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+		if err := s.hook.OnRouteChanged(ctx, rt.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "route", rt.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	s.logSvc.Log(ctx, "route.disable", "route", rt.ID, "success",
@@ -228,7 +236,9 @@ func (s *AppService) DeleteRoute(ctx context.Context, idOrDomain string) error {
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+		if err := s.hook.OnRouteChanged(ctx, rt.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "route", rt.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	s.logSvc.Log(ctx, "route.delete", "route", rt.ID, "success",
@@ -252,7 +262,9 @@ func (s *AppService) SwitchRoute(ctx context.Context, idOrDomain string, service
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+		if err := s.hook.OnRouteChanged(ctx, rt.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "route", rt.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	s.logSvc.Log(ctx, "route.switch", "route", rt.ID, "success",
@@ -276,7 +288,9 @@ func (s *AppService) SetMaintenance(ctx context.Context, idOrDomain string, enab
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnRouteChanged(ctx, rt.ID)
+		if err := s.hook.OnRouteChanged(ctx, rt.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "route", rt.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	action := "maintenance.off"
