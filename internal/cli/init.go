@@ -16,9 +16,11 @@ func newInitCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize Aegis configuration and database",
-		Long: `Creates the configuration directory, data directory, SQLite database,
-and a default configuration file. Detects the caddy binary if available.`,
+		Short: "Initialize Aegis for development (local .aegis directory)",
+		Long: `Creates a local .aegis directory with config, database, and migrations.
+
+This is for DEVELOPMENT use. For production (system paths, systemd, Caddy
+auto-config), use 'aegis bootstrap --production' instead.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Determine config path
 			cfgFile := configPath

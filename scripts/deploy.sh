@@ -154,11 +154,21 @@ fi
 info "Checking Caddy status..."
 CADDY_RUNNING=false
 if ${SSH} "systemctl is-active caddy 2>/dev/null" 2>/dev/null; then
-  ok "Caddy is running — panel should be accessible on port 80"
+  ok "Caddy is running — panel accessible on port 80 ✓"
   CADDY_RUNNING=true
-else
-  warn "Caddy is not running. The panel is accessible on port ${PANEL_PORT}."
-  warn "Install Caddy for public access on port 80:"
+elif ${SSH} "command -v caddy &>/dev/null" 2>/dev/null; then
+  warn "Caddy installed but not running. Starting..."
+  ${SSH} "sudo systemctl enable --now caddy" 2>/dev/null || true
+  sleep 1
+  if ${SSH} "systemctl is-active caddy 2>/dev/null" 2>/dev/null; then
+    ok "Caddy started — panel accessible on port 80 ✓"
+    CADDY_RUNNING=true
+  fi
+fi
+
+if [ "${CADDY_RUNNING}" = false ]; then
+  warn "Caddy not running — panel on port ${PANEL_PORT} (no port 80 access)"
+  echo "  Install Caddy:"
   echo "    ${SSH} 'sudo apt-get install -y caddy'"
   echo "    ${SSH} 'sudo systemctl enable --now caddy'"
 fi

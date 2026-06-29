@@ -1,12 +1,11 @@
 # Aegis Control Plane — Systemd Service
 #
-# Run the Aegis control plane API server.
+# Run the Aegis control plane API server with embedded UI.
 #
 # Installation:
 #   sudo cp aegis.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
-#   sudo systemctl enable aegis
-#   sudo systemctl start aegis
+#   sudo systemctl enable --now aegis
 #
 # Status:
 #   sudo systemctl status aegis
@@ -14,40 +13,50 @@
 #
 # Prerequisites:
 #   - Aegis binary at /usr/local/bin/aegis
-#   - Config at /etc/aegis/config.yaml (run 'aegis bootstrap' to create)
-#   - Caddy installed and running
-#   - Data directory at /var/lib/aegis
+#   - Run 'aegis bootstrap --production' first (creates config + DB)
+#   - Caddy installed (optional, for port 80 public access)
 
 [Unit]
 Description=Aegis Infrastructure Gateway Control Plane
 Documentation=https://github.com/aegis/docs
-After=network-online.target caddy.service
-Wants=network-online.target caddy.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/var/lib/aegis
 
-# Environment
+# Environment file (optional overrides)
 EnvironmentFile=-/etc/aegis/aegis.conf
 
-# ExecStart
-ExecStart=/usr/local/bin/aegis serve --config /etc/aegis/config.yaml
+# Pre-flight: ensure data directory and DB exist
+ExecStartPre=/usr/bin/test -d /var/lib/aegis
+ExecStartPre=/usr/bin/test -d /etc/aegis
+
+# Start Aegis — config auto-discovered from:
+#   1. /etc/aegis/config.yaml (production)
+#   2. $HOME/.aegis/config.yaml
+#   3. DefaultConfig() fallback
+ExecStart=/usr/local/bin/aegis serve
 
 # Restart behavior
 Restart=on-failure
 RestartSec=5
 
 # Startup timing
-TimeoutStartSec=10
+TimeoutStartSec=15
 TimeoutStopSec=10
 
 # Security hardening
+# Note: ProtectSystem=full mounts /usr, /boot, /etc read-only.
+# Middleware install via UI won't work through systemd — use SSH for apt-get.
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true
+ReadWritePaths=/var/lib/aegis /etc/aegis /etc/caddy /etc/haproxy
+ReadOnlyPaths=/usr/local/bin/aegis
 
 # Logging
 StandardOutput=journal
