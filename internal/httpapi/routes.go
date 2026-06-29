@@ -12,6 +12,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		Project:       svcs.Project,
 		Service:       svcs.Service,
 		EndpointRepo:  svcs.EndpointRepo,
+		EndpointSvc:   svcs.EndpointSvc,
 		Route:         svcs.Route,
 		ManagedDomain: svcs.ManagedDomain,
 		Exposure:      svcs.Exposure,
@@ -222,6 +223,9 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/node/v1/join", h.NodeJoin)
 	mux.HandleFunc("POST /api/node/v1/heartbeat", h.NodeHeartbeat)
 		mux.HandleFunc("GET /api/node/v1/gateway-link-token/{gatewayLinkID}", h.NodeGatewayLinkToken)
+
+	// Admin Node Deploy (one-click remote setup)
+	mux.HandleFunc("POST /api/admin/v1/nodes/deploy", h.AdminDeployNode)
 
 	// Admin Node Join Tokens
 	mux.HandleFunc("POST /api/admin/v1/node-join-tokens", h.CreateJoinToken)

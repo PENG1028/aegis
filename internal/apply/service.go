@@ -272,9 +272,13 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	}
 	stepLog.record("reload_provider", "success", "provider reloaded")
 
-	// Step 10: Runtime verify
+	// Step 10: Runtime verify — actually check proxy health
 	stepLog.record("runtime_verify", "started", "verifying provider is serving")
-	stepLog.record("runtime_verify", "success", "provider reloaded successfully")
+	if healthErr := s.executor.VerifyProxyHealth(); healthErr != nil {
+		stepLog.record("runtime_verify", "warning", fmt.Sprintf("proxy health check: %v — proxy may be on non-80 port", healthErr))
+	} else {
+		stepLog.record("runtime_verify", "success", "proxy responding on port 80")
+	}
 	stepLog.record("release_lock", "success", "apply lock released")
 
 	plan.RenderedConfig = string(rendered)

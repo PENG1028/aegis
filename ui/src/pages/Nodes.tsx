@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { fetchNodes } from '@/lib/api-bridge';
-import { PageHeader, Card, DataTable, StatusBadge, CapabilityBadge } from '@/components/shared';
+import { PageHeader, Card, DataTable, StatusBadge, CapabilityBadge, Btn } from '@/components/shared';
 import type { DataTableColumn } from '@/components/shared';
 import type { Node } from '@/types';
 import { fmtRel } from '@/lib/utils';
+import DeployNodeDialog from '@/components/deploy/DeployNodeDialog';
 
 const columns: DataTableColumn<Node>[] = [
   {
@@ -71,6 +73,7 @@ const columns: DataTableColumn<Node>[] = [
 
 export default function NodesPage() {
   const navigate = useNavigate();
+  const [showDeploy, setShowDeploy] = useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: ['nodes'],
     queryFn: fetchNodes,
@@ -89,10 +92,17 @@ export default function NodesPage() {
 
   return (
     <div>
-      <PageHeader title="节点" helpKey="nodes" subtitle={`${data?.length || 0} 个节点`}  />
+      <PageHeader
+        title="节点"
+        helpKey="nodes"
+        subtitle={`${data?.length || 0} 个节点`}
+        actions={<Btn variant="primary" onClick={() => setShowDeploy(true)}>+ 部署节点</Btn>}
+      />
       <Card>
         <DataTable columns={columns} data={data || []} keyExtractor={(r) => r.node_id} />
       </Card>
+
+      <DeployNodeDialog open={showDeploy} onClose={() => setShowDeploy(false)} />
     </div>
   );
 }

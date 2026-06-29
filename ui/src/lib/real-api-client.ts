@@ -537,8 +537,7 @@ export const serviceApi = {
     get('/api/admin/v1/services'),
 
   get: (id: string): Promise<any> =>
-    get(`/api/v1/services/${id}`).catch(() =>
-      get(`/api/admin/v1/services/${id}`)),
+    get(`/api/services/${id}`),
 
   getPolicy: (id: string): Promise<any> =>
     get(`/api/admin/v1/services/${id}/gateway-policy`),
@@ -557,7 +556,7 @@ export async function fetchServiceDetail(id: string): Promise<ServiceDetail> {
   const svc = mapService(raw);
 
   // Fetch endpoints for this service
-  const epsRes = await get<{ gateways?: any[] } | any[]>(`/api/v1/services/${id}/endpoints`)
+  const epsRes = await get<{ gateways?: any[] } | any[]>(`/api/services/${id}/endpoints`)
     .catch(() => []);
 
   const endpoints: Endpoint[] = (Array.isArray(epsRes) ? epsRes : []).map((ep: any) => ({
@@ -621,8 +620,7 @@ export const routeApi = {
     get('/api/admin/v1/routes'),
 
   get: (id: string): Promise<any> =>
-    get(`/api/v1/routes/${id}`).catch(() =>
-      get(`/api/admin/v1/routes/${id}`)),
+    get(`/api/routes/${id}`),
 
   getPolicy: (id: string): Promise<any> =>
     get(`/api/admin/v1/routes/${id}/gateway-policy`),
@@ -659,7 +657,7 @@ export async function fetchEndpoints(): Promise<Endpoint[]> {
   const endpoints: Endpoint[] = [];
 
   for (const svc of (svcRes.services || [])) {
-    const eps = await get<any[]>(`/api/v1/services/${svc.id}/endpoints`).catch(() => []);
+    const eps = await get<any[]>(`/api/services/${svc.id}/endpoints`).catch(() => []);
     for (const ep of (Array.isArray(eps) ? eps : [])) {
       endpoints.push({
         endpoint_id: ep.id || ep.endpoint_id,
@@ -1066,7 +1064,7 @@ export async function revokeJoinToken(id: string): Promise<void> {
 
 export async function fetchSettings(): Promise<Record<string, any>> {
   const [settings, statusRes] = await Promise.all([
-    get<any>('/api/admin/v1/settings').catch(() => ({})),
+    get<any>('/api/settings').catch(() => ({})),
     system.status().catch(() => null),
   ]);
 
@@ -1265,25 +1263,25 @@ export const adminApi = {
 
   // Config / Apply
   configCurrent: (): Promise<any> =>
-    get('/api/v1/config/current'),
+    get('/api/config/current'),
 
   configPreview: (): Promise<any> =>
-    get('/api/v1/config/preview'),
+    get('/api/config/preview'),
 
   configDiff: (): Promise<any> =>
-    get('/api/v1/config/diff'),
+    get('/api/config/diff'),
 
   applyHistory: (): Promise<any[]> =>
-    get('/api/v1/apply/history'),
+    get('/api/apply/history'),
 
   applyConfig: (): Promise<any> =>
-    post('/api/v1/config/apply'),
+    post('/api/apply'),
 
   dryRun: (): Promise<any> =>
-    post('/api/v1/config/dry-run'),
+    post('/api/apply/dry-run'),
 
   rollback: (): Promise<any> =>
-    post('/api/v1/config/rollback'),
+    post('/api/rollback'),
 
   // Actions
   bindHTTPDomain: (data: any): Promise<any> =>
@@ -1297,7 +1295,7 @@ export const adminApi = {
 
   // Diagnostics
   exportDiagnostics: (): Promise<any> =>
-    get('/api/admin/v1/diagnostics/export'),
+    get('/api/diagnostics/export'),
 
   // v1.8D Import — Caddyfile
   importCaddyPreview: (): Promise<any> =>

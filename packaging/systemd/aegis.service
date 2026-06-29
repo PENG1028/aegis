@@ -1,0 +1,57 @@
+# Aegis Control Plane — Systemd Service
+#
+# Run the Aegis control plane API server.
+#
+# Installation:
+#   sudo cp aegis.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable aegis
+#   sudo systemctl start aegis
+#
+# Status:
+#   sudo systemctl status aegis
+#   journalctl -u aegis -f
+#
+# Prerequisites:
+#   - Aegis binary at /usr/local/bin/aegis
+#   - Config at /etc/aegis/config.yaml (run 'aegis bootstrap' to create)
+#   - Caddy installed and running
+#   - Data directory at /var/lib/aegis
+
+[Unit]
+Description=Aegis Infrastructure Gateway Control Plane
+Documentation=https://github.com/aegis/docs
+After=network-online.target caddy.service
+Wants=network-online.target caddy.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/lib/aegis
+
+# Environment
+EnvironmentFile=-/etc/aegis/aegis.conf
+
+# ExecStart
+ExecStart=/usr/local/bin/aegis serve --config /etc/aegis/config.yaml
+
+# Restart behavior
+Restart=on-failure
+RestartSec=5
+
+# Startup timing
+TimeoutStartSec=10
+TimeoutStopSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
