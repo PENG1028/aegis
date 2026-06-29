@@ -63,9 +63,7 @@ export default function MiddlewarePage() {
   const installMutation = useMutation({
     mutationFn: async (p: string) => {
       setInstalling(p);
-      // Call install API via fetch directly since it's not in the bridge yet
-      const res = await fetch(`/api/admin/v1/providers/${p}/install`, { method: 'POST' });
-      return res.json();
+      return providerApi.install(p);
     },
     onSettled: () => {
       setInstalling(null);
@@ -77,17 +75,24 @@ export default function MiddlewarePage() {
   // Config preview
   async function loadConfig(p: string) {
     try {
-      const res = await fetch(`/api/admin/v1/providers/${p}/config`);
-      const data = await res.json();
+      const data = await providerApi.getConfig(p);
       setConfigPreview((prev) => ({ ...prev, [p]: data }));
     } catch { /* ignore */ }
   }
 
   if (isLoading) return <div className="text-center py-10 text-a-muted font-mono text-sm">加载中...</div>;
 
-  const caddyDiag = diag?.diagnostics?.find((d: any) => d.provider?.toLowerCase().includes('caddy'));
-  const haproxyDiag = diag?.diagnostics?.find((d: any) => d.provider?.toLowerCase().includes('haproxy'));
+  const caddyDiag = diag?.diagnostics?.find((d: any) =>
+    d.provider?.toLowerCase().includes('caddy'));
+  const haproxyDiag = diag?.diagnostics?.find((d: any) =>
+    d.provider?.toLowerCase().includes('haproxy'));
   const activeDiag = activeTab === 'caddy' ? caddyDiag : haproxyDiag;
+
+  // Auto-load config on tab switch if not already loaded
+  const switchTab = (tab: 'caddy' | 'haproxy') => {
+    setActiveTab(tab);
+    if (!configPreview[tab]) loadConfig(tab);
+  };
 
   return (
     <div>
@@ -115,7 +120,7 @@ export default function MiddlewarePage() {
         {(['caddy', 'haproxy'] as const).map((t) => (
           <button
             key={t}
-            onClick={() => { setActiveTab(t); loadConfig(t); }}
+            onClick={() => switchTab(t)}
             className={`px-5 py-2.5 text-xs font-medium border-b-2 transition-colors bg-transparent cursor-pointer ${
               activeTab === t
                 ? 'border-a-accent text-a-accent'

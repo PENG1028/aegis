@@ -1219,6 +1219,13 @@ export const providerApi = {
 
   diagnoseAll: (): Promise<any> =>
     post('/api/admin/v1/providers/diagnose'),
+
+  // v1.8H Middleware management
+  install: (provider: string): Promise<any> =>
+    post(`/api/admin/v1/providers/${provider}/install`),
+
+  getConfig: (provider: string): Promise<any> =>
+    get(`/api/admin/v1/providers/${provider}/config`),
 };
 
 // ─── Admin operations ───

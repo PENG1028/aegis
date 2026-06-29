@@ -79,7 +79,7 @@ import {
   gatewayApi,
   gatewayLinkApi,
   nodeApi,
-  providerApi,
+  providerApi as realProviderApi,
   adminApi,
   fetchListeners as realFetchListeners,
   dnsApi as realDnsApi,
@@ -215,5 +215,9 @@ export const system: typeof realSystem = useMock
     }
   : realSystem;
 
+// ─── Provider / Middleware API (v1.7S + v1.8H) ───
+import { providerApi as mockProviderApi } from './api-client';
+export const providerApi = useMock ? mockProviderApi : realProviderApi;
+
 // ─── API service exports (always real - new pages) ───
-export { safetyApi, traceApi, relayApi, gatewayApi, gatewayLinkApi, nodeApi, providerApi, adminApi };
+export { safetyApi, traceApi, relayApi, gatewayApi, gatewayLinkApi, nodeApi, adminApi };

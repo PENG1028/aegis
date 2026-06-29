@@ -1,8 +1,54 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchDashboard, dnsApi, clusterHealthApi, systemHealthApi } from '@/lib/api-bridge';
+import { useNavigate } from 'react-router-dom';
+import { fetchDashboard, dnsApi, clusterHealthApi, systemHealthApi, system } from '@/lib/api-bridge';
 import { StatCard, Card, StatusBadge, Alert } from '@/components/shared';
 
+// ─── Deployment Pipeline Step ───
+
+interface PipelineStep {
+  key: string;
+  label: string;
+  desc: string;
+  link: string;
+  status: 'ok' | 'warn' | 'err' | 'pending';
+  stat?: string;
+}
+
+function PipelineCard({ steps }: { steps: PipelineStep[] }) {
+  const navigate = useNavigate();
+  return (
+    <Card title="部署流水线">
+      <div className="flex flex-wrap gap-0">
+        {steps.map((s, i) => (
+          <button
+            key={s.key}
+            onClick={() => navigate(s.link)}
+            className="flex-1 min-w-[100px] flex flex-col items-center gap-1.5 py-3 px-2 text-center border-none bg-transparent cursor-pointer hover:bg-a-border-soft/30 transition-colors group relative"
+          >
+            {/* Step number */}
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
+              s.status === 'ok' ? 'bg-[#4cd964]/20 text-[#4cd964]' :
+              s.status === 'err' ? 'bg-[#ff5c72]/20 text-[#ff5c72]' :
+              s.status === 'warn' ? 'bg-[#e8b830]/20 text-[#e8b830]' :
+              'bg-a-border/30 text-a-muted'
+            }`}>
+              {s.status === 'ok' ? '✓' : s.status === 'err' ? '✗' : s.status === 'warn' ? '!' : i + 1}
+            </span>
+            {/* Label */}
+            <span className="text-[11px] font-medium text-a-fg group-hover:text-a-accent transition-colors">{s.label}</span>
+            <span className="text-[10px] text-a-muted leading-tight">{s.desc}</span>
+            {s.stat && <span className="text-[10px] font-mono text-a-accent">{s.stat}</span>}
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Main Dashboard ───
+
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard'],
     queryFn: fetchDashboard,
@@ -26,6 +72,12 @@ export default function DashboardPage() {
     refetchInterval: 30000,
   });
 
+  const { data: sysStatus } = useQuery({
+    queryKey: ['system-status'],
+    queryFn: () => system.status(),
+    refetchInterval: 30000,
+  });
+
   function fmtDisk(bytes: number) {
     if (!bytes) return '—';
     const gb = bytes / (1024 * 1024 * 1024);
@@ -41,12 +93,51 @@ export default function DashboardPage() {
       <div>
         <div className="flex items-center justify-between mb-5">
           <div><h2 className="text-lg font-bold text-a-fg">总览</h2><p className="text-xs text-a-muted mt-0.5">多节点 Aegis 控制面运行状态</p></div>
-          
         </div>
         <div className="px-4 py-3 rounded-a-md text-xs border bg-[#ff5c72]/10 text-[#ff5c72] border-[#ff5c72]/20">加载失败: {error.message}</div>
       </div>
     );
   }
+
+  // ─── Pipeline steps ───
+
+  const hasPending = sysStatus?.pending_apply?.pending;
+  const lastApplyOK = sysStatus?.last_apply?.status === 'success';
+  const proxyProvider = sysStatus?.proxy?.provider || 'caddy';
+  const validateAvailable = sysStatus?.proxy?.validate_available;
+
+  const pipelineSteps: PipelineStep[] = [
+    {
+      key: 'resources', label: '资源定义', desc: 'Service / Route / Endpoint',
+      link: '/services',
+      status: (data && data.managed_routes > 0) ? 'ok' : 'warn',
+      stat: data ? `${data.managed_routes} 路由` : undefined,
+    },
+    {
+      key: 'preview', label: '配置预览', desc: '生成网关配置',
+      link: '/apply',
+      status: hasPending ? 'warn' : 'ok',
+      stat: hasPending ? '待推送' : '已同步',
+    },
+    {
+      key: 'validate', label: '配置验证', desc: `${proxyProvider} validate`,
+      link: '/apply',
+      status: validateAvailable ? 'ok' : 'warn',
+      stat: validateAvailable ? '可用' : '未配置',
+    },
+    {
+      key: 'deploy', label: '推送部署', desc: 'Apply → 网关生效',
+      link: '/apply',
+      status: lastApplyOK ? 'ok' : hasPending ? 'warn' : 'ok',
+      stat: sysStatus?.last_apply?.version || (data?.managed_routes > 0 ? '待推送' : '—'),
+    },
+    {
+      key: 'verify', label: '健康确认', desc: '端点 / 端口 / 集群',
+      link: '/health',
+      status: (clusterHealth?.overall_healthy !== false) ? 'ok' : 'err',
+      stat: sysStatus ? `${sysStatus.health?.healthy_endpoints ?? 0} 健康` : undefined,
+    },
+  ];
 
   return (
     <div>
@@ -55,11 +146,15 @@ export default function DashboardPage() {
           <h2 className="text-lg font-bold text-a-fg">总览</h2>
           <p className="text-xs text-a-muted mt-0.5">多节点 Aegis 控制面运行状态</p>
         </div>
-        
       </div>
 
       {data && (
         <>
+          {/* ─── Deployment Pipeline ─── */}
+          <PipelineCard steps={pipelineSteps} />
+
+          <div className="mt-4" />
+
           {/* Stats row */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
             <StatCard label="节点在线" value={`${data.nodes_online}/${data.nodes_total}`} sub={data.nodes_total - data.nodes_online > 0 ? `${data.nodes_total - data.nodes_online} offline` : '全部在线'} success={data.nodes_online === data.nodes_total} warn={data.nodes_online < data.nodes_total} />
@@ -107,6 +202,16 @@ export default function DashboardPage() {
                   </span>
                 </div>
               </div>
+              {/* Quick fix links */}
+              <div className="mt-3 pt-3 border-t border-a-border flex gap-2">
+                {data.routes_unavailable > 0 && (
+                  <button onClick={() => navigate('/routes')} className="text-[10px] px-2 py-1 rounded border border-a-border text-a-muted hover:text-a-fg bg-transparent cursor-pointer">查看路由</button>
+                )}
+                {data.missing_gateway_links > 0 && (
+                  <button onClick={() => navigate('/gateway-links')} className="text-[10px] px-2 py-1 rounded border border-a-border text-a-muted hover:text-a-fg bg-transparent cursor-pointer">配置网关链接</button>
+                )}
+                <button onClick={() => navigate('/nodes')} className="text-[10px] px-2 py-1 rounded border border-a-border text-a-muted hover:text-a-fg bg-transparent cursor-pointer">查看节点</button>
+              </div>
             </Card>
 
             <Card title="待处理能力">
@@ -121,6 +226,10 @@ export default function DashboardPage() {
                   <div className="text-xs text-a-muted">全部能力已验证 ✓</div>
                 )}
               </div>
+              <div className="mt-3 pt-3 border-t border-a-border flex gap-2">
+                <button onClick={() => navigate('/providers')} className="text-[10px] px-2 py-1 rounded border border-a-border text-a-muted hover:text-a-fg bg-transparent cursor-pointer">提供商诊断</button>
+                <button onClick={() => navigate('/middleware')} className="text-[10px] px-2 py-1 rounded border border-a-border text-a-muted hover:text-a-fg bg-transparent cursor-pointer">中间件管理</button>
+              </div>
             </Card>
           </div>
 
@@ -131,10 +240,15 @@ export default function DashboardPage() {
                 {data.recent_errors.map((err, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs bg-[#ff5c72]/5 px-3 py-2 rounded-a-sm">
                     <span className="text-a-danger shrink-0 mt-0.5">✗</span>
-                    <div>
-                      <span className="font-semibold">{err.node_name}</span>
+                    <div className="flex-1">
+                      <button onClick={() => navigate(`/nodes/${err.node_id}`)} className="font-semibold text-a-fg hover:text-a-accent bg-transparent border-none cursor-pointer p-0 text-left">
+                        {err.node_name}
+                      </button>
                       <span className="text-a-muted ml-2">{err.error}</span>
                     </div>
+                    {err.last_seen && (
+                      <span className="text-[10px] text-a-muted shrink-0">{err.last_seen}</span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -143,7 +257,6 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          {/* Summary */}
           {/* Cluster Health */}
           {clusterHealth && (
             <Card title={`集群健康 · ${clusterHealth.node_count} 节点`}>
@@ -179,8 +292,10 @@ export default function DashboardPage() {
                   <tbody>
                     {clusterHealth.nodes.map((n) => (
                       <tr key={n.node_id} className="border-b border-a-border/50">
-                        <td className="py-2 px-2 font-mono text-a-fg">
-                          {n.hostname}
+                        <td className="py-2 px-2 font-mono">
+                          <button onClick={() => navigate(`/nodes/${n.node_id}`)} className="text-a-fg hover:text-a-accent bg-transparent border-none cursor-pointer p-0 font-mono text-xs">
+                            {n.hostname}
+                          </button>
                           {n.is_leader && <span className="ml-1 text-[10px] text-[#e8b830]">LEADER</span>}
                         </td>
                         <td className="py-2 px-2 text-a-muted">{n.role}</td>
@@ -218,6 +333,22 @@ export default function DashboardPage() {
               )}
             </Card>
           )}
+
+          {/* Quick actions row */}
+          <div className="grid grid-cols-4 gap-3 mt-4">
+            <button onClick={() => navigate('/quick-create')} className="flex items-center gap-2 px-3 py-2.5 rounded-a-sm border border-a-border text-xs text-a-fg hover:border-a-accent hover:text-a-accent transition-colors bg-transparent cursor-pointer">
+              <span className="text-base">+</span> 创建映射
+            </button>
+            <button onClick={() => navigate('/import')} className="flex items-center gap-2 px-3 py-2.5 rounded-a-sm border border-a-border text-xs text-a-fg hover:border-a-accent hover:text-a-accent transition-colors bg-transparent cursor-pointer">
+              <span className="text-base">↥</span> 导入配置
+            </button>
+            <button onClick={() => navigate('/apply')} className="flex items-center gap-2 px-3 py-2.5 rounded-a-sm border border-a-border text-xs text-a-fg hover:border-a-accent hover:text-a-accent transition-colors bg-transparent cursor-pointer">
+              <span className="text-base">↻</span> 推送配置
+            </button>
+            <button onClick={() => navigate('/health')} className="flex items-center gap-2 px-3 py-2.5 rounded-a-sm border border-a-border text-xs text-a-fg hover:border-a-accent hover:text-a-accent transition-colors bg-transparent cursor-pointer">
+              <span className="text-base">✓</span> 健康检查
+            </button>
+          </div>
 
           <Alert type="info" className="mt-4">
             <span className="font-medium mr-2">已验证链路:</span>
