@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchDashboard, dnsApi } from '@/lib/api-bridge';
+import { fetchDashboard, dnsApi, clusterHealthApi, systemHealthApi } from '@/lib/api-bridge';
 import { StatCard, Card, StatusBadge, Alert } from '@/components/shared';
 
 export default function DashboardPage() {
@@ -13,6 +13,24 @@ export default function DashboardPage() {
     queryFn: () => dnsApi.status(),
     refetchInterval: 15000,
   });
+
+  const { data: clusterHealth } = useQuery({
+    queryKey: ['cluster-health'],
+    queryFn: () => clusterHealthApi.get(),
+    refetchInterval: 15000,
+  });
+
+  const { data: sysHealth } = useQuery({
+    queryKey: ['system-health'],
+    queryFn: () => systemHealthApi.get(),
+    refetchInterval: 30000,
+  });
+
+  function fmtDisk(bytes: number) {
+    if (!bytes) return '—';
+    const gb = bytes / (1024 * 1024 * 1024);
+    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+  }
 
   if (isLoading) {
     return <div className="text-center py-10 text-a-muted font-mono text-sm">加载中...</div>;
@@ -54,6 +72,17 @@ export default function DashboardPage() {
             <StatCard label="待处理能力" value={data.pending_capabilities.length} warn />
             <StatCard label="DNS 解析" value={dnsStatus?.running ? '运行中' : '已停用'} sub={`本地 ${dnsStatus?.managed_count ?? 0} 域名`} success={!!dnsStatus?.running} accent={!!dnsStatus?.running} />
           </div>
+
+          {/* System health bar */}
+          {sysHealth && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+              <StatCard label="SQLite" value={sysHealth.sqlite_ok ? '正常' : '异常'} sub={fmtDisk(sysHealth.sqlite_size_bytes)} success={sysHealth.sqlite_ok} />
+              <StatCard label="磁盘可用" value={fmtDisk(sysHealth.disk_free_bytes)} sub={`/ ${fmtDisk(sysHealth.disk_total_bytes)}`} accent />
+              <StatCard label="内存" value={`${sysHealth.memory_used_mb} MB`} sub={`/ ${sysHealth.memory_total_mb} MB`} accent />
+              <StatCard label="Go Routine" value={sysHealth.goroutines} sub={sysHealth.go_version} accent />
+              <StatCard label="运行时间" value={sysHealth.uptime_seconds > 3600 ? `${Math.floor(sysHealth.uptime_seconds / 3600)}h` : `${Math.floor(sysHealth.uptime_seconds / 60)}m`} sub={sysHealth.uptime_seconds > 86400 ? `${Math.floor(sysHealth.uptime_seconds / 86400)}d` : 'today'} accent />
+            </div>
+          )}
 
           {/* Attention areas */}
           <div className="grid grid-cols-2 gap-4 mb-4">
@@ -115,6 +144,81 @@ export default function DashboardPage() {
           </Card>
 
           {/* Summary */}
+          {/* Cluster Health */}
+          {clusterHealth && (
+            <Card title={`集群健康 · ${clusterHealth.node_count} 节点`}>
+              {/* Split-brain warning */}
+              {clusterHealth.split_brain && (
+                <Alert type="error" className="mb-3">
+                  <span className="font-bold">⚠ 裂脑检测:</span> 检测到多领导者！{clusterHealth.issues?.filter(i => i.includes('SPLIT_BRAIN')).join(', ')}
+                </Alert>
+              )}
+
+              {/* Overall status */}
+              <div className="flex items-center gap-2 mb-3 text-xs">
+                <span className={`w-2 h-2 rounded-full ${clusterHealth.overall_healthy ? 'bg-[#4cd964]' : 'bg-[#ff5c72]'}`} />
+                <span className="font-medium">{clusterHealth.overall_healthy ? '集群正常' : '集群异常'}</span>
+                {clusterHealth.leader_node_id && (
+                  <span className="text-a-muted ml-2">Leader: <code className="text-a-accent">{clusterHealth.leader_node_id}</code></span>
+                )}
+              </div>
+
+              {/* Per-node table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-a-border text-a-muted text-left">
+                      <th className="py-2 px-2 font-medium">节点</th>
+                      <th className="py-2 px-2 font-medium">角色</th>
+                      <th className="py-2 px-2 font-medium">状态</th>
+                      <th className="py-2 px-2 font-medium">同步</th>
+                      <th className="py-2 px-2 font-medium">版本</th>
+                      <th className="py-2 px-2 font-medium">心跳</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clusterHealth.nodes.map((n) => (
+                      <tr key={n.node_id} className="border-b border-a-border/50">
+                        <td className="py-2 px-2 font-mono text-a-fg">
+                          {n.hostname}
+                          {n.is_leader && <span className="ml-1 text-[10px] text-[#e8b830]">LEADER</span>}
+                        </td>
+                        <td className="py-2 px-2 text-a-muted">{n.role}</td>
+                        <td className="py-2 px-2">
+                          <StatusBadge status={n.status} />
+                        </td>
+                        <td className="py-2 px-2">
+                          <span className={n.sync_status === 'in_sync' ? 'text-[#4cd964]' : n.sync_status === 'out_of_sync' ? 'text-[#ff5c72]' : 'text-a-muted'}>
+                            {n.sync_status === 'in_sync' ? '✓' : n.sync_status === 'out_of_sync' ? '✗' : '—'} {n.sync_status}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 font-mono text-a-muted">
+                          {n.applied_revision}/{n.desired_revision}
+                        </td>
+                        <td className="py-2 px-2 font-mono text-a-muted">
+                          {n.heartbeat_age || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Issues list */}
+              {clusterHealth.issues && clusterHealth.issues.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-a-border">
+                  <div className="text-xs font-medium text-[#ff5c72] mb-2">问题 ({clusterHealth.issues.length})</div>
+                  {clusterHealth.issues.map((issue, i) => (
+                    <div key={i} className="text-xs py-1 text-a-muted font-mono">
+                      <span className="text-[#ff5c72] mr-1.5">•</span>
+                      {issue}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+
           <Alert type="info" className="mt-4">
             <span className="font-medium mr-2">已验证链路:</span>
             <span className="font-mono text-xs">Node A Local Gateway → Node B /__aegis/relay → target HTTP 200 ✓</span>

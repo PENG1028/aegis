@@ -290,4 +290,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// v1.8H Transparent Proxy (IP:port interception rules)
 	mux.HandleFunc("GET /api/admin/v1/transparent/rules", h.AdminListTransparentRules)
 	mux.HandleFunc("DELETE /api/admin/v1/transparent/rules/{id}", h.AdminDeleteTransparentRule)
+
+	// v1.8G System Health & Diagnostics
+	mux.HandleFunc("GET /api/admin/v1/ports/scan", h.PortScan)
+	mux.HandleFunc("GET /api/admin/v1/system/health", h.SystemHealth)
 }
