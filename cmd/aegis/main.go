@@ -460,13 +460,22 @@ func (h *desiredStateHook) syncTransparentRules() {
 			continue
 		}
 
-		// Collect unique IPs for this node
+		// Collect IPs to intercept for this node.
+		// Public IPs are always intercepted (globally unique).
+		// Private IPs are only intercepted if the target is in the SAME
+		// NetworkID — otherwise the private IP belongs to a different
+		// VPC and is not routable from here (or worse, could collide
+		// with a local private IP from our own VPC).
+		myNetwork := currentNode.NetworkID
+		sameNetwork := myNetwork != "" && targetNode.NetworkID != "" &&
+			myNetwork == targetNode.NetworkID
+
 		ips := make(map[string]bool)
-		if targetNode.PrivateIP != "" {
-			ips[targetNode.PrivateIP] = true
-		}
 		if targetNode.PublicIP != "" {
 			ips[targetNode.PublicIP] = true
+		}
+		if sameNetwork && targetNode.PrivateIP != "" {
+			ips[targetNode.PrivateIP] = true
 		}
 		if targetNode.LocalIP != "" && targetNode.LocalIP != "127.0.0.1" {
 			ips[targetNode.LocalIP] = true
