@@ -4,6 +4,7 @@ import (
 	"aegis/internal/config"
 	"aegis/internal/proxy"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -62,23 +63,24 @@ func (e *Executor) Backup() (string, error) {
 	return backupPath, nil
 }
 
-// Replace moves the temp file to the actual config path.
+// Replace atomically moves the temp file to the actual config path.
+// Uses os.Rename which is atomic on the same filesystem (Linux).
 func (e *Executor) Replace(tempPath string) error {
 	configPath := e.cfg.Proxy.CaddyfilePath
 
-	// Read temp file
-	data, err := os.ReadFile(tempPath)
-	if err != nil {
-		return fmt.Errorf("read temp config: %w", err)
+	// Atomic rename — if the process crashes, either the old or new file is intact.
+	// os.Rename is atomic on Linux when source and destination are on the same filesystem.
+	if err := os.Rename(tempPath, configPath); err != nil {
+		// Fallback: read+write if rename fails (e.g., cross-filesystem)
+		data, readErr := os.ReadFile(tempPath)
+		if readErr != nil {
+			return fmt.Errorf("rename config (and read fallback failed): %w", err)
+		}
+		if writeErr := os.WriteFile(configPath, data, 0644); writeErr != nil {
+			return fmt.Errorf("write config (rename fallback): %w", writeErr)
+		}
+		os.Remove(tempPath)
 	}
-
-	// Write to actual config path
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-
-	// Clean up temp file
-	os.Remove(tempPath)
 
 	return nil
 }
@@ -110,4 +112,17 @@ func (e *Executor) ValidateAdapter(adapter proxy.ProxyAdapter, configPath string
 // ReloadAdapter wraps the adapter's Reload method.
 func (e *Executor) ReloadAdapter(adapter proxy.ProxyAdapter) error {
 	return adapter.Reload("")
+}
+
+// VerifyProxyHealth performs a quick HTTP check to confirm the proxy is serving after reload.
+// Returns nil if the proxy responds (any status code), error if connection refused or times out.
+func (e *Executor) VerifyProxyHealth() error {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:80/")
+	if err != nil {
+		return fmt.Errorf("proxy health check failed (port 80 unreachable): %w", err)
+	}
+	resp.Body.Close()
+	// Any response (2xx, 4xx, even 5xx) means the proxy is running and accepting connections
+	return nil
 }
