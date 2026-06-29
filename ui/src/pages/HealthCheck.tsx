@@ -1,8 +1,9 @@
 /**
- * Health Check — 一键健康检查页面 (v1.8G enhanced).
+ * Health Check — 一键健康检查页面 (v1.8G enhanced, v1.8J cross-linked).
  */
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { system, systemHealthApi, portCheckApi, healthCheckApi } from '@/lib/api-bridge';
 import { PageHeader, Card, Btn, Alert, StatusBadge } from '@/components/shared';
 
@@ -13,6 +14,7 @@ function fmtDisk(bytes: number) {
 }
 
 export default function HealthCheckPage() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<any>(null);
   const [sysHealth, setSysHealth] = useState<any>(null);
   const [portConflicts, setPortConflicts] = useState<any>(null);
@@ -154,6 +156,32 @@ export default function HealthCheckPage() {
               <div><span className="text-a-muted">模式版本:</span> {status.store?.schema_version || '—'}</div>
             </div>
           </Card>
+
+          {/* Quick links for issues found */}
+          {(status.health?.unhealthy_endpoints > 0 || (portConflicts?.conflicts?.length > 0)) && (
+            <Card title="建议操作">
+              <div className="p-3 space-y-2">
+                {status.health?.unhealthy_endpoints > 0 && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-[#ff5c72]">!</span>
+                    <span className="text-a-muted">{status.health.unhealthy_endpoints} 个端点异常</span>
+                    <button onClick={() => navigate('/endpoints')} className="ml-auto text-a-accent hover:underline bg-transparent border-none cursor-pointer text-xs">查看端点 →</button>
+                  </div>
+                )}
+                {portConflicts?.conflicts?.length > 0 && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-[#e8b830]">!</span>
+                    <span className="text-a-muted">{portConflicts.conflicts.length} 个端口冲突</span>
+                    <button onClick={() => navigate('/middleware')} className="ml-auto text-a-accent hover:underline bg-transparent border-none cursor-pointer text-xs">中间件管理 →</button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-a-muted">需要推送配置？</span>
+                  <button onClick={() => navigate('/apply')} className="ml-auto text-a-accent hover:underline bg-transparent border-none cursor-pointer text-xs">推送配置 →</button>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
       )}
     </div>
