@@ -40,6 +40,7 @@ import QuickCreatePage from '@/pages/QuickCreate';
 import HealthCheckPage from '@/pages/HealthCheck';
 import ImportConfigPage from '@/pages/ImportConfig';
 import TransparentProxyPage from '@/pages/TransparentProxy';
+import MiddlewarePage from '@/pages/Middleware';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -130,6 +131,7 @@ export default function App() {
 
               {/* Providers / Listeners */}
               <Route path="/providers" element={<ProvidersPage />} />
+              <Route path="/middleware" element={<MiddlewarePage />} />
               <Route path="/listeners" element={<ListenersPage />} />
 
               {/* Doctor / Smoke */}
