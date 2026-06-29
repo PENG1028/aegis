@@ -1305,6 +1305,29 @@ export const adminApi = {
     post('/api/admin/v1/import/caddy/confirm', { routes }),
 };
 
+// ─── Transparent Proxy (v1.8F) ───
+
+export const transparentApi = {
+  listRules: (): Promise<{ rules: TransparentRule[]; count: number; message?: string }> =>
+    get('/api/admin/v1/transparent/rules'),
+
+  deleteRule: (id: string): Promise<{ status: string; rule_id: string }> =>
+    del(`/api/admin/v1/transparent/rules/${id}`),
+};
+
+export interface TransparentRule {
+  id: string;
+  original_ip: string;
+  original_port: number;
+  local_proxy_port: number;
+  target_service: string;
+  target_node: string;
+  description: string;
+  active: boolean;
+  bytes_in: number;
+  bytes_out: number;
+}
+
 // ─── Listeners ───
 // Derived from gateways
 

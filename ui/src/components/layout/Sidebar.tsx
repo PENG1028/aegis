@@ -54,6 +54,8 @@ const SECTIONS: NavSection[] = [
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="2.5"/><circle cx="10" cy="10" r="2.5"/><path d="M8 8l2 2"/></svg>' },
       { href: '/trace', label: '跟踪诊断',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="2.5"/><circle cx="10" cy="10" r="2.5"/><path d="M8 8l2 2"/></svg>' },
+      { href: '/transparent', label: '透明代理',
+        icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h3v8H2z"/><path d="M7 3h7v4H7z"/><path d="M7 9h4v3H7z"/><path d="M13 9h1v3h-1z"/></svg>' },
     ],
   },
   {

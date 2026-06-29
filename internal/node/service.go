@@ -2,8 +2,11 @@ package node
 
 import (
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"aegis/internal/id"
@@ -25,7 +28,7 @@ func (s *Service) RegisterCurrent() (*NodeRecord, error) {
 	hostname, _ := os.Hostname()
 	localIP := "127.0.0.1"
 	privateIP := detectPrivateIP()
-	publicIP := "" // Set via config or external detection
+	publicIP := detectPublicIP()
 
 	now := time.Now()
 	nodeID := fmt.Sprintf("node_%s", hostname)
@@ -37,12 +40,25 @@ func (s *Service) RegisterCurrent() (*NodeRecord, error) {
 	}
 
 	if existing != nil {
+		// Preserve existing public IP if detection fails.
+		// On cloud VPS (e.g. Tencent), the public IP is NAT'd and
+		// not visible on any local interface; external detection
+		// services may be unreachable.  An operator may have set
+		// public_ip manually via the API or SQL.
+		if publicIP == "" && existing.PublicIP != "" {
+			publicIP = existing.PublicIP
+		}
+		// Preserve existing network_id — it is set manually and
+		// cannot be auto-detected.
+		networkID := existing.NetworkID
+
 		// Check for IP migration
 		ipChanged := existing.LocalIP != localIP || existing.PrivateIP != privateIP || existing.PublicIP != publicIP
 		existing.Hostname = hostname
 		existing.LocalIP = localIP
 		existing.PrivateIP = privateIP
 		existing.PublicIP = publicIP
+		existing.NetworkID = networkID
 		existing.LastSeen = now
 		existing.UpdatedAt = now
 		existing.Capabilities = DetectCapabilities()
@@ -151,6 +167,83 @@ func detectPrivateIP() string {
 			if ipnet.IP.IsPrivate() {
 				return ipnet.IP.String()
 			}
+		}
+	}
+	return ""
+}
+
+// detectPublicIP tries to discover the machine's public IPv4 address by
+// querying external IP-detection services.  Each service gets a short
+// timeout; the first successful response is returned.
+//
+// Returns "" if all services are unreachable.  In that case the caller
+// should fall back to the value already stored in the database (set
+// manually by the operator) or leave it empty.
+func detectPublicIP() string {
+	services := []string{
+		"http://myip.ipip.net",        // Chinese CDN, fast in Asia
+		"http://ip.sb",                // anycast
+		"http://checkip.amazonaws.com", // AWS global
+		"http://ident.me",             // global
+		"http://ifconfig.me",          // global
+		"http://icanhazip.com",        // global
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+
+	for _, url := range services {
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+		// Some services return extra text (e.g. "当前 IP：x.x.x.x"),
+		// so extract the first plausible IPv4 address.
+		ip := extractIPv4(string(body))
+		if ip != "" {
+			return ip
+		}
+	}
+	return ""
+}
+
+// extractIPv4 scans a string and returns the first IPv4 address found.
+func extractIPv4(s string) string {
+	// Split on common delimiters and look for an IPv4 pattern.
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "：", ":") // fullwidth colon (Chinese)
+	for _, field := range strings.Fields(s) {
+		field = strings.TrimSpace(field)
+		field = strings.TrimRight(field, ".,;:：")
+		if ip := net.ParseIP(field); ip != nil && ip.To4() != nil {
+			return ip.String()
+		}
+	}
+	// Last resort: walk through the raw string character by character
+	// looking for an IPv4-like pattern.
+	return firstIPv4InString(s)
+}
+
+// firstIPv4InString does a naive scan for a dotted-quad IPv4 address.
+func firstIPv4InString(s string) string {
+	parts := strings.Split(s, ".")
+	if len(parts) < 4 {
+		return ""
+	}
+	for i := 0; i <= len(parts)-4; i++ {
+		candidate := strings.TrimSpace(parts[i]) + "." +
+			strings.TrimSpace(parts[i+1]) + "." +
+			strings.TrimSpace(parts[i+2]) + "." +
+			strings.TrimSpace(parts[i+3])
+		// Strip leading/trailing non-digit characters.
+		candidate = strings.TrimLeft(candidate, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:： \t")
+		candidate = strings.TrimRight(candidate, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:： \t")
+		if ip := net.ParseIP(candidate); ip != nil && ip.To4() != nil {
+			return ip.String()
 		}
 	}
 	return ""
