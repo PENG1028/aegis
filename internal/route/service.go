@@ -18,13 +18,13 @@ type MutationHook interface {
 // AppService defines the route application service interface.
 type AppService struct {
 	repo    *Repository
-	logSvc  *logs.AppService
+	logSvc  logs.Logger
 	edgeSvc *edgemux.AppService
 	hook    MutationHook
 }
 
 // NewAppService creates a new route application service.
-func NewAppService(repo *Repository, logSvc *logs.AppService, edgeSvc *edgemux.AppService) *AppService {
+func NewAppService(repo *Repository, logSvc logs.Logger, edgeSvc *edgemux.AppService) *AppService {
 	return &AppService{repo: repo, logSvc: logSvc, edgeSvc: edgeSvc}
 }
 

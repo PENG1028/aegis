@@ -33,7 +33,7 @@ type ActionService struct {
 	endpointSvc  *endpoint.AppService
 	applySvc     *apply.AppService
 	spaceRepo    *space.Repository
-	logSvc       *logs.AppService
+	logSvc       logs.Logger
 	listenerSvc  *listener.Service
 }
 
@@ -46,7 +46,7 @@ func NewActionService(
 	endpointSvc *endpoint.AppService,
 	applySvc *apply.AppService,
 	spaceRepo *space.Repository,
-	logSvc *logs.AppService,
+	logSvc logs.Logger,
 	listenerSvc *listener.Service,
 ) *ActionService {
 	return &ActionService{

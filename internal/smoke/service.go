@@ -25,7 +25,7 @@ type Dependencies struct {
 	DB          *sql.DB
 	ApplySvc    *apply.AppService
 	HealthSvc   *health.AppService
-	LogSvc      *logs.AppService
+	LogSvc      logs.Logger
 	RouteSvc    *route.AppService
 	ListenerSvc *listener.Service
 	TraceSvc    *trace.Service

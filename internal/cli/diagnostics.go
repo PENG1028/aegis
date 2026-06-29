@@ -27,7 +27,7 @@ func newDiagnosticsCommand(
 	mdSvc *manageddomain.AppService,
 	applySvc *apply.AppService,
 	healthSvc *health.AppService,
-	logSvc *logs.AppService,
+	logSvc logs.Logger,
 ) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diagnostics",
@@ -47,7 +47,7 @@ func newDiagnosticsExportCommand(
 	mdSvc *manageddomain.AppService,
 	applySvc *apply.AppService,
 	healthSvc *health.AppService,
-	logSvc *logs.AppService,
+	logSvc logs.Logger,
 ) *cobra.Command {
 	return &cobra.Command{
 		Use:   "export",

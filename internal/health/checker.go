@@ -19,11 +19,11 @@ type Checker struct {
 	repo        *Repository
 	svcRepo     *service.Repository
 	endpointRepo *endpoint.Repository
-	logSvc      *logs.AppService
+	logSvc      logs.Logger
 }
 
 // NewChecker creates a new health checker.
-func NewChecker(repo *Repository, svcRepo *service.Repository, endpointRepo *endpoint.Repository, logSvc *logs.AppService) *Checker {
+func NewChecker(repo *Repository, svcRepo *service.Repository, endpointRepo *endpoint.Repository, logSvc logs.Logger) *Checker {
 	return &Checker{
 		httpClient:   &http.Client{Timeout: 3 * time.Second},
 		repo:         repo,
@@ -39,11 +39,11 @@ type AppService struct {
 	repo         *Repository
 	svcRepo      *service.Repository
 	endpointRepo *endpoint.Repository
-	logSvc       *logs.AppService
+	logSvc       logs.Logger
 }
 
 // NewAppService creates a new health application service.
-func NewAppService(repo *Repository, svcRepo *service.Repository, endpointRepo *endpoint.Repository, logSvc *logs.AppService) *AppService {
+func NewAppService(repo *Repository, svcRepo *service.Repository, endpointRepo *endpoint.Repository, logSvc logs.Logger) *AppService {
 	return &AppService{
 		checker:      NewChecker(repo, svcRepo, endpointRepo, logSvc),
 		repo:         repo,

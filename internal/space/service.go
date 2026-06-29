@@ -11,11 +11,11 @@ import (
 // AppService provides space management operations.
 type AppService struct {
 	repo   *Repository
-	logSvc *logs.AppService
+	logSvc logs.Logger
 }
 
 // NewAppService creates a new space application service.
-func NewAppService(repo *Repository, logSvc *logs.AppService) *AppService {
+func NewAppService(repo *Repository, logSvc logs.Logger) *AppService {
 	return &AppService{repo: repo, logSvc: logSvc}
 }
 

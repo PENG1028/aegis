@@ -12,11 +12,11 @@ import (
 // AppService manages edge mux SNI rules.
 type AppService struct {
 	repo   *Repository
-	logSvc *logs.AppService
+	logSvc logs.Logger
 }
 
 // NewAppService creates a new edge mux application service.
-func NewAppService(repo *Repository, logSvc *logs.AppService) *AppService {
+func NewAppService(repo *Repository, logSvc logs.Logger) *AppService {
 	return &AppService{repo: repo, logSvc: logSvc}
 }
 

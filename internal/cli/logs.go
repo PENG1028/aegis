@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newLogsCommand(svc *logs.AppService) *cobra.Command {
+func newLogsCommand(svc logs.Logger) *cobra.Command {
 	var action, target string
 
 	cmd := &cobra.Command{

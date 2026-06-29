@@ -45,7 +45,7 @@ type Services struct {
 	DB            *sql.DB
 	Apply         *apply.AppService
 	Health        *health.AppService
-	Logs          *logs.AppService
+	Logs          logs.Logger
 	Action        *action.ActionService
 	Space         *space.AppService
 	HTTPServices  *httpapi.Services

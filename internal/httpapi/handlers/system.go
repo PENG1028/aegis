@@ -51,7 +51,7 @@ type Handlers struct {
 	Exposure      *exposure.AppService
 	Apply         *apply.AppService
 	Health        *health.AppService
-	Logs          *logs.AppService
+	Logs          logs.Logger
 	Action        *action.ActionService
 	Space         *space.AppService
 	TokenRepo     *token.Repository

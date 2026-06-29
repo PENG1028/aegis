@@ -9,6 +9,7 @@ import (
 
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
+	"aegis/internal/logs"
 )
 
 // AuditLogger is the interface for writing audit log entries.
@@ -19,10 +20,10 @@ type AuditLogger interface {
 
 // auditLog is the global audit logger for auth failures.
 // Set via SetAuditLogger during initialization.
-var auditLog AuditLogger
+var auditLog logs.AuditLogger
 
 // SetAuditLogger sets the global audit logger for the token middleware.
-func SetAuditLogger(l AuditLogger) {
+func SetAuditLogger(l logs.AuditLogger) {
 	auditLog = l
 }
 
