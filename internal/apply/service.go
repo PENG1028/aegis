@@ -96,12 +96,34 @@ func (s *AppService) DryRun(ctx context.Context) (*ApplyPlan, error) {
 
 // TryApply attempts to acquire the apply lock and executes Apply.
 // Returns an error with code APPLY_LOCKED if another apply is in progress.
+// Apply is bounded by a 60s timeout to prevent stuck locks at scale.
 func (s *AppService) TryApply(ctx context.Context) (*ApplyPlan, error) {
 	if !s.mu.TryLock() {
 		return nil, fmt.Errorf("APPLY_LOCKED: another apply is in progress")
 	}
 	defer s.mu.Unlock()
-	return s.Apply(ctx)
+
+	// Timeout guard: prevent stuck apply from holding lock indefinitely.
+	// Critical for 5-10 node setups where a hanging reload blocks all config changes.
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	type result struct {
+		plan *ApplyPlan
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		p, e := s.Apply(ctx)
+		ch <- result{p, e}
+	}()
+
+	select {
+	case r := <-ch:
+		return r.plan, r.err
+	case <-ctx.Done():
+		return nil, fmt.Errorf("APPLY_TIMEOUT: apply exceeded 60s deadline: %w", ctx.Err())
+	}
 }
 
 // SetPendingState sets the pending state tracker (v1.7S).
