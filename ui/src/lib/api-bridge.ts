@@ -83,6 +83,7 @@ import {
   adminApi,
   fetchListeners as realFetchListeners,
   dnsApi as realDnsApi,
+  transparentApi as realTransparentApi,
 } from './real-api-client';
 
 import type { auth as AuthType, system as SystemType } from './real-api-client';
@@ -149,6 +150,10 @@ export const dnsApi = useMock
       refresh: async () => ({}),
     }
   : realDnsApi;
+
+// ─── Transparent Proxy (v1.8F) ───
+import { transparentApi as mockTransparentApi } from './api-client';
+export const transparentApi = useMock ? mockTransparentApi : realTransparentApi;
 
 // ─── Auth & System exports ───
 export const auth: typeof realAuth = useMock

@@ -186,3 +186,15 @@ export async function fetchSettings(): Promise<Record<string, any>> {
   await delay();
   return mock(mockSettings);
 }
+
+// ─── Transparent Proxy (v1.8F) ───
+export const transparentApi = {
+  listRules: async () => {
+    await delay();
+    return { rules: [], count: 0, message: 'transparent proxy not configured' };
+  },
+  deleteRule: async (_id: string) => {
+    await delay();
+    return { status: 'removed', rule_id: _id };
+  },
+};

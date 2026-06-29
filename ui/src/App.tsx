@@ -39,6 +39,7 @@ import { SecurityPage, MaintenancePage, ActionsPage } from '@/pages/SecurityMain
 import QuickCreatePage from '@/pages/QuickCreate';
 import HealthCheckPage from '@/pages/HealthCheck';
 import ImportConfigPage from '@/pages/ImportConfig';
+import TransparentProxyPage from '@/pages/TransparentProxy';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -115,6 +116,7 @@ export default function App() {
 
               {/* Trace / Safety / Relay */}
               <Route path="/trace" element={<TracePage />} />
+              <Route path="/transparent" element={<TransparentProxyPage />} />
               <Route path="/safety" element={<SafetyPage />} />
               <Route path="/relay" element={<RelayPage />} />
 
