@@ -441,8 +441,12 @@ func (h *desiredStateHook) syncTransparentRules() {
 	// all known IPs (public + private) of the target node.
 	desiredMap := make(map[string]transparent.RedirectRule)
 	for _, ep := range eps {
-		// Skip endpoints without a node assignment or on the current machine
-		if ep.NodeID == "" || ep.NodeID == currentNode.NodeID {
+		// Require a node assignment. Do NOT skip same-node —
+		// a process connecting to its own machine's public IP
+		// (e.g. <SERVER_A_IP>:8080) would go through the cloud
+		// network and get dropped by the security group.
+		// Intercepting same-node IPs keeps traffic local.
+		if ep.NodeID == "" {
 			continue
 		}
 
