@@ -25,6 +25,9 @@ Thumbs.db
 ui/node_modules/
 ui/dist/
 
+# Embedded UI copy (build artifact)
+internal/uiassets/dist/
+
 # Python
 _fix_policy_test.py
 __pycache__/

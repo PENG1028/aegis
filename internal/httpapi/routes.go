@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"aegis/internal/httpapi/handlers"
+	"aegis/internal/uiassets"
 	"net/http"
 )
 
@@ -298,4 +299,12 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// v1.8H Middleware Management
 	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/install", h.ProviderInstall)
 	mux.HandleFunc("GET /api/admin/v1/providers/{provider}/config", h.ProviderConfigPreview)
+
+	// v1.8J Embedded UI — catch-all for SPA routes not matching any API path.
+	// Registered without method prefix so it handles all HTTP methods.
+	uiHandler, err := uiassets.Handler()
+	if err != nil {
+		panic("uiassets: failed to initialize embedded UI handler: " + err.Error())
+	}
+	mux.HandleFunc("/", uiHandler.ServeHTTP)
 }
