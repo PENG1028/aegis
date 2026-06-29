@@ -92,6 +92,15 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	// Periodic database backup (default: every 6h, keep 7)
+	backupMgr := store.NewBackupManager(db, cfg.Store.SQLitePath,
+		cfg.Store.BackupDir, cfg.Store.BackupIntervalHrs, cfg.Store.BackupKeepCount)
+	if backupMgr != nil {
+		backupMgr.Start()
+		defer backupMgr.Stop()
+	}
+
 	if err := store.Initialize(db); err != nil {
 		fmt.Fprintf(os.Stderr, "error: failed to run migrations: %v\n", err)
 		os.Exit(1)
