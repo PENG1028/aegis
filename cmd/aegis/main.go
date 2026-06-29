@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
 	"aegis/internal/apply"
@@ -254,6 +255,7 @@ func main() {
 		gen:            dsGenerator,
 		transparentMgr: transparentMgr,
 		endpointRepo:   endpointRepo,
+		nodeRepo:       nodeRepo,
 	}
 	routeSvc.SetMutationHook(dsHook)
 	serviceSvc.SetMutationHook(dsHook)
@@ -375,6 +377,7 @@ type desiredStateHook struct {
 	gen            *nodestate.Generator
 	transparentMgr *transparent.Manager
 	endpointRepo   *endpoint.Repository
+	nodeRepo       *node.Repository
 }
 
 func (h *desiredStateHook) OnRouteChanged(ctx context.Context, routeID string) error {
@@ -402,10 +405,20 @@ func (h *desiredStateHook) OnEndpointChanged(ctx context.Context, endpointID str
 }
 
 // syncTransparentRules reconciles transparent proxy iptables rules with
-// the current endpoint database. New cross-node endpoints get interception
-// rules; removed endpoints get cleaned up.
+// the current endpoint database. For every endpoint on a remote node,
+// it generates interception rules for ALL IPs (public + private) of that node.
+//
+// Example: endpoint 127.0.0.1:9100 on node_b (public=43.159.34.11, private=10.0.0.5)
+// → intercept BOTH 43.159.34.11:9100 AND 10.0.0.5:9100
+// → any outbound connection to either IP:port gets DNAT'd to a local proxy
 func (h *desiredStateHook) syncTransparentRules() {
-	if h.transparentMgr == nil || h.endpointRepo == nil {
+	if h.transparentMgr == nil || h.endpointRepo == nil || h.nodeRepo == nil {
+		return
+	}
+
+	// Get current node to skip local endpoints
+	currentNode, err := h.nodeRepo.FindCurrent()
+	if err != nil || currentNode == nil {
 		return
 	}
 
@@ -414,36 +427,65 @@ func (h *desiredStateHook) syncTransparentRules() {
 		return
 	}
 
-	// Convert to EndpointInfo
-	var infos []transparent.EndpointInfo
-	for _, ep := range eps {
-		host, port := ep.HostPort()
-		if host == "" || port == 0 || host == "127.0.0.1" || host == "localhost" || host == "::1" {
-			continue
-		}
-		infos = append(infos, transparent.EndpointInfo{
-			EndpointID: ep.ID,
-			ServiceID:  ep.ServiceID,
-			Host:       host,
-			Port:       port,
-			NodeID:     ep.NodeID,
-		})
+	// Load all nodes for IP lookup
+	allNodes, err := h.nodeRepo.FindAll()
+	if err != nil {
+		return
+	}
+	nodeByID := make(map[string]*node.NodeRecord, len(allNodes))
+	for i := range allNodes {
+		nodeByID[allNodes[i].NodeID] = &allNodes[i]
 	}
 
-	// Discover desired rules from current endpoints
-	desired := h.transparentMgr.DiscoverTargets(infos)
+	// Build desired rules: for each cross-node endpoint, intercept
+	// all known IPs (public + private) of the target node.
+	desiredMap := make(map[string]transparent.RedirectRule)
+	for _, ep := range eps {
+		// Skip endpoints without a node assignment or on the current machine
+		if ep.NodeID == "" || ep.NodeID == currentNode.NodeID {
+			continue
+		}
+
+		targetNode := nodeByID[ep.NodeID]
+		if targetNode == nil {
+			continue
+		}
+
+		_, port := ep.HostPort()
+		if port == 0 {
+			continue
+		}
+
+		// Collect unique IPs for this node
+		ips := make(map[string]bool)
+		if targetNode.PrivateIP != "" {
+			ips[targetNode.PrivateIP] = true
+		}
+		if targetNode.PublicIP != "" {
+			ips[targetNode.PublicIP] = true
+		}
+		if targetNode.LocalIP != "" && targetNode.LocalIP != "127.0.0.1" {
+			ips[targetNode.LocalIP] = true
+		}
+
+		for ip := range ips {
+			ruleID := fmt.Sprintf("ep-%s-%s", ep.ID, strings.ReplaceAll(ip, ".", "-"))
+			desiredMap[ruleID] = transparent.RedirectRule{
+				ID:              ruleID,
+				OriginalIP:      ip,
+				OriginalPort:    port,
+				TargetServiceID: ep.ServiceID,
+				TargetNodeID:    ep.NodeID,
+				Description:     fmt.Sprintf("%s → %s:%d", ep.ID, ip, port),
+			}
+		}
+	}
 
 	// Get current rules
 	current := h.transparentMgr.ListStatus()
 	currentMap := make(map[string]bool)
 	for _, s := range current {
 		currentMap[s.Rule.ID] = s.Active
-	}
-
-	// Build desired set
-	desiredMap := make(map[string]transparent.RedirectRule)
-	for _, r := range desired {
-		desiredMap[r.ID] = r
 	}
 
 	// Remove rules no longer desired
@@ -454,11 +496,10 @@ func (h *desiredStateHook) syncTransparentRules() {
 	}
 
 	// Add new desired rules
-	for _, r := range desired {
+	for _, r := range desiredMap {
 		if _, ok := currentMap[r.ID]; !ok {
 			if err := h.transparentMgr.StartRedirect(r); err != nil {
-				// Log but don't fail — iptables may not be available
-				// (non-Linux, no root, etc.)
+				// iptables may not be available (non-Linux, no root)
 				_ = err
 			}
 		}
