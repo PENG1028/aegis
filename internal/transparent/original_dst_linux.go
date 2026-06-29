@@ -3,9 +3,11 @@
 package transparent
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"syscall"
+	"unsafe"
 )
 
 // getOriginalDst returns the pre-DNAT destination IP:port for a connection
@@ -30,18 +32,24 @@ func getOriginalDst(conn net.Conn) string {
 
 	var addr string
 	rawConn.Control(func(fd uintptr) {
-		// SO_ORIGINAL_DST = 80 on Linux
-		// Call getsockopt to retrieve the original destination sockaddr
-		raw, err := syscall.GetsockoptIPv6Mreq(int(fd), syscall.IPPROTO_IP, 80)
-		if err != nil {
+		// SO_ORIGINAL_DST = 80 (SOL_IP=0, level=0)
+		// Retrieve the pre-DNAT sockaddr_in from the kernel.
+		// Layout: struct sockaddr_in { family:2, port:2(BE), addr:4, zero:8 }
+		var raw [16]byte
+		var size uint32 = 16
+		_, _, errno := syscall.Syscall6(syscall.SYS_GETSOCKOPT, fd,
+			uintptr(syscall.SOL_IP), uintptr(80),
+			uintptr(unsafe.Pointer(&raw[0])),
+			uintptr(unsafe.Pointer(&size)), 0)
+		if errno != 0 {
 			return
 		}
-		// The returned value contains the original IPv4 address + port
-		// Layout: family(2) + port(2, network order) + ip(4) + zero(8)
-		if len(raw) >= 8 {
-			port := int(raw[2])<<8 | int(raw[3])
+		if size >= 8 {
+			port := binary.BigEndian.Uint16(raw[2:4])
 			ip := net.IPv4(raw[4], raw[5], raw[6], raw[7])
-			addr = fmt.Sprintf("%s:%d", ip.String(), port)
+			if !ip.IsUnspecified() && port != 0 {
+				addr = fmt.Sprintf("%s:%d", ip.String(), port)
+			}
 		}
 	})
 	return addr
