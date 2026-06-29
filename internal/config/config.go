@@ -33,7 +33,11 @@ type ProxyConfig struct {
 
 // StoreConfig holds database settings.
 type StoreConfig struct {
-	SQLitePath string `yaml:"sqlite_path"`
+	SQLitePath         string `yaml:"sqlite_path"`
+	BackupEnabled      bool   `yaml:"backup_enabled"`
+	BackupDir          string `yaml:"backup_dir"`
+	BackupIntervalHrs  int    `yaml:"backup_interval_hrs"`
+	BackupKeepCount    int    `yaml:"backup_keep_count"`
 }
 
 // ServerConfig holds HTTP API server settings.
@@ -78,7 +82,11 @@ func DefaultConfig() *Config {
 			Email:           "",
 		},
 		Store: StoreConfig{
-			SQLitePath: filepath.Join(baseDir, "aegis.db"),
+			SQLitePath:        filepath.Join(baseDir, "aegis.db"),
+			BackupEnabled:     true,
+			BackupDir:         filepath.Join(baseDir, "backups", "db"),
+			BackupIntervalHrs: 6,
+			BackupKeepCount:   7,
 		},
 		Server: ServerConfig{
 			Addr:          "127.0.0.1:7380",
@@ -114,7 +122,11 @@ func ProductionConfig() *Config {
 			Email:           "",
 		},
 		Store: StoreConfig{
-			SQLitePath: "/var/lib/aegis/aegis.db",
+			SQLitePath:        "/var/lib/aegis/aegis.db",
+			BackupEnabled:     true,
+			BackupDir:         "/var/lib/aegis/backups/db",
+			BackupIntervalHrs: 6,
+			BackupKeepCount:   7,
 		},
 		Server: ServerConfig{
 			Addr:          "127.0.0.1:7380",
