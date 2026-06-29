@@ -55,6 +55,9 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// System
 	mux.HandleFunc("GET /api/system/status", h.SystemStatus)
 
+	// v1.8F Cluster health aggregation
+	mux.HandleFunc("GET /api/admin/v1/cluster/health", h.ClusterHealth)
+
 	// Projects
 	mux.HandleFunc("GET /api/projects", h.ListProjects)
 	mux.HandleFunc("POST /api/projects", h.CreateProject)
