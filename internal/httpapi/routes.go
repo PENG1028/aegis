@@ -294,4 +294,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// v1.8G System Health & Diagnostics
 	mux.HandleFunc("GET /api/admin/v1/ports/scan", h.PortScan)
 	mux.HandleFunc("GET /api/admin/v1/system/health", h.SystemHealth)
+
+	// v1.8H Middleware Management
+	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/install", h.ProviderInstall)
+	mux.HandleFunc("GET /api/admin/v1/providers/{provider}/config", h.ProviderConfigPreview)
 }

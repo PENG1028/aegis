@@ -111,6 +111,8 @@ const SECTIONS: NavSection[] = [
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2a4 4 0 014 4v1h1a1 1 0 011 1v4a1 1 0 01-1 1H3a1 1 0 01-1-1V8a1 1 0 011-1h1V6a4 4 0 014-4z"/></svg>' },
       { href: '/providers', label: '提供商',
         icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M3.1 12.9l1.4-1.4M11.5 4.5l1.4-1.4"/></svg>' },
+      { href: '/middleware', label: '中间件',
+        icon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="5" rx="1"/><rect x="1" y="10" width="14" height="5" rx="1"/><path d="M4 6v4M8 6v4M12 6v4"/></svg>' },
     ],
   },
   {
