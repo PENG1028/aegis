@@ -3,7 +3,16 @@ package handlers
 import (
 	"aegis/internal/apply"
 	"net/http"
+	"regexp"
 )
+
+// redactGatewaySecrets replaces gateway link secret values in rendered config
+// with ***REDACTED*** so they are never exposed through preview/dry-run/diff APIs.
+var redactGatewaySecretsRe = regexp.MustCompile(`(?m)(header_up X-Aegis-Gateway-Token\s+)"[^"]*"`)
+
+func redactGatewaySecrets(config string) string {
+	return redactGatewaySecretsRe.ReplaceAllString(config, `${1}"***REDACTED***"`)
+}
 
 func (h *Handlers) ConfigPreview(w http.ResponseWriter, r *http.Request) {
 	plan, err := h.Apply.DryRun(r.Context())
@@ -12,7 +21,7 @@ func (h *Handlers) ConfigPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"rendered_config":      plan.RenderedConfig,
+		"rendered_config":      redactGatewaySecrets(plan.RenderedConfig),
 		"warnings":             plan.Warnings,
 		"route_count":          plan.RouteCount,
 		"managed_domain_count": plan.ManagedDomainCount,
@@ -27,7 +36,7 @@ func (h *Handlers) ConfigCurrent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"config": config,
+		"config": redactGatewaySecrets(config),
 	})
 }
 
@@ -39,7 +48,7 @@ func (h *Handlers) ConfigDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	diff := generateUnifiedDiff(current, plan.RenderedConfig)
+	diff := generateUnifiedDiff(redactGatewaySecrets(current), redactGatewaySecrets(plan.RenderedConfig))
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"format":   "unified",
 		"diff":     diff,
@@ -68,7 +77,7 @@ func (h *Handlers) ApplyDryRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"rendered_config":      plan.RenderedConfig,
+		"rendered_config":      redactGatewaySecrets(plan.RenderedConfig),
 		"warnings":             plan.Warnings,
 		"route_count":          plan.RouteCount,
 		"managed_domain_count": plan.ManagedDomainCount,

@@ -76,7 +76,7 @@ func NewCacheManager(cacheDir string) *CacheManager {
 
 // EnsureDir ensures the cache directory exists.
 func (m *CacheManager) EnsureDir() error {
-	return os.MkdirAll(m.cacheDir, 0755)
+	return os.MkdirAll(m.cacheDir, 0700)
 }
 
 // WriteDesiredState writes the desired state cache atomically.
@@ -137,7 +137,7 @@ func (m *CacheManager) atomicWrite(name string, v interface{}) error {
 	path := m.path(name)
 	tmpPath := path + ".tmp"
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("mkdir %s: %w", name, err)
 	}
 

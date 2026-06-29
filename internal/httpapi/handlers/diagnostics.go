@@ -74,12 +74,12 @@ func (h *Handlers) DiagnosticsExport(w http.ResponseWriter, r *http.Request) {
 
 	// Current config
 	currentConfig, _ := h.Apply.GetCurrentConfig()
-	diag["current_config"] = currentConfig
+	diag["current_config"] = redactGatewaySecrets(currentConfig)
 
 	// Preview config
 	plan, err := h.Apply.DryRun(r.Context())
 	if err == nil {
-		diag["preview_config"] = plan.RenderedConfig
+		diag["preview_config"] = redactGatewaySecrets(plan.RenderedConfig)
 		// Collect warnings across all routes
 		diag["warnings"] = plan.Warnings
 	}

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -41,10 +42,43 @@ func (h *Handlers) deployNode(req DeployNodeRequest) (*DeployNodeResponse, error
 
 	target := fmt.Sprintf("%s@%s", req.SSHUser, req.TargetIP)
 
-	// Build SSH command with password via sshpass if available
+	// Write SSH password to a temp file (0600) so it never appears in /proc/<pid>/cmdline.
+	// sshpass -f reads the password from a file descriptor, preventing exposure via ps aux.
+	var sshPassFile string
+	if req.SSHPassword != "" {
+		f, err := os.CreateTemp("", "aegis-ssh-*")
+		if err != nil {
+			return &DeployNodeResponse{
+				Success: false,
+				Message: fmt.Sprintf("cannot create temp file for SSH password: %v", err),
+			}, nil
+		}
+		if err := f.Chmod(0600); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			return &DeployNodeResponse{
+				Success: false,
+				Message: fmt.Sprintf("cannot chmod temp file: %v", err),
+			}, nil
+		}
+		if _, err := f.WriteString(req.SSHPassword); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			return &DeployNodeResponse{
+				Success: false,
+				Message: fmt.Sprintf("cannot write temp file: %v", err),
+			}, nil
+		}
+		f.Close()
+		sshPassFile = f.Name()
+		defer os.Remove(sshPassFile)
+	}
+
+	// Build SSH command. Uses sshpass -f (reads password from temp file) instead of
+	// sshpass -p (which exposes the password in /proc/<pid>/cmdline).
 	sshCmd := func(command string) *exec.Cmd {
-		if req.SSHPassword != "" {
-			return exec.Command("sshpass", "-p", req.SSHPassword,
+		if sshPassFile != "" {
+			return exec.Command("sshpass", "-f", sshPassFile,
 				"ssh", "-o", "StrictHostKeyChecking=accept-new",
 				"-o", "ConnectTimeout=10",
 				target, command)
@@ -55,8 +89,8 @@ func (h *Handlers) deployNode(req DeployNodeRequest) (*DeployNodeResponse, error
 	}
 
 	scpCmd := func(src, dst string) *exec.Cmd {
-		if req.SSHPassword != "" {
-			return exec.Command("sshpass", "-p", req.SSHPassword,
+		if sshPassFile != "" {
+			return exec.Command("sshpass", "-f", sshPassFile,
 				"scp", "-o", "StrictHostKeyChecking=accept-new",
 				"-o", "ConnectTimeout=10",
 				src, fmt.Sprintf("%s:%s", target, dst))
@@ -146,9 +180,17 @@ func (h *Handlers) deployNode(req DeployNodeRequest) (*DeployNodeResponse, error
 	cmd = sshCmd(fmt.Sprintf("cat > /etc/aegis/node.yaml << 'NODEEOF'\n%s\nNODEEOF", string(nodeYAML)))
 	cmd.CombinedOutput()
 
-	// Write join token
-	cmd = sshCmd(fmt.Sprintf("echo '%s' > /etc/aegis/join.token && chmod 600 /etc/aegis/join.token", req.JoinToken))
-	cmd.CombinedOutput()
+	// Write join token — base64-encoded to prevent shell injection via single-quote or
+	// other shell metacharacters in the token value.
+	encodedToken := base64.StdEncoding.EncodeToString([]byte(req.JoinToken))
+	cmd = sshCmd(fmt.Sprintf("echo -- %s | base64 -d > /etc/aegis/join.token && chmod 600 /etc/aegis/join.token", encodedToken))
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		return &DeployNodeResponse{
+			Success: false,
+			Message: fmt.Sprintf("Write join token failed: %v — %s", err, string(out)),
+		}, nil
+	}
 	logf("  Config written")
 
 	// Step 6: Install systemd service
@@ -213,18 +255,22 @@ func isSSHAvailable() bool {
 }
 
 // generateDeployCommand returns the one-liner shell command for manual deployment.
+// Uses base64 encoding for the join token to prevent shell injection.
 func generateDeployCommand(req DeployNodeRequest) string {
 	cpURL := req.ControlPlaneURL
 	if cpURL == "" {
 		cpURL = "http://<control-plane-ip>:7380"
 	}
 	joinToken := req.JoinToken
+	encodedToken := base64.StdEncoding.EncodeToString([]byte(joinToken))
 	if joinToken == "" {
 		joinToken = "<join-token>"
+		encodedToken = "<base64-encoded-join-token>"
 	}
 
-	return fmt.Sprintf(`ssh %s@%s "sudo apt-get update -qq && sudo apt-get install -y -qq caddy && sudo mkdir -p /etc/aegis /var/lib/aegis && echo '%s' | sudo tee /etc/aegis/join.token > /dev/null && sudo chmod 600 /etc/aegis/join.token && printf 'control_plane_url: %s\nnode_token_file: /etc/aegis/node.token\ncache_dir: /var/lib/aegis\nheartbeat_interval_seconds: 15\nsync_interval_seconds: 15\nreconcile_mode: apply\n' | sudo tee /etc/aegis/node.yaml && echo '[Unit]\nDescription=Aegis Node Agent\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart=/usr/local/bin/aegis node run --config /etc/aegis/node.yaml\nRestart=always\n\n[Install]\nWantedBy=multi-user.target' | sudo tee /etc/systemd/system/aegis-node.service && sudo systemctl daemon-reload && sudo systemctl enable aegis-node && sudo systemctl start aegis-node"`,
-		req.SSHUser, req.TargetIP, joinToken, cpURL)
+	return fmt.Sprintf(
+		`ssh %s@%s "sudo apt-get update -qq && sudo apt-get install -y -qq caddy && sudo mkdir -p /etc/aegis /var/lib/aegis && echo -- %s | base64 -d | sudo tee /etc/aegis/join.token > /dev/null && sudo chmod 600 /etc/aegis/join.token && printf 'control_plane_url: %s\nnode_token_file: /etc/aegis/node.token\ncache_dir: /var/lib/aegis\nheartbeat_interval_seconds: 15\nsync_interval_seconds: 15\nreconcile_mode: apply\n' | sudo tee /etc/aegis/node.yaml && echo '[Unit]\nDescription=Aegis Node Agent\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart=/usr/local/bin/aegis node run --config /etc/aegis/node.yaml\nRestart=always\n\n[Install]\nWantedBy=multi-user.target' | sudo tee /etc/systemd/system/aegis-node.service && sudo systemctl daemon-reload && sudo systemctl enable aegis-node && sudo systemctl start aegis-node"`,
+		req.SSHUser, req.TargetIP, encodedToken, cpURL)
 }
 
 // AdminDeployNode handles POST /api/admin/v1/nodes/deploy

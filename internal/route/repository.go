@@ -217,9 +217,10 @@ func (r *Repository) Update(rt *Route) error {
 	}
 
 	_, err := r.DB.Exec(
-		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, updated_at=? WHERE id=?`,
+		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, gateway_link_id=?, updated_at=? WHERE id=?`,
 		rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal, rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
+		rt.GatewayLinkID,
 		rt.UpdatedAt.Format(time.RFC3339), rt.ID,
 	)
 	if err != nil {

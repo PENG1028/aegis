@@ -85,7 +85,7 @@ func (b *BackupManager) runBackup() {
 	defer b.mu.Unlock()
 
 	// Ensure backup directory exists
-	if err := os.MkdirAll(b.backupDir, 0755); err != nil {
+	if err := os.MkdirAll(b.backupDir, 0700); err != nil {
 		log.Printf("[backup] create dir %s: %v", b.backupDir, err)
 		return
 	}
@@ -93,10 +93,15 @@ func (b *BackupManager) runBackup() {
 	timestamp := time.Now().Format("20060102_150405")
 	backupFile := filepath.Join(b.backupDir, fmt.Sprintf("aegis-%s.db", timestamp))
 
+	// Sanitize path for SQLite string literal: double any single quotes.
+	// VACUUM INTO does not support parameterized queries via Go drivers,
+	// so we must escape the path manually.
+	safePath := strings.ReplaceAll(backupFile, "'", "''")
+
 	// VACUUM INTO creates a clean, defragmented copy
-	_, err := b.db.Exec(fmt.Sprintf("VACUUM INTO '%s'", backupFile))
+	_, err := b.db.Exec(fmt.Sprintf("VACUUM INTO '%s'", safePath))
 	if err != nil {
-		log.Printf("[backup] VACUUM INTO %s failed: %v", backupFile, err)
+		log.Printf("[backup] VACUUM INTO %s failed: %v", safePath, err)
 		return
 	}
 
@@ -146,14 +151,17 @@ func (b *BackupManager) BackupNow() (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if err := os.MkdirAll(b.backupDir, 0755); err != nil {
+	if err := os.MkdirAll(b.backupDir, 0700); err != nil {
 		return "", fmt.Errorf("create dir: %w", err)
 	}
 
 	timestamp := time.Now().Format("20060102_150405")
 	backupFile := filepath.Join(b.backupDir, fmt.Sprintf("aegis-%s.db", timestamp))
 
-	_, err := b.db.Exec(fmt.Sprintf("VACUUM INTO '%s'", backupFile))
+	// Sanitize path for SQLite string literal (same rationale as runBackup).
+	safePath := strings.ReplaceAll(backupFile, "'", "''")
+
+	_, err := b.db.Exec(fmt.Sprintf("VACUUM INTO '%s'", safePath))
 	if err != nil {
 		return "", fmt.Errorf("VACUUM INTO: %w", err)
 	}

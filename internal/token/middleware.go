@@ -50,6 +50,13 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Node join endpoint: uses join token in request body, not Bearer token.
+		// New nodes have no credentials yet — the join token proves eligibility.
+		if r.URL.Path == "/api/node/v1/join" && r.Method == "POST" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Relay handler: uses GatewayLink-based auth, not Bearer token
 		if strings.HasPrefix(r.URL.Path, "/__aegis/") {
 			next.ServeHTTP(w, r)

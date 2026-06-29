@@ -9,10 +9,20 @@ import (
 	"aegis/internal/proxy"
 )
 
+// sanitizeCaddyValue strips characters that could be used to inject Caddy
+// directives into the rendered Caddyfile: newlines and curly braces.
+func sanitizeCaddyValue(s string) string {
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "{", "")
+	s = strings.ReplaceAll(s, "}", "")
+	return s
+}
+
 func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 	var buf bytes.Buffer
 	if email != "" {
-		buf.WriteString("{\n    email " + email + "\n}\n\n")
+		buf.WriteString("{\n    email " + sanitizeCaddyValue(email) + "\n}\n\n")
 	}
 
 	// Render all routes as HTTP site blocks (no TCP/UDP port forwarding)
@@ -46,12 +56,12 @@ func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 			renderRoute(&buf, routes[0])
 			continue
 		}
-		buf.WriteString(fmt.Sprintf("%s {\n", domain))
+		buf.WriteString(fmt.Sprintf("%s {\n", sanitizeCaddyValue(domain)))
 		hasDomainFallback := false
 		for _, r := range routes {
 			if r.MaintenanceEnabled {
 				buf.WriteString(fmt.Sprintf("    handle %s {\n", pathPattern(r.PathPrefix)))
-				buf.WriteString(fmt.Sprintf("        respond \"%s\" 503\n", r.MaintenanceMessage))
+				buf.WriteString(fmt.Sprintf("        respond \"%s\" 503\n", sanitizeCaddyValue(r.MaintenanceMessage)))
 				buf.WriteString("    }\n")
 				continue
 			}
@@ -95,20 +105,21 @@ func pathPattern(p string) string {
 }
 
 func writeReverseProxy(buf *bytes.Buffer, upstream string, headers map[string]string, indent string) {
+	safeUpstream := sanitizeCaddyValue(upstream)
 	if len(headers) > 0 {
-		buf.WriteString(fmt.Sprintf("%sreverse_proxy %s {\n", indent, upstream))
+		buf.WriteString(fmt.Sprintf("%sreverse_proxy %s {\n", indent, safeUpstream))
 		for k, v := range headers {
-			buf.WriteString(fmt.Sprintf("%s    header_up %s \"%s\"\n", indent, k, v))
+			buf.WriteString(fmt.Sprintf("%s    header_up %s \"%s\"\n", indent, sanitizeCaddyValue(k), sanitizeCaddyValue(v)))
 		}
 		buf.WriteString(fmt.Sprintf("%s}\n", indent))
 	} else {
-		buf.WriteString(fmt.Sprintf("%sreverse_proxy %s\n", indent, upstream))
+		buf.WriteString(fmt.Sprintf("%sreverse_proxy %s\n", indent, safeUpstream))
 	}
 }
 
 func renderRoute(buf *bytes.Buffer, route proxy.RouteConfig) {
-	buf.WriteString(fmt.Sprintf("%s {\n", route.Domain))
+	buf.WriteString(fmt.Sprintf("%s {\n", sanitizeCaddyValue(route.Domain)))
 	buf.WriteString("    encode gzip\n")
-	writeReverseProxy(buf, route.UpstreamURL, route.Options.ExtraHeaders, "    ")
+	writeReverseProxy(buf, sanitizeCaddyValue(route.UpstreamURL), route.Options.ExtraHeaders, "    ")
 	buf.WriteString("}\n")
 }

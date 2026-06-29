@@ -72,10 +72,10 @@ func (p *CaddyHTTPProvider) Backup() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(p.cfg.Proxy.BackupDir, 0755); err != nil {
+	if err := os.MkdirAll(p.cfg.Proxy.BackupDir, 0700); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+	if err := os.WriteFile(backupPath, data, 0600); err != nil {
 		return "", err
 	}
 	return backupPath, nil
@@ -89,7 +89,7 @@ func (p *CaddyHTTPProvider) Restore(backupPath string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p.cfg.Proxy.CaddyfilePath, data, 0644)
+	return os.WriteFile(p.cfg.Proxy.CaddyfilePath, data, 0600)
 }
 
 func (p *CaddyHTTPProvider) GetCurrentConfig() (string, error) {
@@ -107,7 +107,7 @@ func (p *CaddyHTTPProvider) GetCurrentConfig() (string, error) {
 func (p *CaddyHTTPProvider) WriteTemp(rendered []byte) (string, error) {
 	dir := filepath.Dir(p.cfg.Proxy.CaddyfilePath)
 	tmpFile := filepath.Join(dir, ".Caddyfile.tmp")
-	if err := os.WriteFile(tmpFile, rendered, 0644); err != nil {
+	if err := os.WriteFile(tmpFile, rendered, 0600); err != nil {
 		return "", err
 	}
 	return tmpFile, nil
@@ -119,7 +119,7 @@ func (p *CaddyHTTPProvider) CommitTemp(tempPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(p.cfg.Proxy.CaddyfilePath, data, 0644); err != nil {
+	if err := os.WriteFile(p.cfg.Proxy.CaddyfilePath, data, 0600); err != nil {
 		return err
 	}
 	os.Remove(tempPath)
@@ -228,11 +228,20 @@ func (p *CaddyHTTPProvider) runtimeVerify() bool {
 // Ensure CaddyHTTPProvider implements Diagnoser
 var _ Diagnoser = (*CaddyHTTPProvider)(nil)
 
+// sanitizeCaddyValue strips characters that could be used to inject Caddy directives.
+func sanitizeCaddyValue(s string) string {
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "{", "")
+	s = strings.ReplaceAll(s, "}", "")
+	return s
+}
+
 // renderCaddyfile is the shared Caddy renderer (from proxy/caddy package).
 func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 	var buf bytes.Buffer
 	if email != "" {
-		buf.WriteString("{\n    email " + email + "\n}\n\n")
+		buf.WriteString("{\n    email " + sanitizeCaddyValue(email) + "\n}\n\n")
 	}
 	for _, r := range gwCfg.Routes {
 		if r.MaintenanceEnabled {
@@ -241,9 +250,10 @@ func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 				msg = "Service temporarily unavailable"
 			}
 			msg = strings.ReplaceAll(msg, `"`, `\"`)
-			buf.WriteString(fmt.Sprintf("%s {\n    respond \"%s\" 503\n}\n", r.Domain, msg))
+			msg = sanitizeCaddyValue(msg)
+			buf.WriteString(fmt.Sprintf("%s {\n    respond \"%s\" 503\n}\n", sanitizeCaddyValue(r.Domain), msg))
 		} else {
-			buf.WriteString(fmt.Sprintf("%s {\n    encode gzip\n    reverse_proxy %s\n}\n", r.Domain, r.UpstreamURL))
+			buf.WriteString(fmt.Sprintf("%s {\n    encode gzip\n    reverse_proxy %s\n}\n", sanitizeCaddyValue(r.Domain), sanitizeCaddyValue(r.UpstreamURL)))
 		}
 	}
 	return buf.String()

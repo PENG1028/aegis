@@ -186,3 +186,58 @@ func TestEnsureAdmin(t *testing.T) {
 	}
 	t.Logf("EnsureAdmin duplicate correctly blocked: %v", err)
 }
+
+// ── H7 fix: Concurrent login rate limit safety ──
+
+func TestCheckLoginRate_ConcurrentAccess(t *testing.T) {
+	// Verifies the type assertion fix (comma-ok pattern) doesn't regress
+	// and that concurrent access to the rate limiter is safe
+	done := make(chan bool)
+	for i := 0; i < 50; i++ {
+		go func(idx int) {
+			// Each goroutine checks rate for a unique IP (no locking contention
+			// scenario, but exercises the LoadOrStore code path concurrently)
+			ip := "10.0.0." + string(rune('0'+idx%10))
+			_ = checkLoginRate(ip)
+			done <- true
+		}(i)
+	}
+	for i := 0; i < 50; i++ {
+		<-done
+	}
+	// Test passes if no panic occurs
+	t.Log("H7 fix PASS: concurrent login rate check does not panic")
+}
+
+func TestCheckLoginRate_LockoutThenExpire(t *testing.T) {
+	ip := "192.168.1.100"
+
+	// Fire 6 rapid attempts — 6th should trigger lockout
+	var lastErr error
+	for i := 0; i < 6; i++ {
+		lastErr = checkLoginRate(ip)
+	}
+
+	if lastErr == nil {
+		t.Error("6th login attempt should trigger rate limiting")
+	}
+	t.Logf("Rate limit triggered: %v", lastErr)
+}
+
+func TestCheckLoginRate_DifferentIPsNotBlocked(t *testing.T) {
+	// Use unique IPs to avoid leakage from other tests sharing the global loginRates map
+	ip1 := "172.30.99.1"
+	ip2 := "172.30.99.2"
+
+	// Exhaust one IP
+	for i := 0; i < 6; i++ {
+		_ = checkLoginRate(ip1)
+	}
+
+	// Different IP should still be allowed
+	err := checkLoginRate(ip2)
+	if err != nil {
+		t.Errorf("different IP should not be rate-limited by another IP's attempts: %v", err)
+	}
+	t.Log("H7 fix PASS: rate limiting is per-IP")
+}

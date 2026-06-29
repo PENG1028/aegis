@@ -244,6 +244,10 @@ func (h *RelayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := client.Do(proxyReq)
 	if err != nil {
+		// Go's HTTP client may return a non-nil response even on error — must close body
+		if resp != nil {
+			resp.Body.Close()
+		}
 		writeRelayError(w, http.StatusBadGateway, "TARGET_UNREACHABLE",
 			fmt.Sprintf("local target %s unreachable: %v", targetAddr, err))
 		h.logRelayEvent("relay_failed", routeID, sourceNodeID, gatewayID, "target_unreachable", reqID)

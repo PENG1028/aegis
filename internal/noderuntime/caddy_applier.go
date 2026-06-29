@@ -92,22 +92,51 @@ func (a *caddyApplier) Apply(entries []RoutingTableEntry) error {
 
 // routingTableToRouteConfigs converts node routing table entries to proxy route configs.
 // Only entries with status "available" are included.
+//
+// Routing logic:
+//   - Same-node endpoint: use TargetLocalHost:TargetLocalPort (direct to backend)
+//   - Cross-node with candidate: use the best candidate's GatewayURL (proxy to remote Caddy :80)
+//   - Cross-node without candidate: skipped (no route to target)
 func routingTableToRouteConfigs(entries []RoutingTableEntry) []proxy.RouteConfig {
 	var routes []proxy.RouteConfig
 	for _, entry := range entries {
 		if entry.Status != "available" {
 			continue
 		}
-		upstreamURL := fmt.Sprintf("http://%s:%d", entry.TargetLocalHost, entry.TargetLocalPort)
-		if entry.TargetLocalHost == "" || entry.TargetLocalPort == 0 {
-			continue
+
+		var upstreamURL string
+		var extraHeaders map[string]string
+
+		if entry.TargetNodeID == entry.FromNodeID || entry.TargetNodeID == "" {
+			// Same node: proxy directly to the local endpoint
+			if entry.TargetLocalHost == "" || entry.TargetLocalPort == 0 {
+				continue
+			}
+			upstreamURL = fmt.Sprintf("http://%s:%d", entry.TargetLocalHost, entry.TargetLocalPort)
+		} else {
+			// Cross-node: proxy to the remote Caddy on port 80 via the best candidate
+			if len(entry.Candidates) == 0 {
+				continue
+			}
+			best := entry.Candidates[0] // sorted by priority (lowest first)
+			upstreamURL = best.GatewayURL
+
+			// Inject gateway link auth headers so the remote Caddy can
+			// validate and relay the request
+			if best.GatewayLinkID != "" {
+				extraHeaders = map[string]string{
+					"X-Aegis-Gateway-Link": best.GatewayLinkID,
+				}
+			}
 		}
+
 		routes = append(routes, proxy.RouteConfig{
 			Domain:      entry.Domain,
 			Kind:        "reverse_proxy",
 			UpstreamURL: upstreamURL,
 			Options: proxy.ProxyOptions{
-				EnableGzip: true,
+				EnableGzip:   true,
+				ExtraHeaders: extraHeaders,
 			},
 		})
 	}

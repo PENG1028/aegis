@@ -40,7 +40,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		GatewayLinkSvc:  svcs.GatewayLinkSvc,
 		PolicySvc:       svcs.PolicySvc,
 		RoutingTableSvc: svcs.RoutingTableSvc,
-		RelayResolver: &handlers.RelayResolver{Resolver: svcs.RelaySvc},
+		RelayResolver:   &handlers.RelayResolver{Resolver: svcs.RelaySvc},
+		TransparentMgr:  svcs.TransparentMgr,
 	}
 
 	// DNS handler
@@ -285,4 +286,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/dns/enable", dnsH.DNSEnable)
 	mux.HandleFunc("POST /api/admin/v1/dns/disable", dnsH.DNSDisable)
 	mux.HandleFunc("POST /api/admin/v1/dns/refresh", dnsH.DNSRefresh)
+
+	// v1.8H Transparent Proxy (IP:port interception rules)
+	mux.HandleFunc("GET /api/admin/v1/transparent/rules", h.AdminListTransparentRules)
+	mux.HandleFunc("DELETE /api/admin/v1/transparent/rules/{id}", h.AdminDeleteTransparentRule)
 }

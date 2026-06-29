@@ -153,7 +153,7 @@ func (p *HAProxyTCPProvider) Backup() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(p.backupDir, 0755); err != nil {
+	if err := os.MkdirAll(p.backupDir, 0700); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(backupPath, data, 0644); err != nil {

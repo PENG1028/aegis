@@ -79,6 +79,18 @@ func (r *Repository) FindByNodeID(nodeID string) ([]Endpoint, error) {
 	return scanEndpoints(rows)
 }
 
+// FindAllEnabled returns all enabled endpoints across all services.
+// Used by transparent proxy sync to discover interception targets.
+func (r *Repository) FindAllEnabled() ([]Endpoint, error) {
+	rows, err := r.DB.Query(
+		`SELECT ` + endpointSelectCols + ` FROM endpoints WHERE enabled = 1 ORDER BY service_id, type`)
+	if err != nil {
+		return nil, fmt.Errorf("query all enabled endpoints: %w", err)
+	}
+	defer rows.Close()
+	return scanEndpoints(rows)
+}
+
 // Update updates an endpoint.
 func (r *Repository) Update(ep *Endpoint) error {
 	enabledVal := 0

@@ -40,7 +40,7 @@ func newServeCommand(cfg *config.Config, svcs *httpapi.Services) *cobra.Command 
 			} else {
 				authMiddleware = token.NewAuthMiddleware(cfg.Server.AdminToken, nil)
 			}
-			apiMiddleware := httpapi.NewMiddleware(authMiddleware)
+			apiMiddleware := httpapi.NewMiddleware(authMiddleware, cfg.Server.AllowedOrigins)
 
 			// Set up routes
 			mux := http.NewServeMux()
@@ -54,6 +54,7 @@ func newServeCommand(cfg *config.Config, svcs *httpapi.Services) *cobra.Command 
 			//   2. Auth — checks AdminContext first, falls back to Bearer token
 			//   3. CORS (innermost, runs last)
 			var handler http.Handler = mux
+			handler = apiMiddleware.Recovery(handler)
 			handler = apiMiddleware.CORS(handler)
 			handler = apiMiddleware.Auth(handler)
 			handler = adminAuthMw.Middleware(handler)
