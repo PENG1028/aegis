@@ -87,3 +87,53 @@ func TestAuthMiddlewareLoginWrongPassword(t *testing.T) {
 	}
 	t.Log("Bug 1 regression PASS: wrong password returns 'invalid credentials', not 'missing Authorization header'")
 }
+
+// C1 fix: Node join endpoint must bypass Bearer token middleware.
+// New nodes have no credentials — the join token in the request body proves eligibility.
+func TestAuthMiddlewareBypassesNodeJoin(t *testing.T) {
+	called := false
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mw := NewAuthMiddleware("test-admin-token", nil)
+	h := mw.Middleware(handler)
+
+	// POST /api/node/v1/join without Bearer token — must pass through
+	req := httptest.NewRequest("POST", "/api/node/v1/join", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if !called {
+		t.Error("C1 regression: node join handler was NOT called — middleware blocked it")
+	}
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	t.Log("C1 fix PASS: node join bypasses Bearer token check")
+}
+
+func TestAuthMiddlewareBypassesNodeJoinOnlyPOST(t *testing.T) {
+	called := false
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})
+
+	mw := NewAuthMiddleware("test-admin-token", nil)
+	h := mw.Middleware(handler)
+
+	// GET /api/node/v1/join — should NOT bypass (only POST is allowed)
+	req := httptest.NewRequest("GET", "/api/node/v1/join", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if called {
+		t.Error("GET /api/node/v1/join should NOT bypass Bearer token check")
+	}
+	// Should get 401 (missing token), not reach handler
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for GET /api/node/v1/join without token, got %d", w.Code)
+	}
+	t.Log("C1 fix PASS: only POST /api/node/v1/join bypasses auth, GET is blocked")
+}

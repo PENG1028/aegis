@@ -22,6 +22,7 @@ import (
 	"aegis/internal/smoke"
 	"aegis/internal/space"
 	"aegis/internal/trace"
+	"aegis/internal/transparent"
 	"database/sql"
 
 	"github.com/spf13/cobra"
@@ -52,7 +53,8 @@ type Services struct {
 	PendingState  *cluster.PendingState
 	TraceSvc      *trace.Service
 	SafetySvc     *safety.Service
-RelaySvc      *relay.Resolver   // v1.8B
+RelaySvc       *relay.Resolver        // v1.8B
+TransparentMgr *transparent.Manager   // v1.8H
 }
 
 // NewRootCommand creates the root aegis CLI command.

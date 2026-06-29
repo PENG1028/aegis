@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -420,6 +422,24 @@ func (s *AppService) Rollback(ctx context.Context, targetVersion string) error {
 		}
 		backupPath = lastSuccess.BackupPath
 		versionLabel = lastSuccess.Version
+	}
+
+	// Validate backupPath is within the configured backup directory to prevent
+	// path traversal via a manipulated database record.
+	cleanBackupPath, err := filepath.Abs(backupPath)
+	if err != nil {
+		return fmt.Errorf("resolve backup path: %w", err)
+	}
+	cleanBackupDir, err := filepath.Abs(s.cfg.Proxy.BackupDir)
+	if err != nil {
+		return fmt.Errorf("resolve backup dir: %w", err)
+	}
+	if !strings.HasPrefix(cleanBackupPath, cleanBackupDir+string(filepath.Separator)) &&
+		cleanBackupPath != cleanBackupDir+string(filepath.Separator)+filepath.Base(backupPath) {
+		// Re-check: ensure the backup path is a direct child of the backup directory
+		if filepath.Dir(cleanBackupPath) != cleanBackupDir {
+			return fmt.Errorf("backup path %s is outside backup directory", backupPath)
+		}
 	}
 
 	// Restore backup

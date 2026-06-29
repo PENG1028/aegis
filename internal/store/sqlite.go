@@ -14,7 +14,7 @@ import (
 func OpenSQLite(path string) (*sql.DB, error) {
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, fmt.Errorf("create database directory %s: %w", dir, err)
 		}
 	}

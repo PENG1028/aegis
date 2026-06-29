@@ -51,7 +51,12 @@ var loginRates sync.Map // map[string]*loginRate
 func checkLoginRate(ip string) error {
 	now := time.Now()
 	val, _ := loginRates.LoadOrStore(ip, &loginRate{firstSeen: now})
-	lr := val.(*loginRate)
+	lr, ok := val.(*loginRate)
+	if !ok {
+		// Defensive: if the map somehow holds a wrong type, reset it
+		loginRates.Store(ip, &loginRate{firstSeen: now, attempts: 1})
+		return nil
+	}
 
 	// Check if locked out
 	if now.Before(lr.lockedUntil) {

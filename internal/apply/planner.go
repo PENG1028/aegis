@@ -200,12 +200,22 @@ func (p *Planner) resolveRouteConfigWithService(
 		},
 	}
 
-		// v1.7AB: Inject Gateway Link headers if route is linked to a downstream gateway
+		// v1.7AB / v1.8H: Gateway Link — redirect UpstreamURL to the target gateway
+		// and inject auth headers. This enables cross-machine forwarding through
+		// port 80: Machine A's Caddy proxies to Machine B's Caddy on :80, which
+		// then routes to the local backend based on domain matching.
 		if gatewayLinkID != "" && p.gwLinkRepo != nil {
 			gw, err := p.gwLinkRepo.FindByID(gatewayLinkID)
 			if err == nil && gw != nil && gw.Status == gatewaylink.StatusActive {
+				// Cross-machine: use gateway link target (Machine B) instead of
+				// local endpoint (127.0.0.1:backend_port) as the upstream.
+				// This ensures traffic goes through the remote Caddy on :80.
+				targetHost := gw.ResolveHost()
+				rc.UpstreamURL = fmt.Sprintf("http://%s:%d", targetHost, gw.Port)
+
 				rc.Options.ExtraHeaders = map[string]string{
 					"X-Aegis-Gateway-Link": gw.ID,
+					"Host":                 domain, // preserve original host header
 				}
 				// v1.8B-5: Get raw secret (decrypts encrypted secret, falls back to HMAC hash)
 				if gw.HasSecret() {

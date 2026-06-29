@@ -6,17 +6,29 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
 // Adapter implements proxy.ProxyAdapter for Caddy.
 type Adapter struct {
-	cfg *config.Config
+	cfg         *config.Config
+	caddyBinary string // resolved absolute path to caddy binary
 }
 
 // NewAdapter creates a new Caddy adapter.
+// Resolves the caddy binary to an absolute path at construction time to prevent
+// PATH-based attacks where a malicious caddy binary is placed earlier in PATH.
 func NewAdapter(cfg *config.Config) *Adapter {
-	return &Adapter{cfg: cfg}
+	caddyPath := cfg.Proxy.CaddyBinary
+	if !filepath.IsAbs(caddyPath) {
+		if resolved, err := exec.LookPath(caddyPath); err == nil {
+			caddyPath = resolved
+		}
+		// If LookPath fails, keep the original value so the error surfaces
+		// naturally when we try to execute it.
+	}
+	return &Adapter{cfg: cfg, caddyBinary: caddyPath}
 }
 
 // Name returns the adapter name.
@@ -38,9 +50,9 @@ func (a *Adapter) Validate(configPath string) error {
 		return nil
 	}
 
-	// If it's a template, do simple substitution
+	// If it's a template, do simple substitution (use resolved binary path)
 	validateCmd = strings.ReplaceAll(validateCmd, "{{config_path}}", configPath)
-	validateCmd = strings.ReplaceAll(validateCmd, "{{caddy_binary}}", a.cfg.Proxy.CaddyBinary)
+	validateCmd = strings.ReplaceAll(validateCmd, "{{caddy_binary}}", a.caddyBinary)
 
 	parts := strings.Fields(validateCmd)
 	if len(parts) == 0 {

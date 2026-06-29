@@ -25,7 +25,7 @@ func (e *Executor) WriteTemp(rendered []byte) (string, error) {
 	dir := filepath.Dir(e.cfg.Proxy.CaddyfilePath)
 	tmpFile := filepath.Join(dir, ".Caddyfile.tmp")
 
-	if err := os.WriteFile(tmpFile, rendered, 0644); err != nil {
+	if err := os.WriteFile(tmpFile, rendered, 0600); err != nil {
 		return "", fmt.Errorf("write temp config: %w", err)
 	}
 	return tmpFile, nil
@@ -43,7 +43,7 @@ func (e *Executor) Backup() (string, error) {
 	}
 
 	// Ensure backup directory exists
-	if err := os.MkdirAll(e.cfg.Proxy.BackupDir, 0755); err != nil {
+	if err := os.MkdirAll(e.cfg.Proxy.BackupDir, 0700); err != nil {
 		return "", fmt.Errorf("create backup directory: %w", err)
 	}
 
@@ -56,7 +56,7 @@ func (e *Executor) Backup() (string, error) {
 		return "", fmt.Errorf("read config for backup: %w", err)
 	}
 
-	if err := os.WriteFile(backupPath, src, 0644); err != nil {
+	if err := os.WriteFile(backupPath, src, 0600); err != nil {
 		return "", fmt.Errorf("write backup: %w", err)
 	}
 
@@ -76,7 +76,7 @@ func (e *Executor) Replace(tempPath string) error {
 		if readErr != nil {
 			return fmt.Errorf("rename config (and read fallback failed): %w", err)
 		}
-		if writeErr := os.WriteFile(configPath, data, 0644); writeErr != nil {
+		if writeErr := os.WriteFile(configPath, data, 0600); writeErr != nil {
 			return fmt.Errorf("write config (rename fallback): %w", writeErr)
 		}
 		os.Remove(tempPath)
@@ -97,7 +97,7 @@ func (e *Executor) RestoreBackup(backupPath string) error {
 	}
 
 	configPath := e.cfg.Proxy.CaddyfilePath
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("restore backup: %w", err)
 	}
 

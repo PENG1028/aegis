@@ -34,6 +34,12 @@ func (a *FakeProxyAdapter) Render(cfg GatewayConfig) ([]byte, error) {
 				msg = "Service temporarily unavailable"
 			}
 			output += fmt.Sprintf("%s {\n    respond \"%s\" 503\n}\n", r.Domain, msg)
+		} else if len(r.Options.ExtraHeaders) > 0 {
+			output += fmt.Sprintf("%s {\n    encode gzip\n    reverse_proxy %s {\n", r.Domain, r.UpstreamURL)
+			for k, v := range r.Options.ExtraHeaders {
+				output += fmt.Sprintf("        header_up %s \"%s\"\n", k, v)
+			}
+			output += "    }\n}\n"
 		} else {
 			output += fmt.Sprintf("%s {\n    encode gzip\n    reverse_proxy %s\n}\n", r.Domain, r.UpstreamURL)
 		}

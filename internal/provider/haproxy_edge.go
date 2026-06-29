@@ -150,7 +150,7 @@ func (p *HAProxyEdgeMuxProvider) Backup() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	os.MkdirAll(p.backupDir, 0755)
+	os.MkdirAll(p.backupDir, 0700)
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return "", err
 	}

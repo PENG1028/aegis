@@ -31,6 +31,7 @@ import (
 	"aegis/internal/store"
 	"aegis/internal/token"
 	"aegis/internal/trace"
+	"aegis/internal/transparent"
 	"database/sql"
 	"net/http"
 	"time"
@@ -75,6 +76,7 @@ type Handlers struct {
 	TopologySvc     *topology.Service           // v1.8C-2
 		PolicySvc       *routingpolicy.Service       // v1.8C-3
 		RoutingTableSvc *routingtable.Service        // v1.8C-3
+	TransparentMgr  *transparent.Manager         // v1.8H
 }
 
 // SystemStatus returns enhanced system status.
@@ -136,13 +138,13 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 		"server_time": time.Now().Format(time.RFC3339),
 		"proxy": map[string]interface{}{
 			"provider":                  h.Config.Proxy.Provider,
-			"config_path":               h.Config.Proxy.CaddyfilePath,
+			"config_path_configured":    h.Config.Proxy.CaddyfilePath != "",
 			"validate_available":        h.Config.Proxy.ValidateCommand != "",
 			"reload_command_configured": h.Config.Proxy.ReloadCommand != "",
 		},
 		"store": map[string]interface{}{
-			"sqlite_path":    h.Config.Store.SQLitePath,
-			"schema_version": schemaVersion,
+			"sqlite_configured": h.Config.Store.SQLitePath != "",
+			"schema_version":    schemaVersion,
 		},
 		"counts": map[string]interface{}{
 			"projects":         len(projects),

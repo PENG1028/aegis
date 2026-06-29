@@ -33,6 +33,7 @@ import (
 	"aegis/internal/space"
 	"aegis/internal/token"
 	"aegis/internal/trace"
+	"aegis/internal/transparent"
 )
 
 // Services holds all application services for the HTTP API.
@@ -73,4 +74,5 @@ type Services struct {
 	RoutingTableSvc *routingtable.Service        // v1.8C-3
 	RelayHTTPHandler http.Handler           // v1.8B relay dispatch
 	DNSMgmt         *dns.Manager            // v1.8E DNS resolver
+	TransparentMgr  *transparent.Manager    // v1.8H transparent IP:port proxy
 }

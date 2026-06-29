@@ -42,9 +42,10 @@ type StoreConfig struct {
 
 // ServerConfig holds HTTP API server settings.
 type ServerConfig struct {
-	Addr          string `yaml:"addr"`
-	AdminToken    string `yaml:"admin_token"`
-	SessionSecure bool   `yaml:"session_secure"`
+	Addr           string   `yaml:"addr"`
+	AdminToken     string   `yaml:"admin_token"`
+	SessionSecure  bool     `yaml:"session_secure"`
+	AllowedOrigins []string `yaml:"allowed_origins"` // CORS origins (default: localhost only)
 }
 
 // ManagedDomainConfig holds managed domain settings.
@@ -89,9 +90,10 @@ func DefaultConfig() *Config {
 			BackupKeepCount:   7,
 		},
 		Server: ServerConfig{
-			Addr:          "127.0.0.1:7380",
-			AdminToken:    generateAdminToken(),
-			SessionSecure: false, // dev: no TLS by default
+			Addr:           "127.0.0.1:7380",
+			AdminToken:     generateAdminToken(),
+			SessionSecure:  false, // dev: no TLS by default
+			AllowedOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173"},
 		},
 		DNS: DNSConfig{
 			Enabled:    false,
@@ -129,9 +131,10 @@ func ProductionConfig() *Config {
 			BackupKeepCount:   7,
 		},
 		Server: ServerConfig{
-			Addr:          "127.0.0.1:7380",
-			AdminToken:    generateAdminToken(),
-			SessionSecure: true, // prod: assume TLS
+			Addr:           "127.0.0.1:7380",
+			AdminToken:     generateAdminToken(),
+			SessionSecure:  true, // prod: assume TLS
+			AllowedOrigins: []string{}, // empty = serve from same origin (embedded UI)
 		},
 		DNS: DNSConfig{
 			Enabled:    false,
@@ -167,7 +170,7 @@ func Load(path string) (*Config, error) {
 // Save writes the config to a YAML file.
 func (c *Config) Save(path string) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create config directory %s: %w", dir, err)
 	}
 

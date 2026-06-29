@@ -41,6 +41,7 @@ import (
 	"aegis/internal/tcp"
 	"aegis/internal/token"
 	"aegis/internal/trace"
+	"aegis/internal/transparent"
 	cli "aegis/internal/cli"
 )
 func main() {
@@ -213,7 +214,11 @@ func main() {
 	gatewayInvSvc := gateway.NewInventoryService(gatewayInvRepo)
 	topologyRepo := topology.NewRepository(db)
 	topologySvc := topology.NewService(topologyRepo)
-	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, "gw_main", "main-gateway", masterKey)
+	// v1.8G-3: Use a random unique self ID instead of hardcoded "gw_main".
+	// This ensures the gateway identity check in HMAC auth is meaningful —
+	// each Aegis instance has a distinct identity that cannot be impersonated.
+	gwSelfID := "gw_" + id.GenerateRandomHex(8)
+	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, gwSelfID, "main-gateway", masterKey)
 	spaceRepo := space.NewRepository(db)
 	spaceSvc := space.NewAppService(spaceRepo, logSvc)
 	endpointSvc := endpoint.NewAppService(endpointRepo, logSvc)
@@ -228,10 +233,31 @@ func main() {
 	)
 	dsGenerator := nodestate.NewGenerator(nodeStateSvc, dsDataSource)
 
+	// --- Transparent Proxy Manager (v1.8H) ---
+	// Intercepts direct IP:port outbound connections and routes them
+	// through Aegis port 80 for unified traffic management.
+	transparentMgr := transparent.NewManager()
+	defer transparentMgr.Shutdown()
+
+	// Set current node ID so StartRedirect knows local vs cross-node
+	if currentNode, err := nodeRepo.FindCurrent(); err == nil && currentNode != nil {
+		transparentMgr.SetCurrentNodeID(currentNode.NodeID)
+	}
+	// Remove any iptables rules left over from a previous crash
+	if err := transparentMgr.CleanupStaleRules(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: transparent proxy cleanup: %v\n", err)
+	}
+
 	// Wire mutation hooks: any change triggers desired state regeneration
-	routeSvc.SetMutationHook(&desiredStateHook{gen: dsGenerator})
-	serviceSvc.SetMutationHook(&desiredStateHook{gen: dsGenerator})
-	endpointSvc.SetMutationHook(&desiredStateHook{gen: dsGenerator})
+	// AND transparent proxy rule sync (v1.8H)
+	dsHook := &desiredStateHook{
+		gen:            dsGenerator,
+		transparentMgr: transparentMgr,
+		endpointRepo:   endpointRepo,
+	}
+	routeSvc.SetMutationHook(dsHook)
+	serviceSvc.SetMutationHook(dsHook)
+	endpointSvc.SetMutationHook(dsHook)
 
 	token.SetAuditLogger(logSvc)
 	adminauth.SetAuditLogger(logSvc)
@@ -307,6 +333,7 @@ func main() {
 			MasterKey:     masterKey,
 		})),
 		DNSMgmt:         dnsMgmt,
+		TransparentMgr:  transparentMgr,
 	}
 	cliSvcs := &cli.Services{
 		Config:        cfg,
@@ -331,8 +358,9 @@ func main() {
 		HTTPServices:  httpSvcs,
 		PendingState:  pendingState,
 		TraceSvc:      traceSvc,
-		RelaySvc:      relaySvc,
-		SafetySvc:     safetySvc,
+		RelaySvc:       relaySvc,
+		SafetySvc:      safetySvc,
+		TransparentMgr: transparentMgr,
 	}
 	rootCmd := cli.NewRootCommand(cliSvcs)
 	if err := rootCmd.Execute(); err != nil {
@@ -341,21 +369,100 @@ func main() {
 	}
 }
 // desiredStateHook implements route.MutationHook, service.MutationHook,
-// and endpoint.MutationHook to trigger desired state regeneration on any change.
+// and endpoint.MutationHook to trigger desired state regeneration AND
+// transparent proxy rule sync on any change.
 type desiredStateHook struct {
-	gen *nodestate.Generator
+	gen            *nodestate.Generator
+	transparentMgr *transparent.Manager
+	endpointRepo   *endpoint.Repository
 }
 
 func (h *desiredStateHook) OnRouteChanged(ctx context.Context, routeID string) error {
-	return h.gen.GenerateForAllNodes(ctx)
+	if err := h.gen.GenerateForAllNodes(ctx); err != nil {
+		return err
+	}
+	h.syncTransparentRules()
+	return nil
 }
 
 func (h *desiredStateHook) OnServiceChanged(ctx context.Context, serviceID string) error {
-	return h.gen.GenerateForAllNodes(ctx)
+	if err := h.gen.GenerateForAllNodes(ctx); err != nil {
+		return err
+	}
+	h.syncTransparentRules()
+	return nil
 }
 
 func (h *desiredStateHook) OnEndpointChanged(ctx context.Context, endpointID string) error {
-	return h.gen.GenerateForAllNodes(ctx)
+	if err := h.gen.GenerateForAllNodes(ctx); err != nil {
+		return err
+	}
+	h.syncTransparentRules()
+	return nil
+}
+
+// syncTransparentRules reconciles transparent proxy iptables rules with
+// the current endpoint database. New cross-node endpoints get interception
+// rules; removed endpoints get cleaned up.
+func (h *desiredStateHook) syncTransparentRules() {
+	if h.transparentMgr == nil || h.endpointRepo == nil {
+		return
+	}
+
+	eps, err := h.endpointRepo.FindAllEnabled()
+	if err != nil {
+		return
+	}
+
+	// Convert to EndpointInfo
+	var infos []transparent.EndpointInfo
+	for _, ep := range eps {
+		host, port := ep.HostPort()
+		if host == "" || port == 0 || host == "127.0.0.1" || host == "localhost" || host == "::1" {
+			continue
+		}
+		infos = append(infos, transparent.EndpointInfo{
+			EndpointID: ep.ID,
+			ServiceID:  ep.ServiceID,
+			Host:       host,
+			Port:       port,
+			NodeID:     ep.NodeID,
+		})
+	}
+
+	// Discover desired rules from current endpoints
+	desired := h.transparentMgr.DiscoverTargets(infos)
+
+	// Get current rules
+	current := h.transparentMgr.ListStatus()
+	currentMap := make(map[string]bool)
+	for _, s := range current {
+		currentMap[s.Rule.ID] = s.Active
+	}
+
+	// Build desired set
+	desiredMap := make(map[string]transparent.RedirectRule)
+	for _, r := range desired {
+		desiredMap[r.ID] = r
+	}
+
+	// Remove rules no longer desired
+	for id := range currentMap {
+		if _, ok := desiredMap[id]; !ok {
+			h.transparentMgr.StopRedirect(id)
+		}
+	}
+
+	// Add new desired rules
+	for _, r := range desired {
+		if _, ok := currentMap[r.ID]; !ok {
+			if err := h.transparentMgr.StartRedirect(r); err != nil {
+				// Log but don't fail — iptables may not be available
+				// (non-Linux, no root, etc.)
+				_ = err
+			}
+		}
+	}
 }
 
 // generateRandomHex returns a cryptographically random hex string of n bytes.
