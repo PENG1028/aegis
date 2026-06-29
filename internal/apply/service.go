@@ -38,7 +38,7 @@ type AppService struct {
 	executor     *Executor
 	rollbackSvc  *RollbackService
 	applyRepo    *Repository
-	logSvc       *logs.AppService
+	logSvc       logs.Logger
 	masterKey    *secrets.MasterKey // v1.8B-5
 	mu           sync.Mutex
 	pendingState PendingStateClearer // v1.7S
@@ -54,7 +54,7 @@ func NewAppService(
 	serviceRepo *service.Repository,
 	endpointResolver *endpoint.Resolver,
 	applyRepo *Repository,
-	logSvc *logs.AppService,
+	logSvc logs.Logger,
 	gwLinkRepo *gatewaylink.Repository,
 	safetySvc *safety.Service, // v1.8A
 	masterKey *secrets.MasterKey, // v1.8B-5

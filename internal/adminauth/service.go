@@ -2,6 +2,7 @@ package adminauth
 
 import (
 	"aegis/internal/id"
+	"aegis/internal/logs"
 	"fmt"
 	"sync"
 	"time"
@@ -173,16 +174,13 @@ func (s *Service) EnsureAdmin(username, password string) (*AdminUser, error) {
 }
 
 // AuditLogger is an optional interface for audit logging.
-type AuditLogger interface {
-	LogAudit(actorType, actorID, eventType, ip, userAgent, targetType, targetID, result, errorCode string)
-}
 
 // logAudit writes an audit log entry if a logger is configured.
 // This is a no-op until wired in main.go.
-var auditLogger AuditLogger
+var auditLogger logs.AuditLogger
 
 // SetAuditLogger configures the audit logger for admin operations.
-func SetAuditLogger(l AuditLogger) {
+func SetAuditLogger(l logs.AuditLogger) {
 	auditLogger = l
 }
 

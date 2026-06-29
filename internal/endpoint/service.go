@@ -17,12 +17,12 @@ type MutationHook interface {
 // AppService provides endpoint business logic with mutation hook support.
 type AppService struct {
 	repo   *Repository
-	logSvc *logs.AppService
+	logSvc logs.Logger
 	hook   MutationHook
 }
 
 // NewAppService creates a new endpoint application service.
-func NewAppService(repo *Repository, logSvc *logs.AppService) *AppService {
+func NewAppService(repo *Repository, logSvc logs.Logger) *AppService {
 	return &AppService{repo: repo, logSvc: logSvc}
 }
 

@@ -47,7 +47,7 @@ type Services struct {
 	Exposure      *exposure.AppService
 	Apply         *apply.AppService
 	Health        *health.AppService
-	Logs          *logs.AppService
+	Logs          logs.Logger
 	Auth          *token.AuthMiddleware
 	Action        *action.ActionService
 	Space         *space.AppService

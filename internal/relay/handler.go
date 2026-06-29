@@ -38,7 +38,7 @@ type HandlerDeps struct {
 	EndpointRepo  EndpointRepo
 	NodeRepo      NodeRepo
 	GWLinkRepo    GWLinkRepo
-	LogSvc        *logs.AppService
+	LogSvc        logs.Logger
 	MasterKey     *secrets.MasterKey // v1.8B-5: for decrypting GatewayLink secrets
 }
 

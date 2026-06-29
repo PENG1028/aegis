@@ -15,13 +15,13 @@ import (
 // AppService defines the exposure application service.
 type AppService struct {
 	repo      *Repository
-	logSvc    *logs.AppService
+	logSvc    logs.Logger
 	provReg   *provider.Registry
 	listenerSvc *listener.Service
 }
 
 // NewAppService creates a new exposure application service.
-func NewAppService(repo *Repository, logSvc *logs.AppService, provReg *provider.Registry, listenerSvc *listener.Service) *AppService {
+func NewAppService(repo *Repository, logSvc logs.Logger, provReg *provider.Registry, listenerSvc *listener.Service) *AppService {
 	return &AppService{repo: repo, logSvc: logSvc, provReg: provReg, listenerSvc: listenerSvc}
 }
 

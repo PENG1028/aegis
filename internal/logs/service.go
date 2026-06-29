@@ -45,6 +45,9 @@ func (s *AppService) Log(ctx context.Context, action, targetType, targetID, resu
 		CreatedAt:  time.Now(),
 	}
 	// Best-effort logging; don't fail the parent operation
+	if s.repo == nil {
+		return
+	}
 	_ = s.repo.Create(entry)
 }
 
