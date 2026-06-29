@@ -73,7 +73,9 @@ func (s *AppService) CreateService(ctx context.Context, input CreateServiceInput
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnServiceChanged(ctx, svc.ID)
+		if err := s.hook.OnServiceChanged(ctx, svc.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "service", svc.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	s.logSvc.Log(ctx, "service.create", "service", svc.ID, "success",
@@ -132,7 +134,9 @@ func (s *AppService) EnableService(ctx context.Context, idOrName string) error {
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnServiceChanged(ctx, svc.ID)
+		if err := s.hook.OnServiceChanged(ctx, svc.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "service", svc.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	s.logSvc.Log(ctx, "service.enable", "service", svc.ID, "success",
@@ -159,7 +163,9 @@ func (s *AppService) DisableService(ctx context.Context, idOrName string) error 
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnServiceChanged(ctx, svc.ID)
+		if err := s.hook.OnServiceChanged(ctx, svc.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "service", svc.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	s.logSvc.Log(ctx, "service.disable", "service", svc.ID, "success",
@@ -174,7 +180,9 @@ func (s *AppService) CreateServiceDirect(svc *Service) error {
 		return err
 	}
 	if s.hook != nil {
-		_ = s.hook.OnServiceChanged(context.Background(), svc.ID)
+		if err := s.hook.OnServiceChanged(context.Background(), svc.ID); err != nil {
+			s.logSvc.Log(context.Background(), "desired-state.regen", "service", svc.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 	return nil
 }
@@ -224,7 +232,9 @@ func (s *AppService) UpdateService(ctx context.Context, idOrName string, input U
 	}
 
 	if s.hook != nil {
-		_ = s.hook.OnServiceChanged(ctx, svc.ID)
+		if err := s.hook.OnServiceChanged(ctx, svc.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "service", svc.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
 	}
 
 	s.logSvc.Log(ctx, "service.update", "service", svc.ID, "success",
