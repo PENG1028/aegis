@@ -9,6 +9,8 @@ GO          = go
 GOFLAGS     = -ldflags="-s -w"
 MAIN        = ./cmd/aegis/
 UI_DIR      = ./ui
+UI_DIST     = $(UI_DIR)/dist
+UI_EMBED    = ./internal/uiassets/dist
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME  = $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -16,27 +18,33 @@ BUILD_TIME  = $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 all: build
 
 # ─── Build ───
-build:
+build: build-ui embed-ui
 	$(GO) build $(GOFLAGS) -o $(BINARY) $(MAIN)
 
-build-linux:
+build-linux: build-ui embed-ui
 	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -o $(BINARY) $(MAIN)
 
-build-windows:
+build-windows: build-ui embed-ui
 	GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -o $(BINARY).exe $(MAIN)
 
 # Release build with version injected
-release:
+release: build-ui embed-ui
 	GOOS=linux GOARCH=amd64 $(GO) build \
 		-ldflags="-s -w -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)" \
 		-o $(BINARY) $(MAIN)
 
-# ─── Dev ───
+# ─── UI ───
 dev-ui:
 	cd $(UI_DIR) && npm run dev
 
 build-ui:
 	cd $(UI_DIR) && npm run build
+
+embed-ui:
+	@echo "  Embedding UI dist..."
+	@rm -rf $(UI_EMBED)
+	@cp -r $(UI_DIST) $(UI_EMBED)
+	@echo "  UI dist embedded ($(UI_EMBED))"
 
 # ─── Test ───
 test:
@@ -62,4 +70,4 @@ lint: vet
 # ─── Clean ───
 clean:
 	rm -f $(BINARY) $(BINARY).exe coverage.out coverage.html
-	rm -rf $(UI_DIR)/dist
+	rm -rf $(UI_DIR)/dist $(UI_EMBED)
