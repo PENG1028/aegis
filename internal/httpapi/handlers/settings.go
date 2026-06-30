@@ -73,7 +73,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ─── proxy.email ───
+	// ─── proxy.email / tls_cert_file / tls_key_file ───
 	if proxyRaw, ok := req["proxy"]; ok {
 		proxy, ok := proxyRaw.(map[string]interface{})
 		if !ok {
@@ -90,6 +90,24 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			if emailStr != h.Config.Proxy.Email {
 				h.Config.Proxy.Email = emailStr
 				changed = true
+			}
+		}
+		if certFile, ok := proxy["tls_cert_file"]; ok {
+			s, _ := certFile.(string)
+			s = strings.TrimSpace(s)
+			if s != h.Config.Proxy.TlsCertFile {
+				h.Config.Proxy.TlsCertFile = s
+				changed = true
+				domainChanged = true // trigger Caddyfile regen
+			}
+		}
+		if keyFile, ok := proxy["tls_key_file"]; ok {
+			s, _ := keyFile.(string)
+			s = strings.TrimSpace(s)
+			if s != h.Config.Proxy.TlsKeyFile {
+				h.Config.Proxy.TlsKeyFile = s
+				changed = true
+				domainChanged = true // trigger Caddyfile regen
 			}
 		}
 	}

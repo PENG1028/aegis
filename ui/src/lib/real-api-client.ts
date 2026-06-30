@@ -133,6 +133,9 @@ export const auth = {
 
   me: (): Promise<{ user: AuthUser }> =>
     get('/api/admin/v1/auth/me'),
+
+  changePassword: (currentPassword: string, newPassword: string): Promise<{ message: string }> =>
+    post('/api/admin/v1/auth/change-password', { current_password: currentPassword, new_password: newPassword }),
 };
 
 // ─── System / Overview ───

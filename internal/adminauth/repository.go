@@ -69,6 +69,19 @@ func (r *AdminUserRepository) FindByID(id string) (*AdminUser, error) {
 	return &u, nil
 }
 
+// UpdatePassword updates the password hash for an admin user.
+func (r *AdminUserRepository) UpdatePassword(userID, passwordHash string) error {
+	now := time.Now().Format(time.RFC3339)
+	_, err := r.DB.Exec(
+		`UPDATE admin_users SET password_hash = ?, updated_at = ? WHERE id = ?`,
+		passwordHash, now, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("update admin_user password: %w", err)
+	}
+	return nil
+}
+
 // Count returns the number of admin users.
 func (r *AdminUserRepository) Count() (int, error) {
 	var count int

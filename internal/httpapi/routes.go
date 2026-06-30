@@ -153,6 +153,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/auth/login", h.AdminLogin)
 	mux.HandleFunc("POST /api/admin/v1/auth/logout", h.AdminLogout)
 	mux.HandleFunc("GET /api/admin/v1/auth/me", h.AdminMe)
+	mux.HandleFunc("POST /api/admin/v1/auth/change-password", h.AdminChangePassword)
 	mux.HandleFunc("GET /api/admin/v1/system/overview", h.SystemOverview)
 	mux.HandleFunc("GET /api/admin/v1/nodes", h.AdminListNodes)
 	mux.HandleFunc("GET /api/admin/v1/routes", h.AdminListRoutes)

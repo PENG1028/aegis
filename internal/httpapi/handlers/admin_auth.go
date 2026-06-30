@@ -78,6 +78,38 @@ func (h *Handlers) AdminLogout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// AdminChangePassword handles POST /api/admin/v1/auth/change-password
+func (h *Handlers) AdminChangePassword(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if input.CurrentPassword == "" || input.NewPassword == "" {
+		writeError(w, http.StatusBadRequest, "current_password and new_password are required")
+		return
+	}
+
+	// Get user from session context
+	ac := adminauth.GetAdminContext(r.Context())
+	if ac == nil {
+		writeError(w, http.StatusUnauthorized, "admin session required")
+		return
+	}
+
+	if err := h.AdminAuth.ChangePassword(ac.UserID, input.CurrentPassword, input.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "password changed successfully",
+	})
+}
+
 // AdminMe handles GET /api/admin/v1/auth/me
 func (h *Handlers) AdminMe(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("aegis_admin_session")

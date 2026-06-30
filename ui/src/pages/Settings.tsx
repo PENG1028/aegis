@@ -2,12 +2,13 @@
  * Settings — 系统配置页面 (v1.8J)
  *
  * 域名配置: 设置后面板自动启用 HTTPS（Let's Encrypt via Caddy）
+ * 修改密码: 修改管理员登录密码
  * DNS: DNS 解析器开关和状态
  */
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchSettings, updateSettings } from '@/lib/api-bridge';
+import { fetchSettings, updateSettings, auth } from '@/lib/api-bridge';
 import { PageHeader, Card, MetaRow, Btn, Alert } from '@/components/shared';
 import { useToast } from '@/components/shared/Toast';
 import DnsSettingsPanel from '@/components/dns/DnsSettingsPanel';
@@ -17,6 +18,8 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [domain, setDomain] = useState('');
   const [email, setEmail] = useState('');
+  const [tlsCertFile, setTlsCertFile] = useState('');
+  const [tlsKeyFile, setTlsKeyFile] = useState('');
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [domainLoaded, setDomainLoaded] = useState(false);
@@ -25,12 +28,11 @@ export default function SettingsPage() {
     queryKey: ['settings'],
     queryFn: async () => {
       const s = await fetchSettings();
-      // Initialize domain/email from loaded settings
       if (!domainLoaded) {
-        const d = s?.managed_domain?.gateway_domain || '';
-        const e = s?.proxy?.email || '';
-        setDomain(d);
-        setEmail(e);
+        setDomain(s?.managed_domain?.gateway_domain || '');
+        setEmail(s?.proxy?.email || '');
+        setTlsCertFile(s?.proxy?.tls_cert_file || '');
+        setTlsKeyFile(s?.proxy?.tls_key_file || '');
         setDomainLoaded(true);
       }
       return s;
@@ -43,7 +45,11 @@ export default function SettingsPage() {
     try {
       const res = await updateSettings({
         managed_domain: { gateway_domain: domain.trim() },
-        proxy: { email: email.trim() },
+        proxy: {
+          email: email.trim(),
+          tls_cert_file: tlsCertFile.trim(),
+          tls_key_file: tlsKeyFile.trim(),
+        },
       });
       setResult(res);
       queryClient.invalidateQueries({ queryKey: ['settings'] });
@@ -121,6 +127,37 @@ export default function SettingsPage() {
               />
             </div>
 
+            {/* Custom TLS certificate (Cloudflare Origin CA, etc.) */}
+            <details className="text-xs">
+              <summary className="text-a-muted cursor-pointer hover:text-a-fg py-1">
+                自定义 TLS 证书（如 Cloudflare Origin CA）…
+              </summary>
+              <div className="mt-2 space-y-3 pl-2 border-l-2 border-a-border/30">
+                <div>
+                  <label className="block text-xs font-medium text-a-muted mb-1">证书文件路径 (.pem)</label>
+                  <input
+                    className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
+                    value={tlsCertFile}
+                    onChange={(e) => setTlsCertFile(e.target.value)}
+                    placeholder="/etc/ssl/certs/panel.example.com.pem"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-a-muted mb-1">私钥文件路径 (.pem)</label>
+                  <input
+                    className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
+                    value={tlsKeyFile}
+                    onChange={(e) => setTlsKeyFile(e.target.value)}
+                    placeholder="/etc/ssl/private/panel.example.com.key"
+                  />
+                </div>
+                <div className="text-[10px] text-a-muted">
+                  设置后 Caddy 将使用此证书替代 Let's Encrypt。适用于 Cloudflare Origin CA 等场景。
+                  清空两个路径即可恢复 Let's Encrypt。
+                </div>
+              </div>
+            </details>
+
             {/* Save */}
             <div className="flex items-center gap-3">
               <Btn primary onClick={saveDomain} disabled={saving}>
@@ -159,6 +196,9 @@ export default function SettingsPage() {
           </div>
         </Card>
 
+        {/* ─── Change Password Panel ─── */}
+        <ChangePasswordPanel />
+
         {/* DNS Resolver Panel */}
         <DnsSettingsPanel />
 
@@ -176,5 +216,94 @@ export default function SettingsPage() {
           ))}
       </div>
     </div>
+  );
+}
+
+// ─── Change Password Panel ───
+
+function ChangePasswordPanel() {
+  const toast = useToast();
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function doChange() {
+    setError(null);
+    setResult(null);
+
+    if (!currentPw || !newPw || !confirmPw) {
+      setError('所有字段不能为空');
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setError('两次输入的新密码不一致');
+      return;
+    }
+    if (newPw.length < 8) {
+      setError('新密码至少 8 个字符');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await auth.changePassword(currentPw, newPw);
+      setResult(res.message || '密码已修改');
+      setCurrentPw('');
+      setNewPw('');
+      setConfirmPw('');
+      toast('密码修改成功');
+    } catch (e: any) {
+      setError(e.message || '修改失败');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <Card title="修改密码">
+      <div className="p-[18px] space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-a-muted mb-1">当前密码</label>
+          <input
+            type="password"
+            className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
+            value={currentPw}
+            onChange={(e) => setCurrentPw(e.target.value)}
+            placeholder="输入当前密码"
+          />
+        </div>
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-a-muted mb-1">新密码</label>
+            <input
+              type="password"
+              className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+              placeholder="至少 8 个字符"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-a-muted mb-1">确认新密码</label>
+            <input
+              type="password"
+              className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
+              value={confirmPw}
+              onChange={(e) => setConfirmPw(e.target.value)}
+              placeholder="再次输入新密码"
+            />
+          </div>
+        </div>
+
+        {error && <div className="text-xs text-[#ff5c72]">{error}</div>}
+        {result && <div className="text-xs text-[#4cd964]">{result}</div>}
+
+        <Btn primary onClick={doChange} disabled={saving}>
+          {saving ? '修改中…' : '修改密码'}
+        </Btn>
+      </div>
+    </Card>
   );
 }
