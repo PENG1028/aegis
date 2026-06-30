@@ -79,4 +79,5 @@ type Services struct {
 	CredentialSvc   *credential.Service     // v1.8K encrypted connection strings
 	Version         string                  // build-injected version
 	BuildTime       string                  // build-injected timestamp
+	OnShutdown      func()                  // graceful shutdown hook — stops DNS, backups, reconcile, proxies
 }

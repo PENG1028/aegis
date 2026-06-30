@@ -369,6 +369,14 @@ func main() {
 		CredentialSvc:   credSvc,
 		Version:         Version,
 		BuildTime:       BuildTime,
+		OnShutdown: func() {
+			fmt.Fprintf(os.Stderr, "stopping subsystems...\n")
+			tcpMgr.Shutdown()
+			udpMgr.Shutdown()
+			transparentMgr.Shutdown()
+			reconcileLoop.Stop()
+			if backupMgr != nil { backupMgr.Stop() }
+		},
 	}
 	cliSvcs := &cli.Services{
 		Config:        cfg,
