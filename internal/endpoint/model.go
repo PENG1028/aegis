@@ -1,12 +1,13 @@
 package endpoint
 
 import (
-	"net"
-	"strconv"
 	"time"
+
+	"aegis/internal/addr"
 )
 
 // Endpoint represents a network endpoint for a service.
+// Address can be "host:port", "tcp://host:port", or "unix:///path/to/sock".
 type Endpoint struct {
 	ID        string    `json:"id"`
 	ServiceID string    `json:"service_id"`
@@ -19,14 +20,26 @@ type Endpoint struct {
 }
 
 // HostPort returns the host and port parsed from Address.
-// Address format is expected to be "host:port".
+// For Unix sockets, returns the path and -1.
 func (e *Endpoint) HostPort() (string, int) {
-	h, pStr, err := net.SplitHostPort(e.Address)
+	a, err := addr.Parse(e.Address)
 	if err != nil {
 		return e.Address, 0
 	}
-	p, _ := strconv.Atoi(pStr)
-	return h, p
+	if a.IsUnix() {
+		return a.Path, -1
+	}
+	return a.Host, a.Port
+}
+
+// Addr returns the parsed address of this endpoint.
+func (e *Endpoint) Addr() *addr.Addr {
+	a, err := addr.Parse(e.Address)
+	if err != nil {
+		// Fallback: treat as TCP with no port
+		return &addr.Addr{Network: addr.NetTCP, Host: e.Address}
+	}
+	return a
 }
 
 // Type priority order for resolution.

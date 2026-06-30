@@ -92,7 +92,7 @@ func (m *Manager) ReloadProxies(desired []ProxyConfig) ([]string, []string, erro
 		if ok {
 			// Check if config changed
 			if existing.EntryHost != d.EntryHost || existing.EntryPort != d.EntryPort ||
-				existing.TargetHost != d.TargetHost || existing.TargetPort != d.TargetPort {
+				existing.Target != nil && (existing.Target.Host != d.TargetHost || existing.Target.Port != d.TargetPort) {
 				existing.Stop()
 				delete(m.proxies, d.ID)
 				ok = false

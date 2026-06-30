@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"aegis/internal/addr"
 )
 
 const (
@@ -20,22 +22,20 @@ const (
 	MaxSessions = 1024
 )
 
-// Proxy forwards UDP packets from a local port to a target host:port.
-// It tracks sessions so return packets from the target can be sent back
-// to the correct client.
+// Proxy forwards UDP packets from a local port to a target address.
+// The target can be a UDP host:port or a Unix datagram socket (unixgram:///path).
 type Proxy struct {
-	ID         string
-	EntryHost  string
-	EntryPort  int
-	TargetHost string
-	TargetPort int
+	ID        string
+	EntryHost string
+	EntryPort int
+	Target    *addr.Addr // parsed target: UDP host:port or Unix datagram socket
 
-	conn      *net.UDPConn
-	target    *net.UDPAddr
-	sessions  map[string]*session // key: client addr string
+	conn       *net.UDPConn
+	targetUDP  *net.UDPAddr      // pre-resolved UDP target (nil if unix socket)
+	sessions   map[string]*session
 	sessionsMu sync.RWMutex
-	running   atomic.Bool
-	done      chan struct{}
+	running    atomic.Bool
+	done       chan struct{}
 	packetsIn  atomic.Int64
 	packetsOut atomic.Int64
 	bytesIn    atomic.Int64
@@ -48,26 +48,43 @@ type session struct {
 }
 
 // NewProxy creates a new UDP proxy.
+// targetHost can be "host:port", "udp://host:port", or "unixgram:///path".
 func NewProxy(id, entryHost string, entryPort int, targetHost string, targetPort int) *Proxy {
 	return &Proxy{
-		ID:         id,
-		EntryHost:  entryHost,
-		EntryPort:  entryPort,
-		TargetHost: targetHost,
-		TargetPort: targetPort,
-		sessions:   make(map[string]*session),
-		done:       make(chan struct{}),
+		ID:        id,
+		EntryHost: entryHost,
+		EntryPort: entryPort,
+		Target:    resolveUDPTarget(targetHost, targetPort),
+		sessions:  make(map[string]*session),
+		done:      make(chan struct{}),
 	}
+}
+
+func resolveUDPTarget(host string, port int) *addr.Addr {
+	if a, err := addr.Parse(host); err == nil && a.Port > 0 {
+		if a.IsUnix() {
+			return a // unixgram:// already parsed
+		}
+		return &addr.Addr{Network: addr.NetUDP, Host: a.Host, Port: a.Port}
+	}
+	if host != "" && host[0] == '/' {
+		if a, err := addr.Parse("unixgram://" + host); err == nil {
+			return a
+		}
+	}
+	return &addr.Addr{Network: addr.NetUDP, Host: host, Port: port}
 }
 
 // Start begins listening and forwarding UDP packets.
 func (p *Proxy) Start() error {
 	// Resolve target
-	targetAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", p.TargetHost, p.TargetPort))
-	if err != nil {
-		return fmt.Errorf("resolve target %s:%d: %w", p.TargetHost, p.TargetPort, err)
+	if !p.Target.IsUnix() {
+		targetAddr, err := net.ResolveUDPAddr("udp", p.Target.DialString())
+		if err != nil {
+			return fmt.Errorf("resolve target %s: %w", p.Target.DialString(), err)
+		}
+		p.targetUDP = targetAddr
 	}
-	p.target = targetAddr
 
 	// Listen
 	entryAddr := fmt.Sprintf("%s:%d", p.EntryHost, p.EntryPort)
@@ -147,9 +164,24 @@ func (p *Proxy) readLoop() {
 		}
 		p.sessionsMu.Unlock()
 
-		// Forward to target
-		// We must use a fresh dial to prevent mixing up client sessions
-		targetConn, err := net.DialUDP("udp", nil, p.target)
+		// Forward to target — TCP or Unix socket
+		var targetConn *net.UDPConn
+		if p.Target.IsUnix() {
+			// Unix datagram: dial and cast
+			uc, dialErr := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: p.Target.Path, Net: "unixgram"})
+			if dialErr != nil {
+				continue
+			}
+			targetConn = &net.UDPConn{} // placeholder — use raw conn
+			_ = uc
+			// For unixgram, use the raw UnixConn
+			_, _ = uc.Write(buf[:n])
+			p.packetsOut.Add(1)
+			p.bytesOut.Add(int64(n))
+			uc.Close()
+			continue
+		}
+		targetConn, err = net.DialUDP("udp", nil, p.targetUDP)
 		if err != nil {
 			continue
 		}

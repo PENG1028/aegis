@@ -111,36 +111,25 @@ func (m *Manager) Shutdown() {
 
 // ProxyStatus holds a proxy's current status for API responses.
 type ProxyStatus struct {
-	ID           string `json:"id"`
-	EntryHost    string `json:"entry_host"`
-	EntryPort    int    `json:"entry_port"`
-	TargetHost   string `json:"target_host"`
-	TargetPort   int    `json:"target_port"`
-	Running      bool   `json:"running"`
-	Sessions     int    `json:"sessions"`
-	PacketsIn    int64  `json:"packets_in"`
-	PacketsOut   int64  `json:"packets_out"`
-	BytesIn      int64  `json:"bytes_in"`
-	BytesOut     int64  `json:"bytes_out"`
+	ID         string `json:"id"`
+	EntryHost  string `json:"entry_host"`
+	EntryPort  int    `json:"entry_port"`
+	Target     string `json:"target"`
+	Running    bool   `json:"running"`
+	Sessions   int    `json:"sessions"`
+	PacketsIn  int64  `json:"packets_in"`
+	PacketsOut int64  `json:"packets_out"`
+	BytesIn    int64  `json:"bytes_in"`
+	BytesOut   int64  `json:"bytes_out"`
 }
 
-// Status returns the status of a single proxy.
-func (m *Manager) Status(id string) *ProxyStatus {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	p, ok := m.proxies[id]
-	if !ok {
-		return nil
-	}
-
+func proxyStatus(p *Proxy) ProxyStatus {
 	pi, po, bi, bo := p.Stats()
-	return &ProxyStatus{
+	return ProxyStatus{
 		ID:         p.ID,
 		EntryHost:  p.EntryHost,
 		EntryPort:  p.EntryPort,
-		TargetHost: p.TargetHost,
-		TargetPort: p.TargetPort,
+		Target:     p.Target.String(),
 		Running:    p.IsRunning(),
 		Sessions:   p.SessionCount(),
 		PacketsIn:  pi,
@@ -150,27 +139,24 @@ func (m *Manager) Status(id string) *ProxyStatus {
 	}
 }
 
+// Status returns the status of a single proxy.
+func (m *Manager) Status(id string) *ProxyStatus {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if p, ok := m.proxies[id]; ok {
+		s := proxyStatus(p)
+		return &s
+	}
+	return nil
+}
+
 // ListStatus returns status for all active UDP proxies.
 func (m *Manager) ListStatus() []ProxyStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	var result []ProxyStatus
+	result := make([]ProxyStatus, 0, len(m.proxies))
 	for _, p := range m.proxies {
-		pi, po, bi, bo := p.Stats()
-		result = append(result, ProxyStatus{
-			ID:         p.ID,
-			EntryHost:  p.EntryHost,
-			EntryPort:  p.EntryPort,
-			TargetHost: p.TargetHost,
-			TargetPort: p.TargetPort,
-			Running:    p.IsRunning(),
-			Sessions:   p.SessionCount(),
-			PacketsIn:  pi,
-			PacketsOut: po,
-			BytesIn:    bi,
-			BytesOut:   bo,
-		})
+		result = append(result, proxyStatus(p))
 	}
 	return result
 }
