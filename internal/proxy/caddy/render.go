@@ -39,6 +39,9 @@ func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 		if domainIdx > 0 {
 			buf.WriteString("\n")
 		}
+		// Internal domains use http:// prefix to prevent Caddy from trying
+		// to obtain public TLS certificates (which will never succeed).
+		siteAddr := caddySiteAddr(domain)
 		routes := domainRoutes[domain]
 		sort.Slice(routes, func(i, j int) bool {
 			di := len(strings.Split(strings.Trim(routes[i].PathPrefix, "/"), "/"))
@@ -53,10 +56,10 @@ func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 		})
 
 		if len(routes) == 1 && routes[0].PathPrefix == "" && !routes[0].MaintenanceEnabled {
-			renderRoute(&buf, routes[0])
+			renderRoute(&buf, routes[0], siteAddr)
 			continue
 		}
-		buf.WriteString(fmt.Sprintf("%s {\n", sanitizeCaddyValue(domain)))
+		buf.WriteString(fmt.Sprintf("%s {\n", sanitizeCaddyValue(siteAddr)))
 		hasDomainFallback := false
 		for _, r := range routes {
 			if r.MaintenanceEnabled {
@@ -117,9 +120,25 @@ func writeReverseProxy(buf *bytes.Buffer, upstream string, headers map[string]st
 	}
 }
 
-func renderRoute(buf *bytes.Buffer, route proxy.RouteConfig) {
-	buf.WriteString(fmt.Sprintf("%s {\n", sanitizeCaddyValue(route.Domain)))
+func renderRoute(buf *bytes.Buffer, route proxy.RouteConfig, siteAddr string) {
+	buf.WriteString(fmt.Sprintf("%s {\n", sanitizeCaddyValue(siteAddr)))
 	buf.WriteString("    encode gzip\n")
 	writeReverseProxy(buf, sanitizeCaddyValue(route.UpstreamURL), route.Options.ExtraHeaders, "    ")
 	buf.WriteString("}\n")
+}
+
+// caddySiteAddr returns the Caddy site address for a domain.
+// Internal domains (.internal, .local, .localhost) get an http:// prefix
+// to prevent Caddy from attempting public TLS certificate issuance.
+func caddySiteAddr(domain string) string {
+	if isInternalDomain(domain) {
+		return "http://" + domain
+	}
+	return domain
+}
+
+func isInternalDomain(domain string) bool {
+	return strings.HasSuffix(domain, ".internal") ||
+		strings.HasSuffix(domain, ".local") ||
+		strings.HasSuffix(domain, ".localhost")
 }
