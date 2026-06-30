@@ -262,6 +262,9 @@ func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 		buf.WriteString("{\n    email " + sanitizeCaddyValue(email) + "\n}\n\n")
 	}
 	for _, r := range gwCfg.Routes {
+		// Internal domains use http:// prefix to prevent Caddy from trying
+		// to obtain public TLS certificates (which will never succeed).
+		siteAddr := caddySiteAddr(r.Domain)
 		if r.MaintenanceEnabled {
 			msg := r.MaintenanceMessage
 			if msg == "" {
@@ -269,10 +272,21 @@ func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 			}
 			msg = strings.ReplaceAll(msg, `"`, `\"`)
 			msg = sanitizeCaddyValue(msg)
-			buf.WriteString(fmt.Sprintf("%s {\n    respond \"%s\" 503\n}\n", sanitizeCaddyValue(r.Domain), msg))
+			buf.WriteString(fmt.Sprintf("%s {\n    respond \"%s\" 503\n}\n", sanitizeCaddyValue(siteAddr), msg))
 		} else {
-			buf.WriteString(fmt.Sprintf("%s {\n    encode gzip\n    reverse_proxy %s\n}\n", sanitizeCaddyValue(r.Domain), sanitizeCaddyValue(r.UpstreamURL)))
+			buf.WriteString(fmt.Sprintf("%s {\n    encode gzip\n    reverse_proxy %s\n}\n", sanitizeCaddyValue(siteAddr), sanitizeCaddyValue(r.UpstreamURL)))
 		}
 	}
 	return buf.String()
+}
+
+// caddySiteAddr returns the Caddy site address for a domain.
+// Internal domains get an http:// prefix to skip public TLS.
+func caddySiteAddr(domain string) string {
+	if strings.HasSuffix(domain, ".internal") ||
+		strings.HasSuffix(domain, ".local") ||
+		strings.HasSuffix(domain, ".localhost") {
+		return "http://" + domain
+	}
+	return domain
 }

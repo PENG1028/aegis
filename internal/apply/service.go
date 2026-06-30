@@ -172,6 +172,13 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 		s.logFailed(ctx, "apply", "", fmt.Sprintf("render failed: %v", err))
 		return nil, fmt.Errorf("render: %w", err)
 	}
+	// Prepend panel Caddyfile block so the control panel domain survives every apply.
+	// PanelCaddyfile() generates the TLS-enabled panel site block (or :80 fallback).
+	if s.cfg.ManagedDomain.GatewayDomain != "" {
+		panelBlock := s.cfg.PanelCaddyfile()
+		rendered = append([]byte(panelBlock), rendered...)
+	}
+
 	plan.RenderedConfig = string(rendered)
 	plan.ConfigPath = s.cfg.Proxy.CaddyfilePath
 	stepLog.record("render_config", "success", "provider config rendered")
