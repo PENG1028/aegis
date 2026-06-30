@@ -56,3 +56,26 @@ func healthCheckToMap(hc health.HealthCheck) map[string]interface{} {
 		"checked_at":  hc.CheckedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }
+
+// Liveness handles GET /api/healthz — minimal check: is the process alive?
+// Returns 200 immediately. No DB queries, no dependency checks.
+// For Kubernetes liveness probes / load balancer health checks.
+func (h *Handlers) Liveness(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "alive"})
+}
+
+// Readiness handles GET /api/readyz — is the server ready to serve traffic?
+// Checks database connectivity. Returns 200 if ready, 503 if not.
+// For Kubernetes readiness probes / traffic draining.
+func (h *Handlers) Readiness(w http.ResponseWriter, r *http.Request) {
+	if h.DB != nil {
+		if err := h.DB.Ping(); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"status": "not ready",
+				"reason": "database unavailable",
+			})
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}

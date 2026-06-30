@@ -48,6 +48,28 @@ type loginRate struct {
 
 var loginRates sync.Map // map[string]*loginRate
 
+func init() {
+	// Periodically clean up expired login rate entries to prevent memory leak.
+	go func() {
+		for {
+			time.Sleep(10 * time.Minute)
+			now := time.Now()
+			loginRates.Range(func(key, value interface{}) bool {
+				lr, ok := value.(*loginRate)
+				if !ok {
+					loginRates.Delete(key)
+					return true
+				}
+				// Remove entries that are not locked and haven't been seen in 1 hour
+				if now.After(lr.lockedUntil) && now.Sub(lr.firstSeen) > 1*time.Hour {
+					loginRates.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
+}
+
 func checkLoginRate(ip string) error {
 	now := time.Now()
 	val, _ := loginRates.LoadOrStore(ip, &loginRate{firstSeen: now})
@@ -209,11 +231,17 @@ func (s *Service) EnsureAdmin(username, password string) (*AdminUser, error) {
 
 // logAudit writes an audit log entry if a logger is configured.
 // This is a no-op until wired in main.go.
-var auditLogger logs.AuditLogger
+var (
+	auditLogger   logs.AuditLogger
+	auditLoggerOnce sync.Once
+)
 
 // SetAuditLogger configures the audit logger for admin operations.
+// Safe to call from multiple goroutines — only the first call takes effect.
 func SetAuditLogger(l logs.AuditLogger) {
-	auditLogger = l
+	auditLoggerOnce.Do(func() {
+		auditLogger = l
+	})
 }
 
 func logAuditEvent(actorType, actorID, eventType, ip, userAgent, targetType, targetID, result, errorCode string) {

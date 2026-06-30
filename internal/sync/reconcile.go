@@ -1,12 +1,12 @@
 package sync
 
 import (
-	"fmt"
 	"time"
 
 	"aegis/internal/cluster"
 	"aegis/internal/consistency"
 	"aegis/internal/node"
+	"aegis/internal/sloglog"
 )
 
 // ReconcileLoop periodically checks local state against the leader and repairs drift.
@@ -43,7 +43,7 @@ func (rl *ReconcileLoop) Start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				fmt.Printf("[reconcile] panic in reconcile loop: %v\n", r)
+				sloglog.Error("reconcile: panic in reconcile loop", "panic", r)
 			}
 		}()
 		fastTicker := time.NewTicker(rl.fastInterval)
@@ -88,17 +88,15 @@ func (rl *ReconcileLoop) fullReconciliation() {
 		return // small diff handled by fast sync
 	}
 	if diff <= 10 {
-		// Medium diff → full sync
-		fmt.Printf("reconcile: medium drift (%d versions), full sync\n", diff)
+		sloglog.Info("reconcile: medium drift, full sync", "diff", diff)
 	} else {
-		// Large diff → full overwrite from leader
-		fmt.Printf("reconcile: LARGE drift (%d versions), full overwrite from leader\n", diff)
+		sloglog.Warn("reconcile: LARGE drift, full overwrite from leader", "diff", diff)
 	}
 
 	if err := rl.stateVer.Set(leaderVersion); err != nil {
-		fmt.Printf("reconcile: full sync failed: %v\n", err)
+		sloglog.Error("reconcile: full sync failed", "error", err)
 	} else {
-		fmt.Printf("reconcile: full reconciliation to v%d complete\n", leaderVersion)
+		sloglog.Info("reconcile: full reconciliation complete", "version", leaderVersion)
 	}
 }
 
@@ -126,21 +124,21 @@ func (rl *ReconcileLoop) reconcile() {
 	}
 
 	// Drift detected — trigger repair
-	fmt.Printf("reconcile: local v%d < leader v%d — syncing\n", localVersion, leaderVersion)
+	sloglog.Info("reconcile: syncing", "local", localVersion, "leader", leaderVersion)
 
 	// Check for drift
 	report := consistency.CheckDrift(rl.nodeRepo, localVersion, leaderVersion)
 	if report.HasDrift {
-		fmt.Printf("reconcile: DRIFT_DETECTED severity=%s\n", report.Severity)
+		sloglog.Warn("reconcile: drift detected", "severity", report.Severity)
 	}
 
 	// Repair: set local version to leader version
 	if err := rl.stateVer.Set(leaderVersion); err != nil {
-		fmt.Printf("reconcile: repair failed: %v\n", err)
+		sloglog.Error("reconcile: repair failed", "error", err)
 		return
 	}
 
-	fmt.Printf("reconcile: synced to v%d\n", leaderVersion)
+	sloglog.Info("reconcile: synced to v%d\n", leaderVersion)
 }
 
 // TriggerNow forces an immediate reconciliation.
