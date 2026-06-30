@@ -186,11 +186,18 @@ func (p *Planner) resolveRouteConfigWithService(
 		}
 	}
 
+	// Convert Unix socket addresses to Caddy-compatible format.
+	// "unix:///run/app.sock" → "unix//run/app.sock" (Caddy unix//path convention)
+	upstream := result.Endpoint.Address
+	if epAddr := result.Endpoint.Addr(); epAddr.IsUnix() {
+		upstream = epAddr.CaddyTarget()
+	}
+
 	rc := &proxy.RouteConfig{
 		Domain:             domain,
 		PathPrefix:         pathPrefix,
 		Kind:               "reverse_proxy",
-		UpstreamURL:        result.Endpoint.Address,
+		UpstreamURL:        upstream,
 		TLSEnabled:          tlsEnabled,
 		MaintenanceEnabled:  maintenanceEnabled,
 		MaintenanceMessage:  maintenanceMessage,
