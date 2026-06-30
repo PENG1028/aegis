@@ -62,7 +62,7 @@ func isPublicPath(path, method string) bool {
 		return true
 	}
 	// Embedded UI — must be public so the login form loads
-	if path == "/" || strings.HasPrefix(path, "/assets/") || path == "/favicon.ico" {
+	if path == "/" || strings.HasPrefix(path, "/assets/") || path == "/favicon.ico" || path == "/favicon.svg" {
 		return true
 	}
 	return false
