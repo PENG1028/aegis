@@ -300,6 +300,22 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// v1.8H Middleware Management
 	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/install", h.ProviderInstall)
 	mux.HandleFunc("GET /api/admin/v1/providers/{provider}/config", h.ProviderConfigPreview)
+	mux.HandleFunc("PUT /api/admin/v1/providers/{provider}/config", h.ProviderSaveConfig)
+	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/reload", h.ProviderReload)
+	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/service", h.ProviderServiceControl)
+	mux.HandleFunc("DELETE /api/admin/v1/providers/{provider}", h.ProviderUninstall)
+
+	// v1.8K Credential management (encrypted connection strings)
+	if svcs.CredentialSvc != nil {
+		credH := &handlers.CredentialHandlers{Svc: svcs.CredentialSvc}
+		mux.HandleFunc("GET /api/admin/v1/credentials", credH.ListCredentials)
+		mux.HandleFunc("GET /api/admin/v1/credentials/resolve", credH.ResolveByAlias)
+		mux.HandleFunc("POST /api/admin/v1/credentials", credH.CreateCredential)
+		mux.HandleFunc("GET /api/admin/v1/credentials/{id}", credH.GetCredential)
+		mux.HandleFunc("DELETE /api/admin/v1/credentials/{id}", credH.DeleteCredential)
+		mux.HandleFunc("POST /api/admin/v1/credentials/{id}/rotate", credH.RotateCredential)
+		mux.HandleFunc("POST /api/admin/v1/credentials/{id}/reveal", credH.RevealCredential)
+	}
 
 	// v1.8J Embedded UI — catch-all for SPA routes not matching any API path.
 	// Registered without method prefix so it handles all HTTP methods.

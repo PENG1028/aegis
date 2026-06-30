@@ -8,6 +8,7 @@ import (
 	"aegis/internal/apply"
 	"aegis/internal/cluster"
 	"aegis/internal/config"
+	"aegis/internal/credential"
 	"aegis/internal/deployment"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
@@ -75,4 +76,5 @@ type Services struct {
 	RelayHTTPHandler http.Handler           // v1.8B relay dispatch
 	DNSMgmt         *dns.Manager            // v1.8E DNS resolver
 	TransparentMgr  *transparent.Manager    // v1.8H transparent IP:port proxy
+	CredentialSvc   *credential.Service     // v1.8K encrypted connection strings
 }

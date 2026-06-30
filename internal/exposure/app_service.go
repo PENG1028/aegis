@@ -3,26 +3,50 @@ package exposure
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"aegis/internal/credential"
 	aerrors "aegis/internal/errors"
 	"aegis/internal/id"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/provider"
+	"aegis/internal/tcp"
+	"aegis/internal/udp"
 )
 
 // AppService defines the exposure application service.
 type AppService struct {
-	repo      *Repository
-	logSvc    logs.Logger
-	provReg   *provider.Registry
+	repo        *Repository
+	logSvc      logs.Logger
+	provReg     *provider.Registry
 	listenerSvc *listener.Service
+	tcpMgr      *tcp.Manager
+	udpMgr      *udp.Manager
+	credSvc     *credential.Service
 }
 
 // NewAppService creates a new exposure application service.
 func NewAppService(repo *Repository, logSvc logs.Logger, provReg *provider.Registry, listenerSvc *listener.Service) *AppService {
 	return &AppService{repo: repo, logSvc: logSvc, provReg: provReg, listenerSvc: listenerSvc}
+}
+
+// SetTCPManager wires the TCP proxy manager to the exposure service.
+// When set, activating a TCP exposure will start a direct port forwarder.
+func (s *AppService) SetTCPManager(mgr *tcp.Manager) {
+	s.tcpMgr = mgr
+}
+
+// SetUDPManager wires the UDP proxy manager to the exposure service.
+func (s *AppService) SetUDPManager(mgr *udp.Manager) {
+	s.udpMgr = mgr
+}
+
+// SetCredentialService wires the credential resolver to the exposure service.
+// When set, TCP exposures can reference credential://alias as their target.
+func (s *AppService) SetCredentialService(svc *credential.Service) {
+	s.credSvc = svc
 }
 
 // CreateExposure creates a new exposure with provider auto-selection and listener conflict check.
@@ -130,14 +154,87 @@ func (s *AppService) ActivateExposure(ctx context.Context, exposureID string, ca
 
 	if GeneratesConfig(e.Type) {
 		e.Status = StatusActive
-		e.Message = "HTTP exposure active — will generate Caddy route"
+		e.Message = "HTTP exposure active - will generate Caddy route"
+	} else if e.Type == TypeTCP && s.tcpMgr != nil {
+		// Start a direct TCP port forwarder
+		entryHost := e.Host
+		if entryHost == "" {
+			entryHost = "127.0.0.1"
+		}
+		targetHost := e.TargetHost
+		if targetHost == "" {
+			targetHost = "127.0.0.1"
+		}
+		targetPort := e.TargetPort
+		if targetPort == 0 {
+			targetPort = e.Port
+		}
+
+		// Resolve credential:// alias if target references one
+		if strings.HasPrefix(targetHost, "credential://") {
+			if s.credSvc == nil {
+				e.Status = StatusFailed
+				e.Message = "credential resolver not available - master key may be missing"
+			} else {
+				alias := strings.TrimPrefix(targetHost, "credential://")
+				info, credErr := s.credSvc.DecryptAndResolve(ctx, alias)
+				if credErr != nil {
+					e.Status = StatusFailed
+					e.Message = fmt.Sprintf("resolve credential %q: %v", alias, credErr)
+				} else {
+					targetHost = info.Host
+					if info.Port > 0 {
+						targetPort = info.Port
+					}
+					e.Message = fmt.Sprintf("TCP proxy active: %s:%d -> [%s] %s:%d", entryHost, e.Port, alias, targetHost, targetPort)
+				}
+			}
+		}
+
+		if e.Status != StatusFailed {
+			if err := s.tcpMgr.StartProxy(e.ID, entryHost, e.Port, targetHost, targetPort); err != nil {
+				e.Status = StatusFailed
+				e.Message = fmt.Sprintf("TCP proxy start failed: %v", err)
+			} else {
+				e.Status = StatusActive
+				if e.Message == "" {
+					e.Message = fmt.Sprintf("TCP proxy active: %s:%d -> %s:%d", entryHost, e.Port, targetHost, targetPort)
+				}
+			}
+		}
+	} else if e.Type == TypeUDP && s.udpMgr != nil {
+		// Start a direct UDP port forwarder
+		entryHost := e.Host
+		if entryHost == "" {
+			entryHost = "127.0.0.1"
+		}
+		targetHost := e.TargetHost
+		if targetHost == "" {
+			targetHost = "127.0.0.1"
+		}
+		targetPort := e.TargetPort
+		if targetPort == 0 {
+			targetPort = e.Port
+		}
+
+		if err := s.udpMgr.StartProxy(e.ID, entryHost, e.Port, targetHost, targetPort); err != nil {
+			e.Status = StatusFailed
+			e.Message = fmt.Sprintf("UDP proxy start failed: %v", err)
+		} else {
+			e.Status = StatusActive
+			e.Message = fmt.Sprintf("UDP proxy active: %s:%d -> %s:%d", entryHost, e.Port, targetHost, targetPort)
+		}
 	} else {
 		e.Status = StatusActiveRecorded
-		e.Message = fmt.Sprintf("%s exposure recorded — no proxy config generated", e.Type)
+		e.Message = fmt.Sprintf("%s exposure recorded: no proxy config generated", e.Type)
 	}
 	e.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(e); err != nil {
+		// Clean up started proxy on DB failure
+		if e.Status == StatusActive && e.Type == TypeTCP && s.tcpMgr != nil {
+			s.tcpMgr.StopProxy(e.ID)
+		}
 		return nil, fmt.Errorf("activate exposure: %w", err)
 	}
 
@@ -161,6 +258,20 @@ func (s *AppService) DisableExposure(ctx context.Context, exposureID string, cal
 
 	e.Status = StatusDisabled
 	e.UpdatedAt = time.Now()
+
+	// Stop TCP/UDP proxy if running
+	if e.Type == TypeTCP && s.tcpMgr != nil {
+		if err := s.tcpMgr.StopProxy(e.ID); err != nil {
+			s.logSvc.Log(ctx, "exposure.disable.tcp", "exposure", e.ID, "warning",
+				fmt.Sprintf("stop tcp proxy: %v", err), "api")
+		}
+	}
+	if e.Type == TypeUDP && s.udpMgr != nil {
+		if err := s.udpMgr.StopProxy(e.ID); err != nil {
+			s.logSvc.Log(ctx, "exposure.disable.udp", "exposure", e.ID, "warning",
+				fmt.Sprintf("stop udp proxy: %v", err), "api")
+		}
+	}
 
 	if err := s.repo.Update(e); err != nil {
 		return nil, fmt.Errorf("disable exposure: %w", err)

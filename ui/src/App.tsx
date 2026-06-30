@@ -40,6 +40,8 @@ import QuickCreatePage from '@/pages/QuickCreate';
 import HealthCheckPage from '@/pages/HealthCheck';
 import ImportConfigPage from '@/pages/ImportConfig';
 import TransparentProxyPage from '@/pages/TransparentProxy';
+import ExposuresPage from '@/pages/Exposures';
+import CredentialsPage from '@/pages/Credentials';
 import MiddlewarePage from '@/pages/Middleware';
 
 const queryClient = new QueryClient({
@@ -115,9 +117,11 @@ export default function App() {
 
               {/* === New v2 pages === */}
 
-              {/* Trace / Safety / Relay */}
+              {/* Trace / Safety / Relay / Exposures */}
               <Route path="/trace" element={<TracePage />} />
               <Route path="/transparent" element={<TransparentProxyPage />} />
+              <Route path="/exposures" element={<ExposuresPage />} />
+              <Route path="/credentials" element={<CredentialsPage />} />
               <Route path="/safety" element={<SafetyPage />} />
               <Route path="/relay" element={<RelayPage />} />
 

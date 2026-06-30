@@ -108,6 +108,10 @@ function patch<T>(path: string, body?: unknown): Promise<T> {
   return request<T>('PATCH', path, body);
 }
 
+function put<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>('PUT', path, body);
+}
+
 function del<T = void>(path: string): Promise<T> {
   return request<T>('DELETE', path);
 }
@@ -1233,6 +1237,58 @@ export const providerApi = {
 
   getConfig: (provider: string): Promise<any> =>
     get(`/api/admin/v1/providers/${provider}/config`),
+
+  // v1.8K Middleware control
+  saveConfig: (provider: string, content: string): Promise<any> =>
+    put(`/api/admin/v1/providers/${provider}/config`, { content }),
+
+  reload: (provider: string): Promise<any> =>
+    post(`/api/admin/v1/providers/${provider}/reload`),
+
+  serviceControl: (provider: string, action: 'start' | 'stop' | 'restart'): Promise<any> =>
+    post(`/api/admin/v1/providers/${provider}/service`, { action }),
+
+  uninstall: (provider: string): Promise<any> =>
+    del(`/api/admin/v1/providers/${provider}`),
+};
+
+// ─── Exposure API (TCP/UDP port exposure) ───
+export const exposureApi = {
+  list: (): Promise<{ exposures: any[]; count: number }> =>
+    get('/api/exposures'),
+
+  get: (id: string): Promise<any> =>
+    get(`/api/exposures/${id}`),
+
+  create: (input: any): Promise<any> =>
+    post('/api/exposures', input),
+
+  update: (id: string, input: any): Promise<any> =>
+    patch(`/api/exposures/${id}`, input),
+
+  activate: (id: string): Promise<any> =>
+    post(`/api/exposures/${id}/activate`),
+
+  disable: (id: string): Promise<any> =>
+    post(`/api/exposures/${id}/disable`),
+};
+
+// ─── Credential API (encrypted connection strings) ───
+export const credentialApi = {
+  list: (): Promise<{ credentials: any[]; count: number }> =>
+    get('/api/admin/v1/credentials'),
+
+  create: (alias: string, connString: string, description?: string): Promise<any> =>
+    post('/api/admin/v1/credentials', { alias, conn_string: connString, description }),
+
+  get: (id: string): Promise<any> =>
+    get(`/api/admin/v1/credentials/${id}`),
+
+  delete: (id: string): Promise<any> =>
+    del(`/api/admin/v1/credentials/${id}`),
+
+  rotate: (id: string, connString: string): Promise<any> =>
+    post(`/api/admin/v1/credentials/${id}/rotate`, { conn_string: connString }),
 };
 
 // ─── Admin operations ───
