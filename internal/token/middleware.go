@@ -57,6 +57,10 @@ func isPublicPath(path, method string) bool {
 	if path == "/api/healthz" || path == "/api/readyz" {
 		return true
 	}
+	// System status — used by the login page to detect server version/health
+	if path == "/api/system/status" && method == "GET" {
+		return true
+	}
 	// Embedded UI — must be public so the login form loads
 	if path == "/" || strings.HasPrefix(path, "/assets/") || path == "/favicon.ico" {
 		return true
