@@ -150,7 +150,14 @@ func (a *Agent) Run() error {
 		a.cfg.NodeID, a.cfg.ControlPlaneURL,
 		a.cfg.HeartbeatIntervalSec, a.cfg.SyncIntervalSec)
 
-	go a.loop()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[nodeagent] panic in agent loop: %v", r)
+			}
+		}()
+		a.loop()
+	}()
 
 	// Wait for signal
 	sigCh := make(chan os.Signal, 1)

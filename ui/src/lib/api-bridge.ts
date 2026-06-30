@@ -75,15 +75,15 @@ import {
   updateSettings as realUpdateSettings,
   auth as realAuth,
   system as realSystem,
-  safetyApi,
-  traceApi,
-  relayApi,
-  gatewayApi,
-  gatewayLinkApi,
-  nodeApi,
+  safetyApi as realSafetyApi,
+  traceApi as realTraceApi,
+  relayApi as realRelayApi,
+  gatewayApi as realGatewayApi,
+  gatewayLinkApi as realGatewayLinkApi,
+  nodeApi as realNodeApi,
   providerApi as realProviderApi,
   exposureApi as realExposureApi,
-  adminApi,
+  adminApi as realAdminApi,
   fetchListeners as realFetchListeners,
   dnsApi as realDnsApi,
   transparentApi as realTransparentApi,
@@ -232,5 +232,88 @@ import { credentialApi as mockCredentialApi } from './api-client';
 import { credentialApi as realCredentialApi } from './real-api-client';
 export const credentialApi = useMock ? mockCredentialApi : realCredentialApi;
 
-// ─── API service exports (always real - new pages) ───
-export { safetyApi, traceApi, relayApi, gatewayApi, gatewayLinkApi, nodeApi, adminApi };
+// ─── API service exports (with mock fallback for VITE_USE_MOCK) ───
+
+// Safety API mock
+const mockSafetyApi = {
+  checkAllRoutes: async () => [],
+  checkRoute: async (_id: string) => null,
+  traceEgress: async (_domain: string, _fromNode: string) => ({ steps: [], trace_status: 'ok' }),
+};
+export const safetyApi = useMock ? mockSafetyApi : realSafetyApi;
+
+// Trace API mock
+const mockTraceApi = {
+  byDomain: async (domain: string) => ({ input: domain, input_type: 'domain', trace_status: 'ok', steps: [] }),
+  byRoute: async (routeId: string) => ({ input: routeId, input_type: 'route', trace_status: 'ok', steps: [] }),
+  bySNI: async (sni: string) => ({ input: sni, input_type: 'sni', trace_status: 'ok', steps: [] }),
+  egress: async (domain: string, fromNode: string) => ({ domain, from_node: fromNode, trace_status: 'ok', steps: [] }),
+};
+export const traceApi = useMock ? mockTraceApi : realTraceApi;
+
+// Relay API mock
+const mockRelayApi = {
+  resolve: async (domain: string, _fromNode: string) => ({ domain, path: [], reachable: false, summary: 'mock' }),
+};
+export const relayApi = useMock ? mockRelayApi : realRelayApi;
+
+// Gateway API mock
+const mockGatewayApi = {
+  list: async () => ({ gateways: [], count: 0 }),
+  get: async (id: string) => ({ gateway_id: id }),
+  update: async (_id: string, _data: any) => ({}),
+};
+export const gatewayApi = useMock ? mockGatewayApi : realGatewayApi;
+
+// Gateway Link API mock
+const mockGatewayLinkApi = {
+  list: async () => [],
+  get: async (id: string) => ({ id }),
+  create: async (data: any) => ({ id: 'mock-' + Date.now(), ...data }),
+  delete: async (_id: string) => ({}),
+  rotate: async (_id: string) => ({ secret: 'mock-secret-' + Date.now() }),
+};
+export const gatewayLinkApi = useMock ? mockGatewayLinkApi : realGatewayLinkApi;
+
+// Node API mock
+const mockNodeApi = {
+  list: async () => ({ nodes: [], count: 0 }),
+  get: async (id: string) => ({ node: { node_id: id } }),
+  health: async (_id: string) => ({}),
+  capabilities: async (_id: string) => ({}),
+  refreshCapabilities: async (_id: string) => ({}),
+  gateways: async (_id: string) => ({ gateways: [], count: 0 }),
+  syncStatus: async (_id: string) => ({}),
+  routingTable: async (_id: string) => ({ entries: [] }),
+  generateRoutingTable: async (_id: string) => ({}),
+};
+export const nodeApi = useMock ? mockNodeApi : realNodeApi;
+
+// Admin API mock
+const mockAdminApi = {
+  listScopes: async () => ({ spaces: [], count: 0 }),
+  createScope: async (data: any) => ({ id: 'mock-scope-' + Date.now(), ...data }),
+  listApiKeys: async () => ({ api_keys: [], count: 0 }),
+  createApiKey: async (scopeId: string, name: string) => ({ id: 'mock-key-' + Date.now(), scope_id: scopeId, name }),
+  revokeApiKey: async (_id: string) => ({}),
+  rotateApiKey: async (_id: string) => ({ token: 'mock-rotated-' + Date.now() }),
+  listOperations: async () => ({ operations: [], count: 0 }),
+  listApplyLogs: async () => ({ apply_logs: [], count: 0 }),
+  listAuditLogs: async () => ({ audit_logs: [], count: 0 }),
+  listNodeEvents: async () => ({ node_events: [], count: 0 }),
+  listEdgeRules: async () => ({ edge_rules: [], count: 0 }),
+  configCurrent: async () => ({}),
+  configPreview: async () => ({}),
+  configDiff: async () => ({}),
+  applyHistory: async () => [],
+  applyConfig: async () => ({ message: 'applied (mock)', routes: 0, warnings: 0 }),
+  dryRun: async () => ({ message: 'dry-run (mock)', routes: 0, warnings: 0 }),
+  rollback: async () => ({ message: 'rollback (mock)' }),
+  bindHTTPDomain: async (data: any) => ({ domain: data.domain, status: 'created (mock)' }),
+  bindTLSBackend: async (data: any) => ({ domain: data.domain, status: 'created (mock)' }),
+  updateTarget: async (data: any) => ({ status: 'updated (mock)' }),
+  exportDiagnostics: async () => ({}),
+  importCaddyPreview: async () => ({ routes: [], count: 0 }),
+  importCaddyConfirm: async () => ({ imported: 0 }),
+};
+export const adminApi = useMock ? mockAdminApi : realAdminApi;

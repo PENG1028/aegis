@@ -43,6 +43,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		RoutingTableSvc: svcs.RoutingTableSvc,
 		RelayResolver:   &handlers.RelayResolver{Resolver: svcs.RelaySvc},
 		TransparentMgr:  svcs.TransparentMgr,
+		Version:         svcs.Version,
+		BuildTime:       svcs.BuildTime,
 	}
 
 	// DNS handler
@@ -121,8 +123,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/exposures/{id}/activate", h.ActivateExposure)
 	mux.HandleFunc("POST /api/exposures/{id}/disable", h.DisableExposure)
 
-	// Diagnostics
-	mux.HandleFunc("GET /api/diagnostics/export", h.DiagnosticsExport)
+	// Diagnostics (admin only — contains server internals)
+	mux.HandleFunc("GET /api/admin/v1/diagnostics/export", h.DiagnosticsExport)
 
 	// Health
 	mux.HandleFunc("GET /api/health", h.GetHealth)
@@ -132,9 +134,9 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// Logs
 	mux.HandleFunc("GET /api/logs", h.GetLogs)
 
-	// Settings
+	// Settings (read is public with redacted token; write is admin-only)
 	mux.HandleFunc("GET /api/settings", h.GetSettings)
-	mux.HandleFunc("PATCH /api/settings", h.UpdateSettings)
+	mux.HandleFunc("PATCH /api/admin/v1/settings", h.UpdateSettings)
 
 	// v1.6 Action API
 	mux.HandleFunc("POST /api/v1/actions/bind-http-domain", h.BindHTTPDomain)

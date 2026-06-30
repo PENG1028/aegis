@@ -33,6 +33,7 @@ import (
 	"aegis/internal/trace"
 	"aegis/internal/transparent"
 	"database/sql"
+	"log"
 	"net/http"
 	"time"
 )
@@ -77,15 +78,21 @@ type Handlers struct {
 		PolicySvc       *routingpolicy.Service       // v1.8C-3
 		RoutingTableSvc *routingtable.Service        // v1.8C-3
 	TransparentMgr  *transparent.Manager         // v1.8H
+	Version         string // build-injected version
+	BuildTime       string // build-injected timestamp
 }
 
 // SystemStatus returns enhanced system status.
 func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 	// Counts
-	projects, _ := h.Project.ListProjects(r.Context())
-	services, _ := h.Service.ListServices(r.Context())
-	routes, _ := h.Route.ListRoutes(r.Context())
-	mdDomains, _ := h.ManagedDomain.ListManagedDomains(r.Context())
+	projects, err := h.Project.ListProjects(r.Context())
+	if err != nil { log.Printf("[status] projects: %v", err) }
+	services, err := h.Service.ListServices(r.Context())
+	if err != nil { log.Printf("[status] services: %v", err) }
+	routes, err := h.Route.ListRoutes(r.Context())
+	if err != nil { log.Printf("[status] routes: %v", err) }
+	mdDomains, err := h.ManagedDomain.ListManagedDomains(r.Context())
+	if err != nil { log.Printf("[status] managed-domains: %v", err) }
 
 	// Last apply
 	lastApply := map[string]interface{}{}
@@ -100,7 +107,8 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Health summary
-	healthChecks, _ := h.Health.GetLatestForAll(r.Context())
+	healthChecks, err := h.Health.GetLatestForAll(r.Context())
+	if err != nil { log.Printf("[status] health: %v", err) }
 	healthyCount, unhealthyCount, unknownCount := 0, 0, 0
 	for _, hc := range healthChecks {
 		switch hc.Status {
@@ -134,7 +142,8 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"name":        "aegis",
-		"version":     "0.x",
+		"version":     h.Version,
+		"build_time":  h.BuildTime,
 		"server_time": time.Now().Format(time.RFC3339),
 		"proxy": map[string]interface{}{
 			"provider":                  h.Config.Proxy.Provider,

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"time"
 
@@ -15,12 +16,18 @@ import (
 
 // SystemOverview handles GET /api/admin/v1/system/overview
 func (h *Handlers) SystemOverview(w http.ResponseWriter, r *http.Request) {
-	nodes, _ := h.NodeRepo.FindAll()
-	routes, _ := h.Route.ListRoutes(r.Context())
-	services, _ := h.Service.ListServices(r.Context())
-	edgeRules, _ := h.EdgeSvc.ListRules(r.Context())
-	spaces, _ := h.Space.ListSpaces(r.Context())
-	history, _ := h.Apply.History(r.Context())
+	nodes, err := h.NodeRepo.FindAll()
+	if err != nil { log.Printf("[overview] nodes: %v", err) }
+	routes, err := h.Route.ListRoutes(r.Context())
+	if err != nil { log.Printf("[overview] routes: %v", err) }
+	services, err := h.Service.ListServices(r.Context())
+	if err != nil { log.Printf("[overview] services: %v", err) }
+	edgeRules, err := h.EdgeSvc.ListRules(r.Context())
+	if err != nil { log.Printf("[overview] edge-rules: %v", err) }
+	spaces, err := h.Space.ListSpaces(r.Context())
+	if err != nil { log.Printf("[overview] spaces: %v", err) }
+	history, err := h.Apply.History(r.Context())
+	if err != nil { log.Printf("[overview] history: %v", err) }
 
 	leaderID := ""
 	nodeCount := 0

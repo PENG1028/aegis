@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"aegis/internal/addr"
+	"aegis/internal/recovery"
 )
 
 // Proxy represents a single TCP forwarding proxy.
@@ -77,7 +78,7 @@ func (p *Proxy) Start() error {
 	p.Status = "running"
 	p.Message = fmt.Sprintf("TCP proxy active: %s:%d -> %s", p.EntryHost, p.EntryPort, p.Target.String())
 
-	go p.acceptLoop()
+	recovery.Go("tcp-accept-"+p.ID, p.acceptLoop)
 	return nil
 }
 
@@ -103,7 +104,7 @@ func (p *Proxy) acceptLoop() {
 			return
 		}
 
-		go p.handleConn(clientConn)
+		recovery.Go("tcp-conn-"+p.ID, func() { p.handleConn(clientConn) })
 	}
 }
 
@@ -122,8 +123,10 @@ func (p *Proxy) handleConn(clientConn net.Conn) {
 		targetConn, err = net.DialTimeout("tcp", p.Target.DialString(), 5*time.Second)
 	}
 	if err != nil {
+		p.mu.Lock()
 		p.Status = "error"
 		p.Message = fmt.Sprintf("connect to %s: %v", p.Target.String(), err)
+		p.mu.Unlock()
 		return
 	}
 	defer targetConn.Close()

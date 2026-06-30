@@ -20,6 +20,10 @@ export default function QuickCreatePage() {
   const [domain, setDomain] = useState('');
   const [port, setPort] = useState('3000');
   const [targetHost, setTargetHost] = useState('127.0.0.1');
+  const [targetNode, setTargetNode] = useState('');
+  const [tlsMode, setTlsMode] = useState('http_only');
+  const [publicAccess, setPublicAccess] = useState(true);
+  const [preserveHost, setPreserveHost] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [creating, setCreating] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -54,6 +58,10 @@ export default function QuickCreatePage() {
         domain: domain.trim(),
         target_host: targetHost.trim(),
         target_port: parseInt(port),
+        target_node: targetNode || undefined,
+        tls_mode: tlsMode,
+        public_access: publicAccess,
+        preserve_host: preserveHost,
       });
       toast('创建完成！');
       setResult({ domain: domain.trim(), target: `${targetHost.trim()}:${port}`, status: 'created' });
@@ -79,6 +87,10 @@ export default function QuickCreatePage() {
         domain: domain.trim(),
         target_host: targetHost.trim(),
         target_port: parseInt(port),
+        target_node: targetNode || undefined,
+        tls_mode: tlsMode,
+        public_access: publicAccess,
+        preserve_host: preserveHost,
       });
       setResult({ domain: domain.trim(), target: `${targetHost.trim()}:${port}`, status: 'created' });
       toast('创建完成，正在推送配置…');
@@ -183,7 +195,9 @@ export default function QuickCreatePage() {
           <div className="p-[18px] grid grid-cols-2 gap-3 text-xs">
             <div>
               <label className="block text-xs font-medium text-a-muted mb-1">目标节点</label>
-              <select className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none">
+              <select className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none"
+                value={targetNode} onChange={(e) => setTargetNode(e.target.value)}>
+                <option value="">自动选择</option>
                 {(nodes || []).map((n: any) => (
                   <option key={n.node_id} value={n.node_id}>{n.name}</option>
                 ))}
@@ -191,7 +205,8 @@ export default function QuickCreatePage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-a-muted mb-1">TLS 模式</label>
-              <select className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none">
+              <select className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none"
+                value={tlsMode} onChange={(e) => setTlsMode(e.target.value)}>
                 <option value="http_only">仅 HTTP</option>
                 <option value="terminate_local">本地终止</option>
                 <option value="passthrough_deferred">直通（延期）</option>
@@ -199,13 +214,13 @@ export default function QuickCreatePage() {
             </div>
             <div>
               <label className="flex items-center gap-2">
-                <input type="checkbox" defaultChecked className="accent-a-accent" />
+                <input type="checkbox" checked={publicAccess} onChange={(e) => setPublicAccess(e.target.checked)} className="accent-a-accent" />
                 <span>允许公网访问</span>
               </label>
             </div>
             <div>
               <label className="flex items-center gap-2">
-                <input type="checkbox" defaultChecked className="accent-a-accent" />
+                <input type="checkbox" checked={preserveHost} onChange={(e) => setPreserveHost(e.target.checked)} className="accent-a-accent" />
                 <span>Preserve Host</span>
               </label>
             </div>

@@ -68,7 +68,7 @@ export function AppLayout() {
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-a-muted uppercase tracking-[0.06em]">控制台</span>
               <span className="w-px h-4 bg-a-border" />
-              <span className="font-mono text-xs text-a-muted">v1.8C</span>
+              <span className="font-mono text-xs text-a-muted">v1.8K</span>
             </div>
           )}
 

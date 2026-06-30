@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -55,6 +56,10 @@ func writeErrorCode(w http.ResponseWriter, status int, code, msg string) {
 
 func decodeJSON(r *http.Request, v interface{}) error {
 	defer r.Body.Close()
+	ct := r.Header.Get("Content-Type")
+	if ct != "" && ct != "application/json" && !strings.HasPrefix(ct, "application/json;") {
+		return fmt.Errorf("unsupported Content-Type: %s (expected application/json)", ct)
+	}
 	// 1 MB limit — prevents memory exhaustion from oversized payloads
 	const maxBodySize = 1 << 20
 	limitedBody := io.LimitReader(r.Body, maxBodySize)
