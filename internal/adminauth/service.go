@@ -159,6 +159,33 @@ func (s *Service) RevokeSession(sessionHash string) error {
 	return s.sessionRepo.Revoke(sessionHash)
 }
 
+// ChangePassword changes the admin user's password.
+// Verifies the old password before updating.
+func (s *Service) ChangePassword(userID, oldPassword, newPassword string) error {
+	user, err := s.userRepo.FindByID(userID)
+	if err != nil || user == nil {
+		return fmt.Errorf("user not found")
+	}
+	if !user.CheckPassword(oldPassword) {
+		return fmt.Errorf("current password is incorrect")
+	}
+	if len(newPassword) < 8 {
+		return fmt.Errorf("new password must be at least 8 characters")
+	}
+	if len(newPassword) > 128 {
+		return fmt.Errorf("new password must be at most 128 characters")
+	}
+
+	hash, err := hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	if err := s.userRepo.UpdatePassword(userID, hash); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	return nil
+}
+
 // EnsureAdmin creates the default admin user if no admin exists.
 func (s *Service) EnsureAdmin(username, password string) (*AdminUser, error) {
 	count, err := s.userRepo.Count()
