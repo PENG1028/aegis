@@ -82,6 +82,7 @@ import {
   gatewayLinkApi,
   nodeApi,
   providerApi as realProviderApi,
+  exposureApi as realExposureApi,
   adminApi,
   fetchListeners as realFetchListeners,
   dnsApi as realDnsApi,
@@ -221,6 +222,15 @@ export const system: typeof realSystem = useMock
 // ─── Provider / Middleware API (v1.7S + v1.8H) ───
 import { providerApi as mockProviderApi } from './api-client';
 export const providerApi = useMock ? mockProviderApi : realProviderApi;
+
+// ─── Exposure API (TCP/UDP port exposure) ───
+import { exposureApi as mockExposureApi } from './api-client';
+export const exposureApi = useMock ? mockExposureApi : realExposureApi;
+
+// ─── Credential API (encrypted connection strings) ───
+import { credentialApi as mockCredentialApi } from './api-client';
+import { credentialApi as realCredentialApi } from './real-api-client';
+export const credentialApi = useMock ? mockCredentialApi : realCredentialApi;
 
 // ─── API service exports (always real - new pages) ───
 export { safetyApi, traceApi, relayApi, gatewayApi, gatewayLinkApi, nodeApi, adminApi };

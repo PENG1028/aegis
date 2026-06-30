@@ -316,4 +316,89 @@ export const providerApi = {
       content: configs[provider] || '# no config',
     };
   },
+  // v1.8K Middleware control
+  saveConfig: async (provider: string, _content: string) => {
+    await delay();
+    return { provider, status: 'saved', config_path: provider === 'caddy' ? '/etc/caddy/Caddyfile' : '/etc/haproxy/haproxy.cfg' };
+  },
+  reload: async (provider: string) => {
+    await delay(500);
+    return { provider, action: 'reload', status: 'success', output: 'OK' };
+  },
+  serviceControl: async (provider: string, action: string) => {
+    await delay(1000);
+    return { provider, action, status: 'success', running: action !== 'stop' };
+  },
+  uninstall: async (provider: string) => {
+    await delay(2000);
+    return { provider, status: 'uninstalled', message: `${provider} removed` };
+  },
+};
+
+// ─── Exposure (TCP/UDP port exposure) ───
+export const exposureApi = {
+  list: async () => {
+    await delay();
+    return { exposures: [] as any[], count: 0 };
+  },
+  create: async (input: any) => {
+    await delay();
+    return { id: 'exp_mock1', ...input, status: 'pending', created_at: new Date().toISOString() };
+  },
+  activate: async (id: string) => {
+    await delay();
+    return { id, status: 'active' };
+  },
+  disable: async (id: string) => {
+    await delay();
+    return { id, status: 'disabled' };
+  },
+};
+
+// ─── Credential API (encrypted connection strings) ───
+export const credentialApi = {
+  list: async () => {
+    await delay();
+    return {
+      credentials: [
+        {
+          id: 'cred_mock1', alias: 'pg-prod', scheme: 'postgres',
+          masked_uri: 'postgres://user:***@10.0.0.5:5432/mydb',
+          secret_version: 0, secret_created_at: new Date().toISOString(),
+          description: '生产数据库', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        },
+        {
+          id: 'cred_mock2', alias: 'redis-cache', scheme: 'redis',
+          masked_uri: 'redis://:***@10.0.0.6:6379/0',
+          secret_version: 1, secret_created_at: new Date().toISOString(),
+          description: '缓存服务器', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        },
+      ],
+      count: 2,
+    };
+  },
+  create: async (alias: string, _connString: string, _desc?: string) => {
+    await delay();
+    return {
+      credential: {
+        id: 'cred_' + Math.random().toString(36).slice(2, 8),
+        alias, scheme: 'postgres',
+        masked_uri: 'postgres://user:***@host:5432/db',
+        secret_version: 0, secret_created_at: new Date().toISOString(),
+        description: _desc || '', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      },
+    };
+  },
+  get: async (id: string) => {
+    await delay();
+    return { credential: { id, alias: 'pg-prod', scheme: 'postgres', masked_uri: 'postgres://user:***@host:5432/db', secret_version: 0 } };
+  },
+  delete: async (_id: string) => {
+    await delay();
+    return { status: 'deleted', message: 'credential deleted' };
+  },
+  rotate: async (_id: string, _connString: string) => {
+    await delay();
+    return { credential: { id: _id, alias: 'pg-prod', secret_version: 1 } };
+  },
 };

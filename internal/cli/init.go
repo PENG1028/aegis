@@ -29,12 +29,10 @@ auto-config), use 'aegis bootstrap --production' instead.`,
 				cfgFile = filepath.Join(cwd, ".aegis", "config.yaml")
 			}
 
-			// Use development defaults
+			// Always use development defaults for 'init'.
+			// For production (system paths, systemd, Caddy auto-config),
+			// use 'aegis bootstrap --production' instead.
 			cfg := config.DefaultConfig()
-			if configPath != "" {
-				// If user specified a config path, use production-oriented defaults
-				cfg = config.ProductionConfig()
-			}
 
 			// Ensure directories
 			if err := config.EnsureDirs(cfg); err != nil {

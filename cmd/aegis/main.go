@@ -10,6 +10,7 @@ import (
 	"aegis/internal/apply"
 	"aegis/internal/cluster"
 	"aegis/internal/config"
+	"aegis/internal/credential"
 	"aegis/internal/dns"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
@@ -41,6 +42,7 @@ import (
 	"aegis/internal/sync"
 	"aegis/internal/tcp"
 	"aegis/internal/token"
+	"aegis/internal/udp"
 	"aegis/internal/trace"
 	"aegis/internal/transparent"
 	cli "aegis/internal/cli"
@@ -77,13 +79,20 @@ func main() {
 		}
 		loaded := false
 		for _, p := range defaultPaths {
-			if c, err := config.Load(p); err == nil {
+			c, err := config.Load(p)
+			if err == nil {
 				cfg = c
 				loaded = true
 				break
 			}
+			// If the file exists but failed to load (corrupt YAML, empty, etc.),
+			// warn the user instead of silently falling through.
+			if _, statErr := os.Stat(p); statErr == nil {
+				fmt.Fprintf(os.Stderr, "warning: config file %s exists but could not be loaded: %v\n", p, err)
+			}
 		}
 		if !loaded {
+			fmt.Fprintf(os.Stderr, "warning: no valid config file found, using development defaults\n")
 			cfg = config.DefaultConfig()
 		}
 	}
@@ -137,8 +146,7 @@ func main() {
 	if err := listenerSvc.RegisterDefaults(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to register listeners: %v\n", err)
 	}
-	tcpManager := tcp.NewManager()
-	defer tcpManager.Shutdown()
+	// TCP proxy manager will be wired to exposure activation below.
 	nodeSvc := node.NewService(nodeRepo)
 	nodeAuthRepo := nodeauth.NewRepository(db)
 	nodeAuthSvc := nodeauth.NewService(nodeAuthRepo, nodeRepo, nodeSvc)
@@ -163,6 +171,14 @@ func main() {
 	provRegistry.Register(provider.NewCaddyHTTPProvider(cfg))
 	provRegistry.Register(provider.NewHAProxyTCPProvider(cfg))
 	exposureSvc := exposure.NewAppService(exposureRepo, logSvc, provRegistry, listenerSvc)
+
+	// Wire TCP/UDP proxy managers to exposure activation.
+	tcpMgr := tcp.NewManager()
+	exposureSvc.SetTCPManager(tcpMgr)
+	defer tcpMgr.Shutdown()
+	udpMgr := udp.NewManager()
+	exposureSvc.SetUDPManager(udpMgr)
+	defer udpMgr.Shutdown()
 	var proxyAdapter proxy.ProxyAdapter = caddy.NewAdapter(cfg)
 	// --- Gateway Link (v1.7AB) ---
 	gwLinkRepo := gatewaylink.NewRepository(db)
@@ -172,6 +188,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "warning: master key not available — gateway link secrets will use legacy HMAC storage: %v\n", err)
 		masterKey = nil
 	}
+	// v1.8K: Credential store for encrypted connection strings
+	credRepo := credential.NewRepository(db)
+	credSvc := credential.NewService(credRepo, masterKey, logSvc)
+	exposureSvc.SetCredentialService(credSvc)
 	safetySvc := safety.NewService(safety.Dependencies{
 		RouteRepo:    routeRepo,
 		MDRRepo:      mdRepo,
@@ -336,6 +356,7 @@ func main() {
 		})),
 		DNSMgmt:         dnsMgmt,
 		TransparentMgr:  transparentMgr,
+		CredentialSvc:   credSvc,
 	}
 	cliSvcs := &cli.Services{
 		Config:        cfg,

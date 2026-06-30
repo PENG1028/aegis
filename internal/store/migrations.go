@@ -177,6 +177,11 @@ func AllMigrations() []Migration {
 			Name:    "add_gateway_policies",
 			UpSQL:   migration032,
 		},
+		{
+			Version: "033",
+			Name:    "add_credentials",
+			UpSQL:   migration033,
+		},
 	}
 }
 
@@ -1022,4 +1027,23 @@ CREATE TABLE IF NOT EXISTS route_gateway_policies (
 );
 CREATE INDEX IF NOT EXISTS idx_route_gw_policy_route_id ON route_gateway_policies(route_id);
 CREATE INDEX IF NOT EXISTS idx_route_gw_policy_mode ON route_gateway_policies(mode);
+`
+
+// migration033 adds encrypted credential storage for connection strings (v1.8K).
+const migration033 = `
+CREATE TABLE IF NOT EXISTS credentials (
+    id TEXT PRIMARY KEY,
+    alias TEXT NOT NULL UNIQUE,
+    encrypted_conn_string TEXT NOT NULL DEFAULT '',
+    secret_version INTEGER NOT NULL DEFAULT 0,
+    secret_created_at TEXT NOT NULL DEFAULT '',
+    secret_rotated_at TEXT DEFAULT NULL,
+    scheme TEXT NOT NULL DEFAULT '',
+    masked_uri TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_credentials_alias ON credentials(alias);
+CREATE INDEX IF NOT EXISTS idx_credentials_scheme ON credentials(scheme);
 `

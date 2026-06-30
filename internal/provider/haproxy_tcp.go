@@ -20,8 +20,10 @@ type HAProxyTCPProvider struct {
 }
 
 // NewHAProxyTCPProvider creates an HAProxy TCP provider.
+// Uses a separate config file (haproxy_tcp.cfg) to avoid conflict
+// with the EdgeMux SNI provider which manages haproxy.cfg.
 func NewHAProxyTCPProvider(cfg *config.Config) *HAProxyTCPProvider {
-	configPath := "/etc/haproxy/haproxy.cfg"
+	configPath := "/etc/haproxy/haproxy_tcp.cfg"
 	backupDir := cfg.Proxy.BackupDir
 	if backupDir == "" {
 		backupDir = "/var/lib/aegis/backups"

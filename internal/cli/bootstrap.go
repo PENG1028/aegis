@@ -125,8 +125,14 @@ Does NOT:
 						os.Remove(caddySysPath)
 						if err := os.Symlink(caddyfilePath, caddySysPath); err != nil {
 							// Symlink failed — copy instead
-							data, _ := os.ReadFile(caddyfilePath)
-							os.WriteFile(caddySysPath, data, 0644)
+							data, readErr := os.ReadFile(caddyfilePath)
+							if readErr != nil {
+								fmt.Printf("  warning: cannot read Caddyfile for copy: %v\n", readErr)
+							} else {
+								if writeErr := os.WriteFile(caddySysPath, data, 0644); writeErr != nil {
+									fmt.Printf("  warning: cannot write Caddyfile copy: %v\n", writeErr)
+								}
+							}
 						}
 						fmt.Printf("  Linked: %s → %s\n", caddySysPath, caddyfilePath)
 

@@ -15,11 +15,12 @@
 #
 # What it does:
 #   1. Builds the aegis binary with embedded UI (linux/amd64)
-#   2. Uploads binary to target VPS
-#   3. Runs 'aegis bootstrap --production' (creates config, DB, Caddyfile)
-#   4. Installs systemd service
-#   5. Starts Aegis
-#   6. Prints panel URL and admin credentials
+#   2. Installs Caddy (port 80 HTTP) and HAProxy (port 443 TLS SNI)
+#   3. Uploads binary to target VPS
+#   4. Runs 'aegis bootstrap --production' (creates config, DB, Caddyfile)
+#   5. Installs systemd service
+#   6. Starts Aegis
+#   7. Prints panel URL, admin credentials, and service status
 
 set -euo pipefail
 
@@ -110,6 +111,45 @@ info "Creating directories..."
 ${SSH} "sudo mkdir -p ${CONFIG_DIR} ${DATA_DIR}"
 ok "Directories created"
 
+# ─── Step 4.5: Install middleware (must be BEFORE bootstrap so config files are not overwritten) ───
+install_pkg() {
+  # Detect package manager and install a list of packages.
+  # Usage: install_pkg "caddy" "haproxy"
+  if ${SSH} "command -v apt-get &>/dev/null" 2>/dev/null; then
+    ${SSH} "sudo apt-get update -qq && sudo apt-get install -y -qq $*" 2>&1 | tail -3
+  elif ${SSH} "command -v dnf &>/dev/null" 2>/dev/null; then
+    ${SSH} "sudo dnf install -y $*" 2>&1 | tail -3
+  elif ${SSH} "command -v yum &>/dev/null" 2>/dev/null; then
+    ${SSH} "sudo yum install -y $*" 2>&1 | tail -3
+  else
+    return 1
+  fi
+}
+
+# --- Caddy (port 80 HTTP reverse proxy + Let's Encrypt) ---
+info "Checking Caddy..."
+if ${SSH} "command -v caddy &>/dev/null" 2>/dev/null; then
+  CADDY_VERSION=$(${SSH} "caddy version 2>&1 | head -1" 2>/dev/null || echo "unknown")
+  ok "Caddy: ${CADDY_VERSION}"
+else
+  warn "Caddy not installed. Installing..."
+  install_pkg caddy || fail "Caddy install failed"
+  ok "Caddy installed"
+  ${SSH} "sudo systemctl enable caddy" 2>/dev/null || true
+fi
+
+# --- HAProxy (port 443 TLS SNI passthrough) ---
+info "Checking HAProxy..."
+if ${SSH} "command -v haproxy &>/dev/null" 2>/dev/null; then
+  HAPROXY_VERSION=$(${SSH} "haproxy -v 2>&1 | head -1" 2>/dev/null || echo "unknown")
+  ok "HAProxy: ${HAPROXY_VERSION}"
+else
+  warn "HAProxy not installed. Installing..."
+  install_pkg haproxy || fail "HAProxy install failed"
+  ok "HAProxy installed"
+  ${SSH} "sudo systemctl enable haproxy" 2>/dev/null || true
+fi
+
 # ─── Step 5: Bootstrap ───
 info "Running bootstrap (production mode)..."
 BOOTSTRAP_OUT=$(${SSH} "sudo ${BINARY_PATH} bootstrap --production" 2>&1) || {
@@ -150,28 +190,31 @@ if [ -z "${ADMIN_PASSWORD}" ]; then
   ADMIN_PASSWORD=$(echo "${BOOTSTRAP_OUT}" | grep 'Password:' | tail -1 | awk '{print $NF}' || echo "")
 fi
 
-# ─── Step 9: Check Caddy ───
-info "Checking Caddy status..."
-CADDY_RUNNING=false
-if ${SSH} "systemctl is-active caddy 2>/dev/null" 2>/dev/null; then
-  ok "Caddy is running — panel accessible on port 80 ✓"
-  CADDY_RUNNING=true
-elif ${SSH} "command -v caddy &>/dev/null" 2>/dev/null; then
-  warn "Caddy installed but not running. Starting..."
-  ${SSH} "sudo systemctl enable --now caddy" 2>/dev/null || true
-  sleep 1
-  if ${SSH} "systemctl is-active caddy 2>/dev/null" 2>/dev/null; then
-    ok "Caddy started — panel accessible on port 80 ✓"
-    CADDY_RUNNING=true
+# ─── Step 9: Verify middleware (Caddy + HAProxy) ───
+verify_svc() {
+  local svc="$1"
+  local desc="$2"
+  if ${SSH} "systemctl is-active ${svc} 2>/dev/null" 2>/dev/null; then
+    ok "${svc} is running — ${desc} ✓"
+    return 0
+  else
+    warn "${svc} not running. Attempting to start..."
+    ${SSH} "sudo systemctl enable --now ${svc}" 2>/dev/null || true
+    sleep 1
+    if ${SSH} "systemctl is-active ${svc} 2>/dev/null" 2>/dev/null; then
+      ok "${svc} started — ${desc} ✓"
+      return 0
+    else
+      warn "${svc} failed — check: ${SSH} 'sudo journalctl -u ${svc} --no-pager -n 20'"
+      return 1
+    fi
   fi
-fi
+}
 
-if [ "${CADDY_RUNNING}" = false ]; then
-  warn "Caddy not running — panel on port ${PANEL_PORT} (no port 80 access)"
-  echo "  Install Caddy:"
-  echo "    ${SSH} 'sudo apt-get install -y caddy'"
-  echo "    ${SSH} 'sudo systemctl enable --now caddy'"
-fi
+CADDY_RUNNING=false
+HAPROXY_RUNNING=false
+verify_svc "caddy" "panel on port 80" && CADDY_RUNNING=true
+verify_svc "haproxy" "SNI routing on port 443" && HAPROXY_RUNNING=true
 
 # ─── Step 10: Verify API ───
 info "Verifying API..."
@@ -191,7 +234,7 @@ echo -e "${BOLD}================================================${NC}"
 echo ""
 echo -e "  ${BOLD}Panel URL:${NC}    http://${TARGET_IP}"
 if [ "${CADDY_RUNNING}" = false ]; then
-  echo -e "  ${BOLD}Panel URL:${NC}    http://${TARGET_IP}:${PANEL_PORT} (direct)"
+  echo -e "  ${BOLD}Panel URL:${NC}    http://${TARGET_IP}:${PANEL_PORT} (direct, Caddy not running)"
 fi
 echo -e "  ${BOLD}Username:${NC}     admin"
 if [ -n "${ADMIN_PASSWORD}" ]; then
@@ -199,6 +242,11 @@ if [ -n "${ADMIN_PASSWORD}" ]; then
 else
   echo -e "  ${BOLD}Password:${NC}     Run: ${SSH} 'sudo journalctl -u aegis --no-pager | grep Password'"
 fi
+echo ""
+echo -e "  ${BOLD}Services:${NC}"
+echo -e "    Caddy  :80   $([ "${CADDY_RUNNING}" = true ] && echo '✓ running' || echo '✗ stopped')"
+echo -e "    HAProxy :443  $([ "${HAPROXY_RUNNING}" = true ] && echo '✓ running (SNI routing)' || echo '✗ stopped')"
+echo -e "    Aegis  :7380  ✓ (internal API)"
 echo ""
 echo -e "  ${BOLD}Next steps:${NC}"
 echo "  1. Open the panel URL in your browser"
@@ -208,6 +256,6 @@ echo "  4. Go to「推送配置」to apply and deploy"
 echo ""
 echo -e "  ${BOLD}Manage:${NC}"
 echo "    ssh ${SSH_TARGET}"
-echo "    sudo systemctl status aegis"
+echo "    sudo systemctl status aegis caddy haproxy"
 echo "    sudo journalctl -u aegis -f"
 echo ""

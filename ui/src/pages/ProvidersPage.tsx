@@ -1,72 +1,69 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+/**
+ * Providers — 中间件概览 (v1.8K)
+ *
+ * 简化版 — 快速状态一览。完整管理功能请至「中间件」页面。
+ */
+
+import { useQuery } from '@tanstack/react-query';
 import { providerApi } from '@/lib/api-bridge';
-import { PageHeader, Card, Btn, Alert, StatusBadge } from '@/components/shared';
-import { useToast } from '@/components/shared/Toast';
+import { useNavigate } from 'react-router-dom';
+import { PageHeader, Card, Btn } from '@/components/shared';
 
 export default function ProvidersPage() {
-  const toast = useToast();
-  const queryClient = useQueryClient();
+  const nav = useNavigate();
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['providers'],
-    queryFn: () => providerApi.list(),
+  const { data, isLoading } = useQuery({
+    queryKey: ['provider-diagnostics'],
+    queryFn: () => providerApi.diagnoseAll(),
+    refetchInterval: 120_000,
   });
 
-  async function doDiagnose() {
-    try {
-      const res = await providerApi.diagnoseAll();
-      toast(res.healthy ? '所有 Provider 正常' : `${res.issues} 个问题`);
-      queryClient.invalidateQueries({ queryKey: ['providers'] });
-    } catch (e: any) { toast(e.message, 'error'); }
-  }
-
-  if (isLoading) return <div className="text-center py-10 text-a-muted font-mono text-sm">加载中...</div>;
-  if (error) return <Alert type="err">加载失败: {(error as any).message}</Alert>;
-
-  const providers = data?.providers || [];
+  const diagnostics = (data as any)?.diagnostics || [];
+  const healthy = (data as any)?.healthy ?? true;
 
   return (
     <div>
-      <PageHeader title="提供商" helpKey="providers" sub={`${providers.length} 个`} actions={
-        <Btn primary onClick={doDiagnose}>重新诊断</Btn>
-      } />
+      <PageHeader
+        title="中间件状态"
+        helpKey="providers"
+        sub={healthy ? '全部正常' : `${(data as any)?.issues || 0} 个问题`}
+        actions={
+          <Btn primary onClick={() => nav('/middleware')}>完整管理 →</Btn>
+        }
+      />
 
-      {providers.map((p: any) => (
-        <Card key={p.name || p.provider} title={p.name || p.provider} className="mb-4">
-          <div className="p-[18px] grid grid-cols-3 gap-3">
-            {['installed', 'version', 'service_running', 'config_valid', 'listener_ok', 'runtime_verify_ok'].map((k) => {
-              const labels: Record<string, string> = {
-                installed: '已安装',
-                version: '版本',
-                service_running: '服务运行',
-                config_valid: '配置有效',
-                listener_ok: '监听正常',
-                runtime_verify_ok: '运行时验证',
-              };
-              return (
-                <div key={k}>
-                  <div className="text-[11px] text-a-muted uppercase tracking-[0.06em]">{labels[k] || k}</div>
-                  <div className="text-sm mt-0.5">
-                    {typeof p[k] === 'boolean'
-                      ? <StatusBadge status={p[k] ? 'ok' : 'error'} />
-                      : p[k] || '—'}
+      {isLoading ? (
+        <div className="text-center py-10 text-a-muted font-mono text-sm">加载中…</div>
+      ) : (
+        <div className="space-y-3">
+          {diagnostics.map((d: any) => (
+            <Card
+              key={d.provider}
+              title={d.provider?.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+            >
+              <div
+                className="p-4 flex items-center gap-4 cursor-pointer hover:bg-a-bg/50"
+                onClick={() => nav('/middleware')}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full ${
+                  d.service_running ? 'bg-[#4cd964]' : d.installed ? 'bg-[#e8b830]' : 'bg-a-muted'
+                }`} />
+                <div className="flex-1">
+                  <div className="text-sm">
+                    {d.service_running ? '运行中' : d.installed ? '已安装 · 未运行' : '未安装'}
+                  </div>
+                  <div className="text-[10px] text-a-muted mt-0.5">
+                    {d.version} · {d.config_path}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-          {p.last_error_message && (
-            <div className="px-[18px] pb-[18px]">
-              <div className="px-3 py-2 rounded-a-sm text-xs border bg-[#ff5c72]/10 text-[#ff5c72] border-[#ff5c72]/20">
-                {p.last_error_code}: {p.last_error_message}
+                <span className="text-a-muted text-xs">详情 →</span>
               </div>
-            </div>
+            </Card>
+          ))}
+          {diagnostics.length === 0 && (
+            <div className="text-center py-10 text-a-muted text-xs">暂无数据 · 前往 <a href="/middleware" className="text-a-accent hover:underline">中间件管理</a></div>
           )}
-        </Card>
-      ))}
-
-      {providers.length === 0 && (
-        <div className="text-center py-10 text-a-muted text-xs">暂无 Provider 数据</div>
+        </div>
       )}
     </div>
   );
