@@ -129,9 +129,17 @@ type HeartbeatRequest struct {
 
 // HeartbeatResponse is the response for heartbeat.
 type HeartbeatResponse struct {
-	NodeID            string `json:"node_id"`
-	Status            string `json:"status"`
-	LatestRevision    int    `json:"latest_revision"`
-	DesiredStateAvail bool   `json:"desired_state_available"`
-	NodeIsOutdated    bool   `json:"node_is_outdated,omitempty"`
+	NodeID            string      `json:"node_id"`
+	Status            string      `json:"status"`
+	LatestRevision    int         `json:"latest_revision"`
+	DesiredStateAvail bool        `json:"desired_state_available"`
+	NodeIsOutdated    bool        `json:"node_is_outdated,omitempty"`
+	UpdateAvailable   *UpdateInfo `json:"update_available,omitempty"`
+}
+
+// UpdateInfo contains binary update details for node self-update.
+type UpdateInfo struct {
+	Version  string `json:"version"`
+	Checksum string `json:"checksum"`
+	Size     int64  `json:"size"`
 }

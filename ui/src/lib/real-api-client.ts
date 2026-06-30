@@ -337,6 +337,15 @@ export const nodeApi = {
 
   generateRoutingTable: (id: string): Promise<any> =>
     post(`/api/admin/v1/nodes/${id}/routing-table/generate`),
+
+  triggerUpdate: (id: string): Promise<any> =>
+    post(`/api/admin/v1/nodes/${id}/update`),
+
+  binaryInfo: (): Promise<any> =>
+    get('/api/admin/v1/system/binary-info'),
+
+  pendingUpdates: (): Promise<any> =>
+    get('/api/admin/v1/system/pending-updates'),
 };
 
 export async function fetchNodes(): Promise<Node[]> {

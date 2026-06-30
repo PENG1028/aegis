@@ -176,12 +176,23 @@ func (h *Handlers) NodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 	// v1.8C-2: Revision hint from desired state
 	latestRev, desiredAvail, outdated, _ := h.NodeStateSvc.CompareNodeRevision(req.NodeID, req.AppliedRevision)
 
+	// v1.8L: Check for pending binary update
+	var updateAvail *nodeauth.UpdateInfo
+	if ui := GetNodeUpdatePending(req.NodeID); ui != nil {
+		updateAvail = &nodeauth.UpdateInfo{
+			Version:  ui.Version,
+			Checksum: ui.Checksum,
+			Size:     ui.Size,
+		}
+	}
+
 	writeJSON(w, http.StatusOK, nodeauth.HeartbeatResponse{
 		NodeID:            req.NodeID,
 		Status:            "accepted",
 		LatestRevision:    latestRev,
 		DesiredStateAvail: desiredAvail,
 		NodeIsOutdated:    outdated,
+		UpdateAvailable:   updateAvail,
 	})
 }
 

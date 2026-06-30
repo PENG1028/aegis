@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { fetchNodes } from '@/lib/api-bridge';
+import { fetchNodes, nodeApi } from '@/lib/api-bridge';
 import { PageHeader, Card, DataTable, StatusBadge, CapabilityBadge, Btn } from '@/components/shared';
 import type { DataTableColumn } from '@/components/shared';
 import type { Node } from '@/types';
 import { fmtRel } from '@/lib/utils';
+import { useToast } from '@/components/shared/Toast';
 import DeployNodeDialog from '@/components/deploy/DeployNodeDialog';
 
 const columns: DataTableColumn<Node>[] = [
@@ -49,6 +50,15 @@ const columns: DataTableColumn<Node>[] = [
     render: (row) => <StatusBadge status={row.sync_status} />,
   },
   {
+    key: 'agent_version',
+    label: '版本',
+    mono: true,
+    muted: true,
+    render: (row) => (
+      <span className="text-[10px] font-mono">{row.agent_version || '—'}</span>
+    ),
+  },
+  {
     key: 'last_heartbeat_at',
     label: '心跳',
     mono: true,
@@ -73,11 +83,30 @@ const columns: DataTableColumn<Node>[] = [
 
 export default function NodesPage() {
   const navigate = useNavigate();
+  const toast = useToast();
+  const queryClient = useQueryClient();
   const [showDeploy, setShowDeploy] = useState(false);
+  const [updatingNodes, setUpdatingNodes] = useState<Set<string>>(new Set());
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['nodes'],
     queryFn: fetchNodes,
   });
+
+  async function handleUpdateNode(nodeId: string, nodeName: string) {
+    setUpdatingNodes((prev) => new Set(prev).add(nodeId));
+    try {
+      const res = await nodeApi.triggerUpdate(nodeId);
+      toast(`已触发 ${nodeName} 更新 — 节点将在下次心跳时自动更新`);
+      queryClient.invalidateQueries({ queryKey: ['nodes'] });
+    } catch (e: any) {
+      toast(`更新失败: ${e.message}`, 'error');
+    }
+    setUpdatingNodes((prev) => {
+      const next = new Set(prev);
+      next.delete(nodeId);
+      return next;
+    });
+  }
 
   // Expose for detail page navigation
   (window as any)._navigate = navigate;

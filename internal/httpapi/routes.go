@@ -229,7 +229,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// Node API (no admin auth — uses node credential auth)
 	mux.HandleFunc("POST /api/node/v1/join", h.NodeJoin)
 	mux.HandleFunc("POST /api/node/v1/heartbeat", h.NodeHeartbeat)
-		mux.HandleFunc("GET /api/node/v1/gateway-link-token/{gatewayLinkID}", h.NodeGatewayLinkToken)
+	mux.HandleFunc("GET /api/node/v1/binary", h.ServeBinary)
+	mux.HandleFunc("GET /api/node/v1/gateway-link-token/{gatewayLinkID}", h.NodeGatewayLinkToken)
 
 	// Admin Node Deploy (one-click remote setup)
 	mux.HandleFunc("POST /api/admin/v1/nodes/deploy", h.AdminDeployNode)
@@ -296,6 +297,12 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// v1.8H Transparent Proxy (IP:port interception rules)
 	mux.HandleFunc("GET /api/admin/v1/transparent/rules", h.AdminListTransparentRules)
 	mux.HandleFunc("DELETE /api/admin/v1/transparent/rules/{id}", h.AdminDeleteTransparentRule)
+
+	// v1.8L Node binary update
+	mux.HandleFunc("POST /api/admin/v1/system/upload-binary", h.UploadBinary)
+	mux.HandleFunc("GET /api/admin/v1/system/binary-info", h.BinaryInfo)
+	mux.HandleFunc("GET /api/admin/v1/system/pending-updates", h.PendingUpdatesList)
+	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/update", h.TriggerNodeUpdate)
 
 	// v1.8G System Health & Diagnostics
 	mux.HandleFunc("GET /api/admin/v1/ports/scan", h.PortScan)
