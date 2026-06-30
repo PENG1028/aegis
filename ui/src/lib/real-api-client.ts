@@ -1062,6 +1062,10 @@ export async function revokeJoinToken(id: string): Promise<void> {
 
 // ─── Settings ───
 
+export async function updateSettings(data: Record<string, any>): Promise<Record<string, any>> {
+  return patch('/api/settings', data);
+}
+
 export async function fetchSettings(): Promise<Record<string, any>> {
   const [settings, statusRes] = await Promise.all([
     get<any>('/api/settings').catch(() => ({})),

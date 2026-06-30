@@ -187,6 +187,24 @@ export async function fetchSettings(): Promise<Record<string, any>> {
   return mock(mockSettings);
 }
 
+export async function updateSettings(data: Record<string, any>): Promise<Record<string, any>> {
+  await delay(800);
+  return {
+    status: 'updated',
+    message: 'settings saved',
+    gateway_domain: data?.managed_domain?.gateway_domain || '',
+    config_path: '/etc/aegis/config.yaml',
+    caddyfile_regenerated: true,
+    caddy_reloaded: true,
+    panel_url: data?.managed_domain?.gateway_domain
+      ? `https://${data.managed_domain.gateway_domain}`
+      : 'http://<server-ip>',
+    tls: data?.managed_domain?.gateway_domain
+      ? "automatic (Let's Encrypt via Caddy)"
+      : 'disabled (no domain configured)',
+  };
+}
+
 // ─── Transparent Proxy (v1.8F) ───
 export const transparentApi = {
   listRules: async () => {

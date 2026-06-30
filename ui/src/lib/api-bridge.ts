@@ -43,6 +43,7 @@ import {
   createJoinToken as mockCreateJoinToken,
   revokeJoinToken as mockRevokeJoinToken,
   fetchSettings as mockFetchSettings,
+  updateSettings as mockUpdateSettings,
 } from './api-client';
 
 // ─── Real Client ───
@@ -71,6 +72,7 @@ import {
   createJoinToken as realCreateJoinToken,
   revokeJoinToken as realRevokeJoinToken,
   fetchSettings as realFetchSettings,
+  updateSettings as realUpdateSettings,
   auth as realAuth,
   system as realSystem,
   safetyApi,
@@ -122,6 +124,7 @@ export const fetchJoinTokens: typeof realFetchJoinTokens = useMock ? mockFetchJo
 export const createJoinToken: typeof realCreateJoinToken = useMock ? mockCreateJoinToken : realCreateJoinToken;
 export const revokeJoinToken: typeof realRevokeJoinToken = useMock ? mockRevokeJoinToken : realRevokeJoinToken;
 export const fetchSettings: typeof realFetchSettings = useMock ? mockFetchSettings : realFetchSettings;
+export const updateSettings: typeof realUpdateSettings = useMock ? mockUpdateSettings : realUpdateSettings;
 export const fetchListeners: typeof realFetchListeners = useMock
   ? async () => {
       const g = await import('@/mocks/gateways');
