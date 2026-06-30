@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -176,9 +178,15 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		caddyContent := h.Config.PanelCaddyfile()
-		if err := os.WriteFile(caddyfilePath, []byte(caddyContent), 0644); err != nil {
+		if err := os.WriteFile(caddyfilePath, []byte(caddyContent), 0640); err != nil {
 			result["caddyfile_error"] = err.Error()
 		} else {
+				os.Chmod(caddyfilePath, 0640)
+				if grp, err := user.LookupGroup("caddy"); err == nil {
+					if gid, err := strconv.Atoi(grp.Gid); err == nil {
+						os.Chown(caddyfilePath, 0, gid)
+					}
+				}
 			result["caddyfile_regenerated"] = true
 			result["caddyfile_path"] = caddyfilePath
 
