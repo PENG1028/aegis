@@ -38,16 +38,30 @@ func (h *Handlers) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set session cookie
-	adminauth.SetSessionCookie(w, result.SessionToken, result.ExpiresAt.Format(time.RFC3339), h.Config.Server.SessionSecure)
+	// Session cookie Secure flag: true only when the request arrived over TLS.
+	// Dynamic detection avoids the bug where Secure=true on HTTP breaks login
+	// (browser refuses to send Secure cookies over plaintext).
+	//
+	// When Caddy terminates TLS, it sets X-Forwarded-Proto: https so Aegis
+	// (which listens on 127.0.0.1:7380 without TLS) knows the original request
+	// was encrypted end-to-end from the browser to Caddy.
+	isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	adminauth.SetSessionCookie(w, result.SessionToken, result.ExpiresAt.Format(time.RFC3339), isSecure)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"user": map[string]interface{}{
 			"id":       result.User.ID,
 			"username": result.User.Username,
 		},
 		"expires_at": result.ExpiresAt.Format(time.RFC3339),
-	})
+	}
+
+	// Warn if login happened over plain HTTP — credentials were exposed.
+	if !isSecure {
+		resp["warning"] = "Credentials sent over HTTP (not encrypted). Configure a domain in Settings to enable HTTPS."
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // AdminLogout handles POST /api/admin/v1/auth/logout
