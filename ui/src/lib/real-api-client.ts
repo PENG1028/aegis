@@ -1070,53 +1070,12 @@ export async function revokeJoinToken(id: string): Promise<void> {
 // ─── Settings ───
 
 export async function updateSettings(data: Record<string, any>): Promise<Record<string, any>> {
-  return patch('/api/settings', data);
+  return patch('/api/admin/v1/settings', data);
 }
 
 export async function fetchSettings(): Promise<Record<string, any>> {
-  const [settings, statusRes] = await Promise.all([
-    get<any>('/api/settings').catch(() => ({})),
-    system.status().catch(() => null),
-  ]);
-
-  return {
-    admin: {
-      username: 'admin',
-      session_timeout: '24h',
-      auth_mode: 'password + cookie',
-    },
-    node_identity: {
-      current_node_id: '—',
-      private_ip: '—',
-      public_ip: '—',
-    },
-    gateway_defaults: {
-      default_listener: '0.0.0.0:80',
-      default_provider: statusRes?.proxy?.provider || 'caddy',
-      gateway_mode: 'edge_mux + caddy',
-    },
-    relay_defaults: {
-      default_mode: 'public_gateway',
-      max_hop: 1,
-      target_suppressed: true,
-    },
-    safety_defaults: {
-      warn_mode: 'log only',
-      block_mode: 'disabled',
-      auto_detect_public_target: true,
-    },
-    logging: {
-      log_level: 'info',
-      operation_log_retention: '30d',
-      audit_log_retention: '90d',
-    },
-    secret_key: {
-      key_path: '/etc/aegis/secret.key',
-      key_format: 'PEM',
-      key_rotation: 'manual',
-    },
-    ...settings,
-  };
+  const settings = await get<any>('/api/settings');
+  return settings;
 }
 
 // ─── DNS (v1.8E) ───
@@ -1365,7 +1324,7 @@ export const adminApi = {
 
   // Diagnostics
   exportDiagnostics: (): Promise<any> =>
-    get('/api/diagnostics/export'),
+    get('/api/admin/v1/diagnostics/export'),
 
   // v1.8D Import — Caddyfile
   importCaddyPreview: (): Promise<any> =>

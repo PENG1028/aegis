@@ -74,7 +74,7 @@ const columns: DataTableColumn<Node>[] = [
 export default function NodesPage() {
   const navigate = useNavigate();
   const [showDeploy, setShowDeploy] = useState(false);
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['nodes'],
     queryFn: fetchNodes,
   });
@@ -87,7 +87,7 @@ export default function NodesPage() {
   }
 
   if (error) {
-    return <div className="px-4 py-3 rounded-a-md text-xs border bg-[#ff5c72]/10 text-[#ff5c72] border-[#ff5c72]/20">加载失败: {error.message}</div>;
+    return <div className="px-4 py-3 rounded-a-md text-xs border bg-[#ff5c72]/10 text-[#ff5c72] border-[#ff5c72]/20">加载失败: {error.message} <Btn sm className="ml-2" onClick={() => refetch()}>重试</Btn></div>;
   }
 
   return (

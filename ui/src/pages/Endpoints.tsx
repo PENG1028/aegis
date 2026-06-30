@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchEndpoints } from '@/lib/api-bridge';
-import { PageHeader, Card, DataTable, StatusBadge } from '@/components/shared';
+import { PageHeader, Card, DataTable, StatusBadge, Btn } from '@/components/shared';
 import type { DataTableColumn } from '@/components/shared';
 import type { Endpoint } from '@/types';
 import { fmtRel } from '@/lib/utils';
@@ -48,13 +48,13 @@ const columns: DataTableColumn<Endpoint>[] = [
 ];
 
 export default function EndpointsPage() {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['endpoints'],
     queryFn: fetchEndpoints,
   });
 
   if (isLoading) return <div className="text-center py-10 text-a-muted font-mono text-sm">加载中...</div>;
-  if (error) return <div className="px-4 py-3 rounded-a-md text-xs border bg-[#ff5c72]/10 text-[#ff5c72] border-[#ff5c72]/20">加载失败: {error.message}</div>;
+  if (error) return <div className="px-4 py-3 rounded-a-md text-xs border bg-[#ff5c72]/10 text-[#ff5c72] border-[#ff5c72]/20">加载失败: {error.message} <Btn sm className="ml-2" onClick={() => refetch()}>重试</Btn></div>;
 
   return (
     <div>

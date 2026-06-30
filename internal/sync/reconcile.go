@@ -41,6 +41,11 @@ func NewReconcileLoop(
 // 10s fast sync → 60s partial → 300s full reconciliation.
 func (rl *ReconcileLoop) Start() {
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("[reconcile] panic in reconcile loop: %v\n", r)
+			}
+		}()
 		fastTicker := time.NewTicker(rl.fastInterval)
 		fullTicker := time.NewTicker(rl.fullInterval)
 		defer fastTicker.Stop()

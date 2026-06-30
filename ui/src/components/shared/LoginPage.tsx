@@ -10,8 +10,8 @@ import { useAuth } from '@/lib/auth-context';
 
 export default function LoginPage() {
   const { login, loading, error } = useAuth();
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

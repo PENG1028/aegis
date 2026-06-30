@@ -73,7 +73,7 @@ func (h *DNSHandler) DNSStatus(w http.ResponseWriter, r *http.Request) {
 // DNSEnable starts the DNS server.
 func (h *DNSHandler) DNSEnable(w http.ResponseWriter, r *http.Request) {
 	if h.DNSMgmt == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "DNS management not initialized"})
+		writeError(w, http.StatusInternalServerError, "DNS management not initialized")
 		return
 	}
 	if err := h.DNSMgmt.Enable(); err != nil {
@@ -87,7 +87,7 @@ func (h *DNSHandler) DNSEnable(w http.ResponseWriter, r *http.Request) {
 // DNSDisable stops the DNS server.
 func (h *DNSHandler) DNSDisable(w http.ResponseWriter, r *http.Request) {
 	if h.DNSMgmt == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "DNS management not initialized"})
+		writeError(w, http.StatusInternalServerError, "DNS management not initialized")
 		return
 	}
 	if err := h.DNSMgmt.Disable(); err != nil {

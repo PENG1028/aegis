@@ -77,4 +77,6 @@ type Services struct {
 	DNSMgmt         *dns.Manager            // v1.8E DNS resolver
 	TransparentMgr  *transparent.Manager    // v1.8H transparent IP:port proxy
 	CredentialSvc   *credential.Service     // v1.8K encrypted connection strings
+	Version         string                  // build-injected version
+	BuildTime       string                  // build-injected timestamp
 }

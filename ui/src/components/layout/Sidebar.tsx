@@ -163,7 +163,7 @@ export function Sidebar({ pendingApply }: { pendingApply?: boolean }) {
           <path d="M8 12h8M12 8v8" />
         </svg>
         <span className="font-mono text-sm font-bold tracking-[0.02em]">Aegis</span>
-        <small className="font-mono text-[10px] text-a-muted ml-auto">v1.8J</small>
+        <small className="font-mono text-[10px] text-a-muted ml-auto">v1.8K</small>
       </div>
 
       {/* Navigation */}

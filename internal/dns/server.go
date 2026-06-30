@@ -84,6 +84,11 @@ func (s *Server) Start() error {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[dns] panic in server loop: %v", r)
+			}
+		}()
 		s.serve()
 	}()
 

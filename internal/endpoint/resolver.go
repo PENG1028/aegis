@@ -84,10 +84,16 @@ func (r *Resolver) ResolveWithResult(ctx context.Context, serviceID string) *Res
 }
 
 // checkTCP performs a TCP connect check with 2s timeout.
+// For Unix socket addresses, the check is skipped (not applicable).
 func (r *Resolver) checkTCP(address string) (bool, string) {
 	host, port, err := parseHostPort(address)
 	if err != nil {
 		return false, fmt.Sprintf("invalid address: %v", err)
+	}
+
+	// Unix socket paths — skip TCP check (not applicable)
+	if strings.HasPrefix(host, "/") || strings.HasPrefix(address, "unix://") {
+		return true, "Unix socket (skip TCP check)"
 	}
 
 	target := net.JoinHostPort(host, port)

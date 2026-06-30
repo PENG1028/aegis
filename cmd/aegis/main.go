@@ -1,4 +1,5 @@
 package main
+
 import (
 	"aegis/internal/id"
 	"context"
@@ -47,6 +48,15 @@ import (
 	"aegis/internal/transparent"
 	cli "aegis/internal/cli"
 )
+
+// Build-time variables injected by ldflags:
+//
+//	go build -ldflags="-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
+)
+
 func main() {
 	configPath := ""
 	for i, arg := range os.Args {
@@ -357,6 +367,8 @@ func main() {
 		DNSMgmt:         dnsMgmt,
 		TransparentMgr:  transparentMgr,
 		CredentialSvc:   credSvc,
+		Version:         Version,
+		BuildTime:       BuildTime,
 	}
 	cliSvcs := &cli.Services{
 		Config:        cfg,

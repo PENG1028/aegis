@@ -6,7 +6,7 @@ import { PageHeader, Card, StatCard, TabBar, Btn, Alert, StatusBadge } from '@/c
 export default function SafetyPage() {
   const [tab, setTab] = useState('routes');
 
-  const { data: safety, isLoading, error } = useQuery({
+  const { data: safety, isLoading, error, refetch } = useQuery({
     queryKey: ['route-safety'],
     queryFn: () => safetyApi.checkAllRoutes(),
     refetchOnMount: true,
@@ -15,7 +15,7 @@ export default function SafetyPage() {
   return (
     <div>
       <PageHeader title="路由安全" helpKey="safety" sub="安全检查与路径评估" actions={
-        <Btn sm onClick={() => safetyApi.traceEgress('', '')}>新检测</Btn>
+        <Btn sm onClick={() => refetch()}>重新检查</Btn>
       } />
 
       {isLoading && <div className="text-center py-10 text-a-muted font-mono text-sm">加载中...</div>}

@@ -84,16 +84,6 @@ func Parse(raw string) (*Addr, error) {
 	return nil, fmt.Errorf("cannot parse address: %s (use host:port, tcp://host:port, or unix:///path)", raw)
 }
 
-// MustParse is like Parse but panics on error. For use in tests and
-// compile-time constants only.
-func MustParse(raw string) *Addr {
-	a, err := Parse(raw)
-	if err != nil {
-		panic(err)
-	}
-	return a
-}
-
 // DialString returns the string for net.Dial or net.Listen.
 // For TCP/UDP: "host:port". For Unix: the path.
 func (a *Addr) DialString() string {
