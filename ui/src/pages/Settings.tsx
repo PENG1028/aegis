@@ -18,8 +18,9 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const [domain, setDomain] = useState('');
   const [email, setEmail] = useState('');
-  const [tlsCertFile, setTlsCertFile] = useState('');
-  const [tlsKeyFile, setTlsKeyFile] = useState('');
+  const [tlsCertContent, setTlsCertContent] = useState('');
+  const [tlsKeyContent, setTlsKeyContent] = useState('');
+  const [hasExistingCert, setHasExistingCert] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [domainLoaded, setDomainLoaded] = useState(false);
@@ -31,8 +32,7 @@ export default function SettingsPage() {
       if (!domainLoaded) {
         setDomain(s?.managed_domain?.gateway_domain || '');
         setEmail(s?.proxy?.email || '');
-        setTlsCertFile(s?.proxy?.tls_cert_file || '');
-        setTlsKeyFile(s?.proxy?.tls_key_file || '');
+        setHasExistingCert(!!(s?.proxy?.tls_cert_file));
         setDomainLoaded(true);
       }
       return s;
@@ -43,15 +43,26 @@ export default function SettingsPage() {
     setSaving(true);
     setResult(null);
     try {
+      const proxyData: Record<string, string> = { email: email.trim() };
+
+      // If user pasted content, send it. Backend saves to /etc/aegis/certs/.
+      if (tlsCertContent.trim()) {
+        proxyData['tls_cert_content'] = tlsCertContent.trim();
+      }
+      if (tlsKeyContent.trim()) {
+        proxyData['tls_key_content'] = tlsKeyContent.trim();
+      }
+
       const res = await updateSettings({
         managed_domain: { gateway_domain: domain.trim() },
-        proxy: {
-          email: email.trim(),
-          tls_cert_file: tlsCertFile.trim(),
-          tls_key_file: tlsKeyFile.trim(),
-        },
+        proxy: proxyData,
       });
       setResult(res);
+      if (tlsCertContent.trim()) {
+        setHasExistingCert(true);
+        setTlsCertContent('');
+        setTlsKeyContent('');
+      }
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       toast(res.panel_url ? `面板地址: ${res.panel_url}` : '设置已保存');
     } catch (e: any) {
@@ -131,29 +142,45 @@ export default function SettingsPage() {
             <details className="text-xs">
               <summary className="text-a-muted cursor-pointer hover:text-a-fg py-1">
                 自定义 TLS 证书（如 Cloudflare Origin CA）…
+                {hasExistingCert && <span className="ml-2 text-[#4cd964]">（已配置 ✓）</span>}
               </summary>
               <div className="mt-2 space-y-3 pl-2 border-l-2 border-a-border/30">
+                {hasExistingCert && (
+                  <div className="text-[10px] text-[#4cd964] mb-1">
+                    ✓ 已有自定义证书。粘贴新内容将覆盖旧证书。留空并保存可清除证书恢复 Let's Encrypt。
+                  </div>
+                )}
                 <div>
-                  <label className="block text-xs font-medium text-a-muted mb-1">证书文件路径 (.pem)</label>
-                  <input
-                    className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
-                    value={tlsCertFile}
-                    onChange={(e) => setTlsCertFile(e.target.value)}
-                    placeholder="/etc/ssl/certs/panel.example.com.pem"
+                  <label className="block text-xs font-medium text-a-muted mb-1">
+                    证书内容（PEM 格式，直接粘贴）
+                  </label>
+                  <textarea
+                    className="w-full font-mono text-[11px] px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent resize-y"
+                    rows={5}
+                    value={tlsCertContent}
+                    onChange={(e) => setTlsCertContent(e.target.value)}
+                    placeholder="-----BEGIN CERTIFICATE-----
+MIIE...（从 Cloudflare 或其他 CA 复制的证书内容）
+-----END CERTIFICATE-----"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-a-muted mb-1">私钥文件路径 (.pem)</label>
-                  <input
-                    className="w-full font-mono text-sm px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
-                    value={tlsKeyFile}
-                    onChange={(e) => setTlsKeyFile(e.target.value)}
-                    placeholder="/etc/ssl/private/panel.example.com.key"
+                  <label className="block text-xs font-medium text-a-muted mb-1">
+                    私钥内容（PEM 格式，直接粘贴）
+                  </label>
+                  <textarea
+                    className="w-full font-mono text-[11px] px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent resize-y"
+                    rows={5}
+                    value={tlsKeyContent}
+                    onChange={(e) => setTlsKeyContent(e.target.value)}
+                    placeholder="-----BEGIN PRIVATE KEY-----
+MIIE...（从 Cloudflare 或其他 CA 复制的私钥内容）
+-----END PRIVATE KEY-----"
                   />
                 </div>
                 <div className="text-[10px] text-a-muted">
-                  设置后 Caddy 将使用此证书替代 Let's Encrypt。适用于 Cloudflare Origin CA 等场景。
-                  清空两个路径即可恢复 Let's Encrypt。
+                  粘贴后点击保存，Aegis 自动存入 /etc/aegis/certs/ 并配置 Caddy。
+                  留空两个框点击保存 = 清除自定义证书，恢复 Let's Encrypt。
                 </div>
               </div>
             </details>

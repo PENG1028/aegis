@@ -73,7 +73,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ─── proxy.email / tls_cert_file / tls_key_file ───
+	// ─── proxy.email / tls cert/key (content or file path) ───
 	if proxyRaw, ok := req["proxy"]; ok {
 		proxy, ok := proxyRaw.(map[string]interface{})
 		if !ok {
@@ -92,22 +92,56 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 				changed = true
 			}
 		}
-		if certFile, ok := proxy["tls_cert_file"]; ok {
+
+		// TLS cert: accept content (paste) or file path.
+		// Content takes priority — it gets saved to /etc/aegis/certs/ automatically.
+		if certContent, ok := proxy["tls_cert_content"]; ok {
+			s, _ := certContent.(string)
+			s = strings.TrimSpace(s)
+			if s != "" {
+				certsDir := filepath.Join(h.Config.Runtime.ConfigDir, "certs")
+				os.MkdirAll(certsDir, 0700)
+				certPath := filepath.Join(certsDir, "panel.crt")
+				if err := os.WriteFile(certPath, []byte(s+"\n"), 0600); err != nil {
+					writeError(w, http.StatusInternalServerError, "save cert: "+err.Error())
+					return
+				}
+				h.Config.Proxy.TlsCertFile = certPath
+				changed = true
+				domainChanged = true
+			}
+		} else if certFile, ok := proxy["tls_cert_file"]; ok {
 			s, _ := certFile.(string)
 			s = strings.TrimSpace(s)
 			if s != h.Config.Proxy.TlsCertFile {
 				h.Config.Proxy.TlsCertFile = s
 				changed = true
-				domainChanged = true // trigger Caddyfile regen
+				domainChanged = true
 			}
 		}
-		if keyFile, ok := proxy["tls_key_file"]; ok {
+
+		if keyContent, ok := proxy["tls_key_content"]; ok {
+			s, _ := keyContent.(string)
+			s = strings.TrimSpace(s)
+			if s != "" {
+				certsDir := filepath.Join(h.Config.Runtime.ConfigDir, "certs")
+				os.MkdirAll(certsDir, 0700)
+				keyPath := filepath.Join(certsDir, "panel.key")
+				if err := os.WriteFile(keyPath, []byte(s+"\n"), 0600); err != nil {
+					writeError(w, http.StatusInternalServerError, "save key: "+err.Error())
+					return
+				}
+				h.Config.Proxy.TlsKeyFile = keyPath
+				changed = true
+				domainChanged = true
+			}
+		} else if keyFile, ok := proxy["tls_key_file"]; ok {
 			s, _ := keyFile.(string)
 			s = strings.TrimSpace(s)
 			if s != h.Config.Proxy.TlsKeyFile {
 				h.Config.Proxy.TlsKeyFile = s
 				changed = true
-				domainChanged = true // trigger Caddyfile regen
+				domainChanged = true
 			}
 		}
 	}
