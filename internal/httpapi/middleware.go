@@ -6,7 +6,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 // Middleware wraps the token auth middleware for the HTTP API.
@@ -41,7 +44,7 @@ func (m *Middleware) CORS(next http.Handler) http.Handler {
 			return
 		}
 
-		allowed := m.isOriginAllowed(origin)
+		allowed := m.isOriginAllowed(origin) || isSameOrigin(origin, r)
 		if allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
@@ -117,6 +120,26 @@ func (m *Middleware) Recovery(next http.Handler) http.Handler {
 }
 
 const ctxKeyRequestID contextKey = "request_id"
+
+// isSameOrigin returns true if the Origin header matches the request's own host.
+// This allows same-origin requests with crossorigin attributes
+// (e.g. <script crossorigin src="/assets/...">) which are common in SPA builds.
+func isSameOrigin(origin string, r *http.Request) bool {
+	host := r.Host
+	// Strip port from host for comparison
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	// Parse origin URL to get its host
+	if u, err := url.Parse(origin); err == nil {
+		originHost := u.Host
+		if h, _, err := net.SplitHostPort(originHost); err == nil {
+			originHost = h
+		}
+		return strings.EqualFold(host, originHost)
+	}
+	return false
+}
 
 // GetRequestID extracts the request ID from context.
 func GetRequestID(r *http.Request) string {
