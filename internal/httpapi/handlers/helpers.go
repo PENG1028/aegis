@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -72,4 +73,66 @@ func decodeJSON(r *http.Request, v interface{}) error {
 		return fmt.Errorf("request body exceeds %d byte limit", maxBodySize)
 	}
 	return nil
+}
+
+// ─── Pagination ───
+
+const (
+	DefaultLimit = 50
+	MaxLimit     = 200
+)
+
+// paginationMeta holds pagination metadata for list responses.
+type paginationMeta struct {
+	Total  int `json:"total"`
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+}
+
+// paginationParams parses limit and offset from query string.
+// Defaults: limit=50, offset=0. Max limit: 200.
+func paginationParams(r *http.Request) (limit, offset int) {
+	limit = DefaultLimit
+	offset = 0
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+			if limit > MaxLimit {
+				limit = MaxLimit
+			}
+		}
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if n, err := strconv.Atoi(o); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+	return
+}
+
+// paginateSlice applies limit/offset to a slice and returns the page.
+func paginateSlice[T any](items []T, limit, offset int) []T {
+	if offset >= len(items) {
+		return []T{}
+	}
+	end := offset + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[offset:end]
+}
+
+// writePaginatedJSON writes a paginated list response.
+// Uses the standard envelope: {"data": [...], "meta": {"total": N, "limit": L, "offset": O}}
+func writePaginatedJSON(w http.ResponseWriter, status int, data interface{}, total, limit, offset int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data": data,
+		"meta": paginationMeta{
+			Total:  total,
+			Limit:  limit,
+			Offset: offset,
+		},
+	})
 }

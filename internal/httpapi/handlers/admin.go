@@ -69,7 +69,10 @@ func (h *Handlers) AdminListNodes(w http.ResponseWriter, r *http.Request) {
 	if nodes == nil {
 		nodes = []node.NodeRecord{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"nodes": nodes, "count": len(nodes)})
+	limit, offset := paginationParams(r)
+	total := len(nodes)
+	page := paginateSlice(nodes, limit, offset)
+	writePaginatedJSON(w, http.StatusOK, page, total, limit, offset)
 }
 
 // AdminListRoutes handles GET /api/admin/v1/routes
@@ -79,7 +82,9 @@ func (h *Handlers) AdminListRoutes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"routes": routes, "count": len(routes)})
+	limit, offset := paginationParams(r)
+	total := len(routes)
+	writePaginatedJSON(w, http.StatusOK, paginateSlice(routes, limit, offset), total, limit, offset)
 }
 
 // AdminListEdgeRules handles GET /api/admin/v1/edge-rules
@@ -89,7 +94,9 @@ func (h *Handlers) AdminListEdgeRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"edge_rules": rules, "count": len(rules)})
+	limit, offset := paginationParams(r)
+	total := len(rules)
+	writePaginatedJSON(w, http.StatusOK, paginateSlice(rules, limit, offset), total, limit, offset)
 }
 
 // AdminListServices handles GET /api/admin/v1/services
@@ -99,7 +106,9 @@ func (h *Handlers) AdminListServices(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"services": services, "count": len(services)})
+	limit, offset := paginationParams(r)
+	total := len(services)
+	writePaginatedJSON(w, http.StatusOK, paginateSlice(services, limit, offset), total, limit, offset)
 }
 
 // AdminListScopes handles GET /api/admin/v1/scopes

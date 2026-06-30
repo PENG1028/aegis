@@ -73,6 +73,12 @@ func newServeCommand(cfg *config.Config, svcs *httpapi.Services) *cobra.Command 
 
 			go func() {
 				<-done
+				fmt.Println("\nShutting down gracefully...")
+				// Stop subsystems first (DNS, backups, reconcile, proxies)
+				if svcs.OnShutdown != nil {
+					svcs.OnShutdown()
+				}
+				// Then stop HTTP server with a deadline
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				srv.Shutdown(ctx)

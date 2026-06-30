@@ -341,7 +341,9 @@ export const nodeApi = {
 
 export async function fetchNodes(): Promise<Node[]> {
   const res = await nodeApi.list();
-  return (res.nodes || []).map(mapNode);
+  // Support paginated {data, meta} and legacy {nodes, count} formats
+  const items = res.data || res.nodes || [];
+  return items.map(mapNode);
 }
 
 export async function fetchNodeDetail(nodeId: string): Promise<NodeDetail> {
@@ -441,7 +443,8 @@ export const gatewayApi = {
 
 export async function fetchGateways(): Promise<Gateway[]> {
   const res = await gatewayApi.list();
-  return (res.gateways || []).map(mapGateway);
+  const items = res.data || res.gateways || [];
+  return items.map(mapGateway);
 }
 
 export async function fetchGatewayDetail(id: string): Promise<GatewayDetail> {
@@ -555,7 +558,8 @@ export const serviceApi = {
 
 export async function fetchServices(): Promise<Service[]> {
   const res = await serviceApi.list();
-  return (res.services || []).map(mapService);
+  const items = res.data || res.services || [];
+  return items.map(mapService);
 }
 
 export async function fetchServiceDetail(id: string): Promise<ServiceDetail> {
@@ -635,7 +639,8 @@ export const routeApi = {
 
 export async function fetchRoutes(): Promise<Route[]> {
   const res = await routeApi.list();
-  return (res.routes || []).map(mapRoute);
+  const items = res.data || res.routes || [];
+  return items.map(mapRoute);
 }
 
 export async function fetchRouteDetail(id: string): Promise<RouteDetail> {
