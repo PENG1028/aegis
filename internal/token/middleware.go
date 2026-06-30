@@ -41,24 +41,34 @@ func NewAuthMiddleware(adminToken string, repo *Repository) *AuthMiddleware {
 	}
 }
 
+// isPublicPath returns true for paths that don't require authentication.
+// These include: login endpoint, node join, relay dispatch, health probes,
+// and the embedded UI (login page + SPA assets).
+func isPublicPath(path, method string) bool {
+	if path == "/api/admin/v1/auth/login" && method == "POST" {
+		return true
+	}
+	if path == "/api/node/v1/join" && method == "POST" {
+		return true
+	}
+	if strings.HasPrefix(path, "/__aegis/") {
+		return true
+	}
+	if path == "/api/healthz" || path == "/api/readyz" {
+		return true
+	}
+	// Embedded UI — must be public so the login form loads
+	if path == "/" || strings.HasPrefix(path, "/assets/") || path == "/favicon.ico" {
+		return true
+	}
+	return false
+}
+
 // Middleware returns an HTTP middleware that validates Bearer tokens.
 func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Login endpoint: bypass both admin session and bearer token check
-		if r.URL.Path == "/api/admin/v1/auth/login" && r.Method == "POST" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Node join endpoint: uses join token in request body, not Bearer token.
-		// New nodes have no credentials yet — the join token proves eligibility.
-		if r.URL.Path == "/api/node/v1/join" && r.Method == "POST" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Relay handler: uses GatewayLink-based auth, not Bearer token
-		if strings.HasPrefix(r.URL.Path, "/__aegis/") {
+		// Public paths: no auth required
+		if isPublicPath(r.URL.Path, r.Method) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -67,8 +77,8 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 		// skip bearer token check and use admin context directly.
 		if adminCtx := adminauth.GetAdminContext(r.Context()); adminCtx != nil {
 			ac := &action.ActionContext{
-				SpaceID:   "",           // admin has no space constraint
-				TokenType: "admin",      // admin type
+				SpaceID:   "",
+				TokenType: "admin",
 				TokenID:   adminCtx.UserID,
 				Actor:     "admin",
 			}
@@ -122,12 +132,10 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 
 // validateTokenWithScopes validates a token and returns its scopes, type, space_id, and token_id.
 func (m *AuthMiddleware) validateTokenWithScopes(token string) (scopes []string, tokenType, spaceID, tokenID string, ok bool) {
-	// Admin token from config: full admin scope
 	if m.adminToken != "" && token == m.adminToken {
 		return []string{ScopeAdminAll}, "admin", "", "", true
 	}
 
-	// Check database tokens
 	if m.tokenRepo != nil {
 		hash := hashToken(token)
 		t, err := m.tokenRepo.FindByTokenHash(hash)
@@ -152,7 +160,6 @@ func isSystemRoute(path string) bool {
 		"/api/settings",
 		"/api/health",
 		"/api/logs",
-		// v1.7W: Block service keys from direct CRUD — use Action API instead
 		"/api/routes",
 		"/api/services",
 		"/api/managed-domains",
@@ -167,7 +174,6 @@ func isSystemRoute(path string) bool {
 	}
 	return false
 }
-
 
 // extractBearerToken extracts the Bearer token from an Authorization header.
 func extractBearerToken(r *http.Request) string {
