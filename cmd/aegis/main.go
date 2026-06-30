@@ -404,6 +404,8 @@ func main() {
 		RelaySvc:       relaySvc,
 		SafetySvc:      safetySvc,
 		TransparentMgr: transparentMgr,
+		Version:        Version,
+		BuildTime:      BuildTime,
 	}
 	rootCmd := cli.NewRootCommand(cliSvcs)
 	if err := rootCmd.Execute(); err != nil {
