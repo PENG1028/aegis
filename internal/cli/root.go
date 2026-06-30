@@ -55,6 +55,8 @@ type Services struct {
 	SafetySvc     *safety.Service
 RelaySvc       *relay.Resolver        // v1.8B
 TransparentMgr *transparent.Manager   // v1.8H
+	Version        string                // build-injected version
+	BuildTime      string                // build-injected timestamp
 }
 
 // NewRootCommand creates the root aegis CLI command.
@@ -66,13 +68,14 @@ func NewRootCommand(svcs *Services) *cobra.Command {
 It handles Projects, Services, Endpoints, Routes, Managed Domains,
 and safely applies configuration to Caddy (or Nginx in the future).
 
-v0.x — Production-hardened gateway control with HTTP API.`,
-		SilenceUsage:  true,
-		SilenceErrors: true,
-	}
+v1.8K — Production-hardened gateway control with HTTP API.`,
+			SilenceUsage:  true,
+			SilenceErrors: true,
+		}
 
-	// Register subcommands
-	cmd.AddCommand(newInitCommand())
+		// Register subcommands
+		cmd.AddCommand(newVersionCommand(svcs.Version, svcs.BuildTime))
+		cmd.AddCommand(newInitCommand())
 	cmd.AddCommand(NewNodeCommand()) // node agent (run, join)
 	cmd.AddCommand(newBootstrapCommand(svcs.Config, svcs.ListenerSvc))
 	cmd.AddCommand(newDoctorCommand(svcs.Config, svcs.ListenerSvc))

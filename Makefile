@@ -67,6 +67,26 @@ fmt:
 lint: vet
 	@echo "All checks passed"
 
+# ─── Deploy & Update ───
+SERVER_A ?= 43.160.211.232
+SERVER_B ?= 43.159.34.11
+SSH_USER ?= ubuntu
+
+deploy-server-a: build-linux
+	bash scripts/deploy.sh $(SERVER_A) $(SSH_USER)
+
+deploy-server-b: build-linux
+	bash scripts/deploy.sh $(SERVER_B) $(SSH_USER)
+
+update-server-a: release
+	bash scripts/update.sh $(SERVER_A) $(SSH_USER)
+
+update-server-b: release
+	bash scripts/update.sh $(SERVER_B) $(SSH_USER)
+
+update-all: release
+	bash scripts/update-all.sh
+
 # ─── Clean ───
 clean:
 	rm -f $(BINARY) $(BINARY).exe coverage.out coverage.html
