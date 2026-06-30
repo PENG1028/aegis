@@ -127,6 +127,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/diagnostics/export", h.DiagnosticsExport)
 
 	// Health
+	mux.HandleFunc("GET /api/healthz", h.Liveness)
+	mux.HandleFunc("GET /api/readyz", h.Readiness)
 	mux.HandleFunc("GET /api/health", h.GetHealth)
 	mux.HandleFunc("POST /api/health/check-all", h.CheckAllHealth)
 	mux.HandleFunc("GET /api/health/services/{id}", h.GetServiceHealth)
