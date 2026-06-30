@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +28,22 @@ func NewCaddyHTTPProvider(cfg *config.Config) *CaddyHTTPProvider {
 		cfg:     cfg,
 		adapter: caddy.NewAdapter(cfg),
 	}
+}
+
+// writeCaddyConfig writes data to a Caddyfile with 0640 root:caddy permissions.
+// Caddy runs as the `caddy` user, so the file must be group-readable.
+func writeCaddyConfig(path string, data []byte) error {
+	perm := os.FileMode(0640)
+	if err := os.WriteFile(path, data, perm); err != nil {
+		return err
+	}
+	if grp, err := user.LookupGroup("caddy"); err == nil {
+		if gid, err := strconv.Atoi(grp.Gid); err == nil {
+			os.Chown(path, 0, gid)
+		}
+	}
+	os.Chmod(path, perm)
+	return nil
 }
 
 func (p *CaddyHTTPProvider) Info() Info {
@@ -89,7 +107,7 @@ func (p *CaddyHTTPProvider) Restore(backupPath string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p.cfg.Proxy.CaddyfilePath, data, 0600)
+	return writeCaddyConfig(p.cfg.Proxy.CaddyfilePath, data)
 }
 
 func (p *CaddyHTTPProvider) GetCurrentConfig() (string, error) {
@@ -107,7 +125,7 @@ func (p *CaddyHTTPProvider) GetCurrentConfig() (string, error) {
 func (p *CaddyHTTPProvider) WriteTemp(rendered []byte) (string, error) {
 	dir := filepath.Dir(p.cfg.Proxy.CaddyfilePath)
 	tmpFile := filepath.Join(dir, ".Caddyfile.tmp")
-	if err := os.WriteFile(tmpFile, rendered, 0600); err != nil {
+	if err := writeCaddyConfig(tmpFile, rendered); err != nil {
 		return "", err
 	}
 	return tmpFile, nil
@@ -119,7 +137,7 @@ func (p *CaddyHTTPProvider) CommitTemp(tempPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(p.cfg.Proxy.CaddyfilePath, data, 0600); err != nil {
+	if err := writeCaddyConfig(p.cfg.Proxy.CaddyfilePath, data); err != nil {
 		return err
 	}
 	os.Remove(tempPath)

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -20,12 +22,32 @@ func NewExecutor(cfg *config.Config) *Executor {
 	return &Executor{cfg: cfg}
 }
 
+// writeConfigFile writes data to a config file with 0640 permissions and root:caddy ownership.
+// Caddy runs as the `caddy` user, so the file must be group-readable.
+// 0640 is chosen over 0644 to prevent non-privileged users from reading sensitive
+// content such as Gateway Link HMAC tokens embedded in the Caddyfile.
+func (e *Executor) writeConfigFile(path string, data []byte) error {
+	perm := os.FileMode(0640)
+	if err := os.WriteFile(path, data, perm); err != nil {
+		return err
+	}
+	// Set owner root:group caddy so Caddy can read it.
+	if grp, err := user.LookupGroup("caddy"); err == nil {
+		if gid, err := strconv.Atoi(grp.Gid); err == nil {
+			os.Chown(path, 0, gid) // uid=0 (root), gid=caddy
+		}
+	}
+	// Explicitly set mode in case umask overrode it.
+	os.Chmod(path, perm)
+	return nil
+}
+
 // WriteTemp writes rendered config to a temporary file and returns the path.
 func (e *Executor) WriteTemp(rendered []byte) (string, error) {
 	dir := filepath.Dir(e.cfg.Proxy.CaddyfilePath)
 	tmpFile := filepath.Join(dir, ".Caddyfile.tmp")
 
-	if err := os.WriteFile(tmpFile, rendered, 0600); err != nil {
+	if err := e.writeConfigFile(tmpFile, rendered); err != nil {
 		return "", fmt.Errorf("write temp config: %w", err)
 	}
 	return tmpFile, nil
@@ -76,7 +98,7 @@ func (e *Executor) Replace(tempPath string) error {
 		if readErr != nil {
 			return fmt.Errorf("rename config (and read fallback failed): %w", err)
 		}
-		if writeErr := os.WriteFile(configPath, data, 0600); writeErr != nil {
+		if writeErr := e.writeConfigFile(configPath, data); writeErr != nil {
 			return fmt.Errorf("write config (rename fallback): %w", writeErr)
 		}
 		os.Remove(tempPath)
@@ -97,7 +119,7 @@ func (e *Executor) RestoreBackup(backupPath string) error {
 	}
 
 	configPath := e.cfg.Proxy.CaddyfilePath
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
+	if err := e.writeConfigFile(configPath, data); err != nil {
 		return fmt.Errorf("restore backup: %w", err)
 	}
 
