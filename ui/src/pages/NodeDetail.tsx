@@ -1,20 +1,36 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { fetchNodeDetail } from '@/lib/api-bridge';
+import { fetchNodeDetail, nodeApi } from '@/lib/api-bridge';
 import {
   PageHeader, Card, StatusBadge, CapabilityBadge,
-  MetaRow, Alert,
+  MetaRow, Alert, Btn,
 } from '@/components/shared';
 import { fmtRel } from '@/lib/utils';
+import { useToast } from '@/components/shared/Toast';
 
 export default function NodeDetailPage() {
   const { nodeId } = useParams<{ nodeId: string }>();
   const navigate = useNavigate();
+  const toast = useToast();
+  const [updating, setUpdating] = useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: ['node', nodeId],
     queryFn: () => fetchNodeDetail(nodeId!),
     enabled: !!nodeId,
   });
+
+  async function handleUpdate() {
+    if (!nodeId) return;
+    setUpdating(true);
+    try {
+      const res = await nodeApi.triggerUpdate(nodeId);
+      toast(`更新已触发 — ${res.message || '节点将在下次心跳时自动更新'}`);
+    } catch (e: any) {
+      toast(`更新失败: ${e.message}`, 'error');
+    }
+    setUpdating(false);
+  }
 
   if (isLoading) return <div className="text-center py-10 text-a-muted font-mono text-sm">加载中...</div>;
   if (error || !data) return <div className="text-center py-10 text-a-danger text-sm">节点未找到</div>;
@@ -24,7 +40,11 @@ export default function NodeDetailPage() {
       <button onClick={() => navigate('/nodes')} className="inline-flex items-center gap-1 text-xs text-a-muted hover:text-a-fg mb-3 bg-transparent border-none cursor-pointer p-0">
         ← 节点
       </button>
-      <PageHeader title={data.name} subtitle={`node_id: ${data.node_id}`} helpKey="nodes" />
+      <PageHeader title={data.name} subtitle={`node_id: ${data.node_id}`} helpKey="nodes" actions={
+        <Btn primary onClick={handleUpdate} disabled={updating}>
+          {updating ? '触发中…' : '推送更新'}
+        </Btn>
+      } />
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <Card title="基本信息">
