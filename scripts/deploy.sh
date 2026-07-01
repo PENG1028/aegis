@@ -49,7 +49,7 @@ warn()  { echo -e "${YELLOW}[warn]${NC}  $*"; }
 fail()  { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
 
 SSH_TARGET="${SSH_USER}@${TARGET_IP}"
-SSH="ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new ${SSH_TARGET}"
+SSH="ssh -C -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new ${SSH_TARGET}"
 
 echo ""
 echo -e "${BOLD}================================================${NC}"
