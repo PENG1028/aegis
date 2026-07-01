@@ -38,6 +38,28 @@ export function fmtDuration(ms: number): string {
   return `${m}m ${s}s`;
 }
 
+export function fmtDisk(bytes: number | null | undefined): string {
+  if (!bytes) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+export function fmtBytes(bytes: number | null | undefined): string {
+  if (!bytes && bytes !== 0) return '—';
+  if (bytes < 1000) return `${bytes} B`;
+  if (bytes < 1000 * 1000) return `${(bytes / 1000).toFixed(1)} KB`;
+  if (bytes < 1000 * 1000 * 1000) return `${(bytes / (1000 * 1000)).toFixed(1)} MB`;
+  return `${(bytes / (1000 * 1000 * 1000)).toFixed(2)} GB`;
+}
+
+export function fmtShort(str: string, len: number): string {
+  if (!str) return '—';
+  if (str.length <= len) return str;
+  return str.slice(0, len) + '…';
+}
+
 export function truncate(str: string, len: number): string {
   if (str.length <= len) return str;
   return str.slice(0, len) + '…';
