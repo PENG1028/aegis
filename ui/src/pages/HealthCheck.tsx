@@ -6,12 +6,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { system, systemHealthApi, portCheckApi, healthCheckApi } from '@/lib/api-bridge';
 import { PageHeader, Card, Btn, Alert, StatusBadge } from '@/components/shared';
-
-function fmtDisk(bytes: number) {
-  if (!bytes) return '—';
-  const gb = bytes / (1024 * 1024 * 1024);
-  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
-}
+import { fmtDisk } from '@/lib/utils';
 
 export default function HealthCheckPage() {
   const navigate = useNavigate();

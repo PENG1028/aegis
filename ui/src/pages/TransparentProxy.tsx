@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transparentApi } from '@/lib/api-bridge';
 import { PageHeader, Card, StatusBadge } from '@/components/shared';
 import { useState } from 'react';
+import { fmtBytes, fmtShort } from '@/lib/utils';
 
 interface TransparentRule {
   id: string;
@@ -14,17 +15,6 @@ interface TransparentRule {
   active: boolean;
   bytes_in: number;
   bytes_out: number;
-}
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1048576).toFixed(1)} MB`;
-}
-
-function fmtShort(s: string, max: number = 20): string {
-  if (!s) return '—';
-  return s.length > max ? s.slice(0, max) + '…' : s;
 }
 
 export default function TransparentProxyPage() {
