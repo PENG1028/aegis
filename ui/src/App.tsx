@@ -28,14 +28,20 @@ import SettingsPage from '@/pages/Settings';
 import TracePage from '@/pages/Trace';
 import SafetyPage from '@/pages/Safety';
 import RelayPage from '@/pages/Relay';
-import { GatewayLinksPage, GatewayLinkDetailPage } from '@/pages/GatewayLinks';
-import { ApplyConfigPage, ConfigPage } from '@/pages/ApplyConfig';
+import GatewayLinksPage from '@/pages/GatewayLinksPage';
+import GatewayLinkDetailPage from '@/pages/GatewayLinkDetailPage';
+import { ApplyConfigPage } from '@/pages/ApplyConfig';
+import { ConfigPage } from '@/pages/ConfigPage';
 import ProvidersPage from '@/pages/ProvidersPage';
 import ListenersPage from '@/pages/ListenersPage';
-import { DoctorPage, SmokePage } from '@/pages/DoctorSmoke';
-import { ScopesPage, ApiKeysPage } from '@/pages/ScopesApiKeys';
+import { DoctorPage } from '@/pages/DoctorPage';
+import { SmokePage } from '@/pages/SmokePage';
+import ScopesPage from '@/pages/ScopesPage';
+import ApiKeysPage from '@/pages/ApiKeysPage';
 import LogsPage from '@/pages/LogsAudit';
-import { SecurityPage, MaintenancePage, ActionsPage } from '@/pages/SecurityMaintenance';
+import { SecurityPage } from '@/pages/SecurityPage';
+import { MaintenancePage } from '@/pages/MaintenancePage';
+import { ActionsPage } from '@/pages/ActionsPage';
 import QuickCreatePage from '@/pages/QuickCreate';
 import HealthCheckPage from '@/pages/HealthCheck';
 import ImportConfigPage from '@/pages/ImportConfig';
@@ -43,6 +49,7 @@ import TransparentProxyPage from '@/pages/TransparentProxy';
 import ExposuresPage from '@/pages/Exposures';
 import CredentialsPage from '@/pages/Credentials';
 import MiddlewarePage from '@/pages/Middleware';
+import NotFoundPage from '@/pages/NotFound';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,16 +60,6 @@ const queryClient = new QueryClient({
     },
   },
 });
-
-function NotFoundPage() {
-  return (
-    <div className="flex flex-col items-center justify-center py-20">
-      <h2 className="text-2xl font-bold text-a-muted mb-2">404</h2>
-      <p className="text-sm text-a-muted mb-6">页面不存在</p>
-      <a href="/" className="inline-flex items-center text-xs px-3 py-1.5 rounded-a-md bg-a-accent text-white no-underline hover:opacity-90">返回总览</a>
-    </div>
-  );
-}
 
 export default function App() {
   return (
