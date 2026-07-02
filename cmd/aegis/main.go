@@ -322,6 +322,7 @@ func main() {
 	}
 
 	httpSvcs := &httpapi.Services{
+			DB:            db,
 		Config:        cfg,
 		Project:       projectSvc,
 		Service:       serviceSvc,
