@@ -113,18 +113,35 @@ fi
 ok "Aegis stopped"
 
 # ─── Step 4: Upload new binary ───
-info "Uploading new binary..."
-cat "${BINARY}" | ${SSH} "sudo tee ${BINARY_PATH} > /dev/null"
-${SSH} "sudo chmod +x ${BINARY_PATH}"
-# Verify upload
-REMOTE_SIZE=$(${SSH} "stat -c%s ${BINARY_PATH}" 2>/dev/null || echo "0")
+info "Uploading new binary (gzip compressed)..."
+
+# Clean stale uploads from previous failed attempts
+${SSH} "sudo pkill -9 -f 'tee ${BINARY_PATH}' 2>/dev/null; sudo pkill -9 -f 'tee /tmp/aegis' 2>/dev/null; sudo rm -f /tmp/aegis.upload.tmp" || true
+sleep 1
+
 LOCAL_SIZE=$(stat -c%s "${BINARY}" 2>/dev/null || echo "0")
+
+# Upload to /tmp first (gzip to reduce transfer size ~22MB→~7MB).
+# Atomic mv after success — no "Text file busy" window.
+# If SSH drops, only /tmp/aegis.upload.tmp is affected, not the running binary.
+gzip -c "${BINARY}" | ${SSH} "gunzip | sudo tee /tmp/aegis.upload.tmp > /dev/null" || {
+  warn "Upload interrupted — cleaning up"
+  ${SSH} "sudo rm -f /tmp/aegis.upload.tmp" 2>/dev/null || true
+  fail "Upload failed. Check network and retry."
+}
+
+# Verify upload
+REMOTE_SIZE=$(${SSH} "stat -c%s /tmp/aegis.upload.tmp" 2>/dev/null || echo "0")
 if [ "${REMOTE_SIZE}" = "${LOCAL_SIZE}" ] && [ "${LOCAL_SIZE}" != "0" ]; then
   ok "Binary uploaded and verified (${REMOTE_SIZE} bytes)"
 else
-  fail "Binary size mismatch! Local=${LOCAL_SIZE} Remote=${REMOTE_SIZE} — upload may be corrupted"
+  ${SSH} "sudo rm -f /tmp/aegis.upload.tmp" 2>/dev/null || true
+  fail "Binary size mismatch! Local=${LOCAL_SIZE} Remote=${REMOTE_SIZE}"
 fi
 
+# Atomic replace — mv on same filesystem is instant, no partial-write window
+${SSH} "sudo mv /tmp/aegis.upload.tmp ${BINARY_PATH} && sudo chmod +x ${BINARY_PATH}"
+ok "Binary installed atomically"
 # ─── Step 5: Start ───
 info "Starting Aegis..."
 ${SSH} "sudo systemctl start aegis"
