@@ -6,7 +6,7 @@ import { Card, PageHeader, StatusBadge, CapabilityBadge } from '@/components/sha
 export default function Nodes() {
   const nav = useNavigate();
   const { data } = useQuery({ queryKey: ['nodes'], queryFn: fetchNodes });
-  const nodes = (data as any)?.nodes || [];
+  const nodes = Array.isArray(data) ? data : [];
 
   return (
     <div className="p-6 space-y-6">

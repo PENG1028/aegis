@@ -6,6 +6,7 @@
  */
 
 import { API_CONFIG } from './api-config';
+import { getScenario } from '@/mocks';
 import type {
   Node, NodeDetail, Gateway, GatewayDetail,
   TopologyEdge, TopologyPathResult,
@@ -317,7 +318,22 @@ const mockAdminApi = {
   bindTLSBackend: async (data: any) => ({ domain: data.domain, status: 'created (mock)' }),
   updateTarget: async (data: any) => ({ status: 'updated (mock)' }),
   exportDiagnostics: async () => ({}),
-  importCaddyPreview: async () => ({ routes: [], count: 0 }),
-  importCaddyConfirm: async () => ({ imported: 0 }),
+  importCaddyPreview: async () => {
+    // Return scenario routes as preview when in mock mode
+    const scenario = getScenario();
+    if (scenario?.routes?.length) {
+      const routes = scenario.routes.map((r: any) => ({
+        domain: r.domain,
+        upstream_url: `http://127.0.0.1:${r.service_id === 'service-proofnote-api' ? '3000' : r.service_id === 'service-auth' ? '4000' : '8080'}`,
+        tls_enabled: r.tls_mode !== 'http_only',
+        path_prefix: '',
+        source_file: '/etc/caddy/Caddyfile',
+        source_line: 1,
+      }));
+      return { routes, count: routes.length, caddy_path: '/etc/caddy/Caddyfile' };
+    }
+    return { routes: [], count: 0 };
+  },
+  importCaddyConfirm: async (routes: any[]) => ({ imported: routes.length, count: routes.length }),
 };
 export const adminApi = useMock ? mockAdminApi : realAdminApi;

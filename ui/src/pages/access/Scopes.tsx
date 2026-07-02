@@ -4,7 +4,7 @@ import { Card, PageHeader, Btn } from '@/components/shared';
 
 export default function Scopes() {
   const { data } = useQuery({ queryKey: ['scopes'], queryFn: () => adminApi.listScopes() });
-  const scopes = (data as any)?.spaces || [];
+  const scopes = Array.isArray(data) ? data : [];
 
   return (
     <div className="p-6 space-y-6">

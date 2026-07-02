@@ -4,7 +4,7 @@ import { Card, PageHeader, StatusBadge, Btn, Timestamp } from '@/components/shar
 
 export default function JoinTokens() {
   const { data } = useQuery({ queryKey: ['join-tokens'], queryFn: fetchJoinTokens });
-  const tokens = (data as any)?.tokens || [];
+  const tokens = Array.isArray(data) ? data : [];
 
   return (
     <div className="p-6 space-y-6">

@@ -28,7 +28,7 @@ export default function RoutingTable() {
         gateway: r.gateway_policy?.primary_gateway_id || '—',
         status: r.status === 'active' ? 'available' : 'unavailable',
       }))
-    : ((data as any)?.entries || []);
+    : (Array.isArray(data) ? data : []);
 
   return (
     <div className="p-6 space-y-6">

@@ -19,7 +19,6 @@ import Services from '@/pages/exposure/Services';
 import ServiceDetail from '@/pages/exposure/ServiceDetail';
 import Endpoints from '@/pages/exposure/Endpoints';
 import QuickConnect from '@/pages/exposure/QuickConnect';
-import ImportConfig from '@/pages/exposure/ImportConfig';
 
 // ── Fabric ──
 import FabricLayout from '@/pages/fabric/FabricLayout';
@@ -134,7 +133,6 @@ export default function App() {
                   <Route path="service/:serviceId" element={<ServiceDetail />} />
                   <Route path="endpoint/:endpointId" element={<EntryPointDetail />} />
                   <Route path="connect" element={<QuickConnect />} />
-                  <Route path="import" element={<ImportConfig />} />
                 </Route>
 
                 {/* ── Workspace 3: Fabric / 网关网络 ── */}

@@ -29,7 +29,7 @@ export default function TransparentProxyPage() {
     onError: (e: any) => toast(e.message || '删除失败', 'error'),
   });
 
-  const rules = (data as any)?.rules || [];
+  const rules = Array.isArray(data) ? data : [];
 
   if (isLoading) return <div className="p-6 text-a-muted text-sm">加载中...</div>;
 

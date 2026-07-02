@@ -14,7 +14,7 @@ export default function Providers() {
   });
 
   // For mock mode, show caddy + haproxy
-  const providers = (data as any)?.providers || [
+  const providers = Array.isArray(data) ? data : [
     { provider_id: 'caddy', name: 'Caddy', kind: 'caddy', status: 'active', version: 'v2.8.4', config_path: '/etc/caddy/Caddyfile' },
     { provider_id: 'haproxy', name: 'HAProxy', kind: 'haproxy', status: 'disabled', version: '—', config_path: '/etc/haproxy/haproxy.cfg' },
   ];
