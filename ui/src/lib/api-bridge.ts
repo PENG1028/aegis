@@ -129,8 +129,9 @@ export const fetchSettings: typeof realFetchSettings = useMock ? mockFetchSettin
 export const updateSettings: typeof realUpdateSettings = useMock ? mockUpdateSettings : realUpdateSettings;
 export const fetchListeners: typeof realFetchListeners = useMock
   ? async () => {
-      const g = await import('@/mocks/gateways');
-      return g.mockGateways.map((gw: any) => ({
+      const gws = getScenario().gateways;
+      const listeners = getScenario().listeners;
+      return (listeners.length > 0 ? listeners : gws).map((gw: any) => ({
         bind_ip: gw.bind_addr,
         port: gw.port,
         provider: gw.provider,
