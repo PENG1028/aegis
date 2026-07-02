@@ -1,5 +1,8 @@
 // ─── Mock Scenario Infrastructure ───
 // Scenario selector + factory for relational mock data.
+//
+// Scenarios are loaded at import time but wrapped in safety helpers.
+// Only the active scenario's data is exposed via getScenario().
 
 import { scenarioNormal } from './scenarios/normal';
 import { scenarioEndpointFailure } from './scenarios/endpoint-failure';
@@ -22,7 +25,6 @@ let activeScenarioId: ScenarioId = 'normal';
 
 export function setScenario(id: ScenarioId) {
   activeScenarioId = id;
-  // Dispatch event so all query caches know to refetch
   window.dispatchEvent(new CustomEvent('scenario-change', { detail: id }));
 }
 
@@ -35,9 +37,11 @@ export function getActiveScenarioId(): ScenarioId {
 }
 
 export function getScenarioList() {
-  return Object.entries(SCENARIOS).map(([id, data]) => ({
-    id: id as ScenarioId,
-    name: data.meta.name,
-    description: data.meta.description,
-  }));
+  return [
+    { id: 'normal' as const, name: '正常链路', description: '全链路正常' },
+    { id: 'endpoint-failure' as const, name: '端点故障', description: '端点不可达' },
+    { id: 'pending-release' as const, name: '待发布', description: '配置待发布' },
+    { id: 'node-drift' as const, name: '节点漂移', description: '配置漂移' },
+    { id: 'gateway-link-anomaly' as const, name: '网关链路异常', description: '链路故障' },
+  ];
 }
