@@ -33,29 +33,29 @@ export const scenarioNodeDrift: ScenarioData = (() => {
   syncC.provider_status = { status: 'unknown', message: 'Config outdated' };
 
   // Update docs endpoint health
-  const epDocs = base.endpoints.find(e => e.endpoint_id === 'endpoint-docs-a')!;
+  const epDocs = base.endpoints.find(e => e.endpoint_id === 'ep-policy')!;
   epDocs.health_status = 'unknown';
   epDocs.last_checked_at = null;
 
   // Update entry point for docs
-  const docsEP = base.entryPoints.find(e => e.route_id === 'route-docs');
+  const docsEP = base.entryPoints.find(e => e.route_id === 'route-policy');
   if (docsEP) {
     docsEP.health = 'unknown';
     docsEP.endpoints = docsEP.endpoints.map(ep =>
-      ep.endpoint_id === 'endpoint-docs-a'
+      ep.endpoint_id === 'ep-policy'
         ? { ...ep, health: 'unknown' as const }
         : ep,
     );
   } else {
     base.entryPoints.push({
-      route_id: 'route-docs',
-      domain: 'docs.proofnote.dev', protocol: 'http',
+      route_id: 'route-policy',
+      domain: 'policy.example.com', protocol: 'http',
       tls_mode: 'http_only',
-      listener: { bind_addr: '0.0.0.0', port: 80, provider: 'caddy', purpose: 'http_entry', status: 'active', gateway_id: 'gateway-edge', node_id: 'node-a' },
-      gateway_id: 'gateway-edge', gateway_name: '边缘网关',
-      service_id: 'service-docs', service_name: 'docs-service',
+      listener: { bind_addr: '0.0.0.0', port: 80, provider: 'caddy', purpose: 'http_entry', status: 'active', gateway_id: 'gw_public_a', node_id: 'node-a' },
+      gateway_id: 'gw_public_a', gateway_name: '边缘网关',
+      service_id: 'svc-policy', service_name: 'docs-service',
       endpoints: [
-        { endpoint_id: 'endpoint-docs-a', node_id: 'node-c', node_name: 'Server C', protocol: 'http', target: '127.0.0.1:8080', health: 'unknown' },
+        { endpoint_id: 'ep-policy', node_id: 'node-c', node_name: 'Server C', protocol: 'http', target: '127.0.0.1:8080', health: 'unknown' },
       ],
       health: 'unknown', safety: 'unknown', release_state: 'drifted',
     });
@@ -70,8 +70,8 @@ export const scenarioNodeDrift: ScenarioData = (() => {
       description: 'Server C (node-c) 期望配置版本 43，实际版本 41，状态 drifted',
       affectedObjects: [
         { type: 'node', id: 'node-c', name: 'Server C' },
-        { type: 'route', id: 'route-docs', name: 'docs.proofnote.dev' },
-        { type: 'service', id: 'service-docs', name: 'docs-service' },
+        { type: 'route', id: 'route-policy', name: 'policy.example.com' },
+        { type: 'service', id: 'svc-policy', name: 'docs-service' },
       ],
       workspace: 'runtime',
       timestamp: NOW,
