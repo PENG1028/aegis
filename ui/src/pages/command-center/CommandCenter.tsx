@@ -1,14 +1,14 @@
 // ─── Command Center ───
-// System health at a glance: anomalies with affected chains, pending changes, quick actions.
+// System health at a glance. Derives issues from real dashboard data.
+// In mock mode, uses scenario anomalies. In production, derives from API data.
 
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { fetchDashboard } from '@/lib/api-bridge';
 import { cn } from '@/lib/utils';
-import { Card, StatCard, HealthDot, StatusBadge, Btn, Timestamp, PageHeader } from '@/components/shared';
+import { Card, StatCard, HealthDot, StatusBadge, Btn, PageHeader } from '@/components/shared';
 import { getScenario } from '@/mocks';
 import { API_CONFIG } from '@/lib/api-config';
-import { resolveChain } from '@/mocks/generators/chain-factory';
 import type { DashboardData } from '@/types';
 import type { Anomaly } from '@/types/workspace';
 
@@ -20,74 +20,79 @@ const QUICK_ACTIONS = [
   { label: '系统诊断', desc: '运行 Doctor', path: '/observe/doctor' },
 ];
 
-function MiniChain({ type, id }: { type: string; id: string }) {
-  if (!API_CONFIG.useMock) return null;
-  const chain = resolveChain(type, id);
-  if (chain.status === 'broken' && !chain.entryPoint) return null;
-
-  const parts: string[] = [];
-  if (chain.entryPoint) parts.push(chain.entryPoint.domain);
-  if (chain.gateway) parts.push(chain.gateway.name);
-  if (chain.service) parts.push(chain.service.name);
-  if (chain.endpoints.length > 0) {
-    const unhealthy = chain.endpoints.filter(e => e.health_status === 'unhealthy');
-    if (unhealthy.length > 0) {
-      parts.push(unhealthy.map(e => `✕ ${e.node_name || e.node_id}`).join(', '));
-    } else {
-      parts.push(chain.endpoints.map(e => e.node_name || e.node_id).join(', '));
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-1 text-[10px] text-a-muted mt-1.5 font-mono">
-      {parts.map((p, i) => (
-        <span key={i} className="flex items-center gap-1">
-          {i > 0 && <svg className="w-2.5 h-2.5 text-a-border" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>}
-          <span className={p.startsWith('✕') ? 'text-[#ff5c72]' : ''}>{p}</span>
-        </span>
-      ))}
-    </div>
-  );
+interface Issue {
+  id: string;
+  title: string;
+  description: string;
+  severity: 'critical' | 'warning';
+  workspace: string;
+  targetPath: string;
 }
 
-function AnomalyCard({ a }: { a: Anomaly }) {
-  const nav = useNavigate();
-  const primaryObj = a.affectedObjects[0];
-  const targetPath = primaryObj
-    ? primaryObj.type === 'node' ? `/runtime/node/${primaryObj.id}`
-    : primaryObj.type === 'route' ? `/exposure/entry/${primaryObj.id}`
-    : primaryObj.type === 'gateway' ? `/fabric/gateway/${primaryObj.id}`
-    : primaryObj.type === 'service' ? `/exposure/service/${primaryObj.id}`
-    : primaryObj.type === 'endpoint' ? `/exposure/service/${primaryObj.id}`
-    : a.workspace === 'release' ? '/release'
-    : a.workspace === 'fabric' ? '/fabric'
-    : '/'
-    : '/';
+function deriveIssues(d: DashboardData | undefined): Issue[] {
+  const issues: Issue[] = [];
+  if (!d) return issues;
 
-  return (
-    <div
-      onClick={() => nav(targetPath)}
-      className={cn(
-        'p-3 rounded-a-sm border cursor-pointer transition-colors hover:brightness-110',
-        a.severity === 'critical' ? 'bg-[#ff5c72]/5 border-[#ff5c72]/20' :
-        a.severity === 'warning' ? 'bg-[#e8b830]/5 border-[#e8b830]/20' :
-        'bg-a-bg border-a-border',
-      )}
-    >
-      <div className="flex items-start gap-2.5">
-        <HealthDot status={a.severity === 'critical' ? 'failed' : 'degraded'} size="md" className="mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-xs font-semibold text-a-fg">{a.title}</span>
-            <span className="text-[10px] px-1 py-0.5 rounded bg-a-border/30 text-a-muted">{a.workspace}</span>
-          </div>
-          <p className="text-xs text-a-fg2">{a.description}</p>
-          {primaryObj && <MiniChain type={primaryObj.type} id={primaryObj.id} />}
-        </div>
-        <Timestamp iso={a.timestamp} />
-      </div>
-    </div>
-  );
+  // Offline nodes
+  const offlineCount = d.nodes_total - d.nodes_online;
+  if (offlineCount > 0) {
+    issues.push({
+      id: 'nodes-offline', title: `${offlineCount} 个节点离线`,
+      description: `${d.nodes_online}/${d.nodes_total} 节点在线`,
+      severity: offlineCount === d.nodes_total ? 'critical' : 'warning',
+      workspace: 'runtime', targetPath: '/runtime',
+    });
+  }
+
+  // Unavailable routes
+  if (d.routes_unavailable) {
+    issues.push({
+      id: 'routes-down', title: `${d.routes_unavailable} 条路由不可用`,
+      description: '路由健康检查失败，流量可能受影响',
+      severity: 'critical', workspace: 'exposure', targetPath: '/exposure',
+    });
+  }
+
+  // Missing gateway links
+  if (d.missing_gateway_links) {
+    issues.push({
+      id: 'missing-links', title: `缺少 ${d.missing_gateway_links} 条 Gateway Link`,
+      description: '跨节点转发认证通道未建立',
+      severity: 'warning', workspace: 'fabric', targetPath: '/fabric/links',
+    });
+  }
+
+  // Outdated nodes
+  if (d.outdated_nodes) {
+    issues.push({
+      id: 'outdated-nodes', title: `${d.outdated_nodes} 个节点版本过旧`,
+      description: '节点需要更新二进制或配置',
+      severity: 'warning', workspace: 'runtime', targetPath: '/runtime/updates',
+    });
+  }
+
+  // Recent errors
+  if (d.recent_errors?.length) {
+    d.recent_errors.forEach((e: any, i: number) => {
+      issues.push({
+        id: `error-${i}`, title: `节点错误: ${e.node_name || e.node_id}`,
+        description: e.error || '未知错误',
+        severity: 'warning' as const, workspace: 'runtime',
+        targetPath: `/runtime/node/${e.node_id}`,
+      });
+    });
+  }
+
+  // Pending capabilities
+  if (d.pending_capabilities?.length) {
+    issues.push({
+      id: 'pending-caps', title: `${d.pending_capabilities.length} 项待发布变更`,
+      description: '配置已修改但未推送到节点',
+      severity: 'warning', workspace: 'release', targetPath: '/release',
+    });
+  }
+
+  return issues;
 }
 
 export default function CommandCenter() {
@@ -99,34 +104,46 @@ export default function CommandCenter() {
   });
 
   const d = data as DashboardData | undefined;
-  const anomalies = API_CONFIG.useMock ? getScenario().anomalies : [];
 
-  if (isLoading) {
-    return (
-      <div className="p-6">
-        <PageHeader title="总控台" subtitle="加载中..." />
-      </div>
-    );
-  }
+  // Mock: use scenario anomalies. Production: derive from real data.
+  const mockAnomalies: Anomaly[] = API_CONFIG.useMock ? getScenario().anomalies : [];
+  const issues = API_CONFIG.useMock
+    ? mockAnomalies.map(a => ({
+        id: a.id, title: a.title, description: a.description,
+        severity: a.severity as 'critical' | 'warning',
+        workspace: a.workspace,
+        targetPath: (() => {
+          const obj = a.affectedObjects[0];
+          if (!obj) return '/';
+          return obj.type === 'node' ? `/runtime/node/${obj.id}`
+            : obj.type === 'route' ? `/exposure/entry/${obj.id}`
+            : obj.type === 'gateway' ? `/fabric/gateway/${obj.id}`
+            : obj.type === 'service' ? `/exposure/service/${obj.id}`
+            : a.workspace === 'release' ? '/release'
+            : a.workspace === 'fabric' ? '/fabric'
+            : '/';
+        })(),
+      }))
+    : deriveIssues(d);
 
-  const hasIssues = anomalies.length > 0 || (d?.routes_unavailable || 0) > 0 || (d?.outdated_nodes || 0) > 0;
+  const hasIssues = issues.length > 0;
 
   return (
     <div className="p-6 space-y-6">
       <PageHeader
         title="Command Center"
-        subtitle={hasIssues ? '⚠️ 系统存在需要注意的问题' : '✅ 所有系统运行正常'}
+        subtitle={isLoading ? '加载中...' : hasIssues ? '⚠️ 系统存在需要注意的问题' : '✅ 所有系统运行正常'}
       />
 
       {/* Status Cards */}
       <div className="grid grid-cols-4 gap-3">
         <StatCard label="节点" value={`${d?.nodes_online || 0}/${d?.nodes_total || 0}`} sub="在线/总数"
-          success={d != null && d.nodes_online === d.nodes_total && d.nodes_total > 0}
-          warn={d != null && d.nodes_online < d.nodes_total && d.nodes_online > 0}
-          danger={d != null && d.nodes_online === 0} />
+          success={!!(d && d.nodes_online === d.nodes_total && d.nodes_total > 0)}
+          warn={!!(d && d.nodes_online < d.nodes_total && d.nodes_online > 0)}
+          danger={!!(d && d.nodes_online === 0)} />
         <StatCard label="网关" value={`${d?.gateways_online || 0}/${d?.gateways_total || 0}`} sub="活跃/总数"
-          success={d != null && d.gateways_online === d.gateways_total && d.gateways_total > 0}
-          warn={d != null && d.gateways_online < d.gateways_total && d.gateways_online > 0} />
+          success={!!(d && d.gateways_online === d.gateways_total && d.gateways_total > 0)}
+          warn={!!(d && d.gateways_online < d.gateways_total && d.gateways_online > 0)} />
         <StatCard label="路由" value={String(d?.managed_routes || 0)}
           sub={d?.routes_unavailable ? `${d.routes_unavailable} 不可用` : '全部可用'}
           danger={!!(d?.routes_unavailable)} />
@@ -134,11 +151,30 @@ export default function CommandCenter() {
           warn={!!(d?.pending_capabilities?.length)} />
       </div>
 
-      {/* Anomalies */}
-      {anomalies.length > 0 && (
-        <Card title={`异常事件 (${anomalies.length})`} subtitle="点击跳转到对应页面">
+      {/* Issues / Anomalies */}
+      {issues.length > 0 && (
+        <Card title={API_CONFIG.useMock ? `异常事件 (${issues.length})` : `系统问题 (${issues.length})`} subtitle="点击跳转到对应页面">
           <div className="space-y-2">
-            {anomalies.map(a => <AnomalyCard key={a.id} a={a} />)}
+            {issues.map(issue => (
+              <div key={issue.id}
+                onClick={() => navigate(issue.targetPath)}
+                className={cn(
+                  'p-3 rounded-a-sm border cursor-pointer transition-colors hover:brightness-110',
+                  issue.severity === 'critical' ? 'bg-[#ff5c72]/5 border-[#ff5c72]/20' :
+                  'bg-[#e8b830]/5 border-[#e8b830]/20',
+                )}>
+                <div className="flex items-start gap-2.5">
+                  <HealthDot status={issue.severity === 'critical' ? 'failed' : 'degraded'} size="md" className="mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-xs font-semibold text-a-fg">{issue.title}</span>
+                      <span className="text-[10px] px-1 py-0.5 rounded bg-a-border/30 text-a-muted">{issue.workspace}</span>
+                    </div>
+                    <p className="text-xs text-a-fg2">{issue.description}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </Card>
       )}
