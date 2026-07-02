@@ -52,8 +52,8 @@ export const scenarioNodeDrift: ScenarioData = (() => {
       domain: 'policy.example.com', protocol: 'http',
       tls_mode: 'http_only',
       listener: { bind_addr: '0.0.0.0', port: 80, provider: 'caddy', purpose: 'http_entry', status: 'active', gateway_id: 'gw_public_a', node_id: 'node-a' },
-      gateway_id: 'gw_public_a', gateway_name: '边缘网关',
-      service_id: 'svc-policy', service_name: 'docs-service',
+      gateway_id: 'gw_public_a', gateway_name: 'A Public Gateway',
+      service_id: 'svc-policy', service_name: 'policy-web',
       endpoints: [
         { endpoint_id: 'ep-policy', node_id: 'node-c', node_name: 'Server C', protocol: 'http', target: '127.0.0.1:8080', health: 'unknown' },
       ],
@@ -71,7 +71,7 @@ export const scenarioNodeDrift: ScenarioData = (() => {
       affectedObjects: [
         { type: 'node', id: 'node-c', name: 'Server C' },
         { type: 'route', id: 'route-policy', name: 'policy.example.com' },
-        { type: 'service', id: 'svc-policy', name: 'docs-service' },
+        { type: 'service', id: 'svc-policy', name: 'policy-web' },
       ],
       workspace: 'runtime',
       timestamp: NOW,

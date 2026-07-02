@@ -1,5 +1,5 @@
 // ─── Scenario 2: Endpoint Failure ───
-// relay.example.com → gw_public_a → svc-relay → ep-api-buth-b unreachable
+// relay.example.com → gw_public_a → svc-relay → ep-relay unreachable
 // Shows degraded chain health due to one unhealthy endpoint.
 
 import { scenarioNormal } from './normal';
@@ -20,8 +20,8 @@ export const scenarioEndpointFailure: ScenarioData = (() => {
   authService.health_status = 'unhealthy';
   authService.latency_ms = 2500;
 
-  // Mark ep-api-buth-b as unhealthy
-  const epAuthB = base.endpoints.find(e => e.endpoint_id === 'ep-api-buth-b')!;
+  // Mark ep-relay as unhealthy
+  const epAuthB = base.endpoints.find(e => e.endpoint_id === 'ep-relay')!;
   epAuthB.health_status = 'unhealthy';
   epAuthB.latency_ms = null;
   epAuthB.last_checked_at = null;
@@ -30,7 +30,7 @@ export const scenarioEndpointFailure: ScenarioData = (() => {
   const authEP = base.entryPoints.find(e => e.route_id === 'route-relay')!;
   authEP.health = 'degraded';
   authEP.endpoints = authEP.endpoints.map(ep =>
-    ep.endpoint_id === 'ep-api-buth-b'
+    ep.endpoint_id === 'ep-relay'
       ? { ...ep, health: 'unhealthy' as const }
       : ep,
   );
@@ -38,7 +38,7 @@ export const scenarioEndpointFailure: ScenarioData = (() => {
   // Update sync status for node-b to reflect issue
   const nodeBSync = base.syncStatuses.find(s => s.node_id === 'node-b')!;
   nodeBSync.status = 'outdated';
-  nodeBSync.last_error = 'ep-api-buth-b health check failed: connection refused';
+  nodeBSync.last_error = 'ep-relay health check failed: connection refused';
 
   // Add anomalies
   base.anomalies = [
@@ -46,9 +46,9 @@ export const scenarioEndpointFailure: ScenarioData = (() => {
       id: 'anomaly-ep-auth-b',
       severity: 'critical',
       title: '端点不可达',
-      description: '端点 ep-api-buth-b (auth-service @ Server B) 健康检查失败',
+      description: '端点 ep-relay (auth-service @ Server B) 健康检查失败',
       affectedObjects: [
-        { type: 'endpoint', id: 'ep-api-buth-b', name: 'ep-api-buth-b' },
+        { type: 'endpoint', id: 'ep-relay', name: 'ep-relay' },
         { type: 'service', id: 'svc-relay', name: 'auth-service' },
         { type: 'route', id: 'route-relay', name: 'relay.example.com' },
         { type: 'node', id: 'node-b', name: 'Server B' },
@@ -64,7 +64,7 @@ export const scenarioEndpointFailure: ScenarioData = (() => {
     {
       node_id: 'node-b',
       node_name: 'Server B',
-      error: 'ep-api-buth-b health check failed: connection refused',
+      error: 'ep-relay health check failed: connection refused',
       last_seen: NOW,
     },
   ];

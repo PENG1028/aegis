@@ -15,7 +15,7 @@ export const scenarioGatewayLinkAnomaly: ScenarioData = (() => {
   const base = deepClone(scenarioNormal);
 
   // Break the gateway link
-  const link = base.gatewayLinks.find(l => l.gateway_link_id === 'link-main-private')!;
+  const link = base.gatewayLinks.find(l => l.gateway_link_id === 'gl-a-b')!;
   link.status = 'failed';
   link.last_verified_at = null;
 
@@ -27,7 +27,7 @@ export const scenarioGatewayLinkAnomaly: ScenarioData = (() => {
   // Update topology edge
   const edge = base.topologyEdges.find(e => e.from_node_id === 'node-a' && e.to_node_id === 'node-b')!;
   edge.status = 'degraded';
-  edge.last_error = 'Gateway link link-main-private verification failed';
+  edge.last_error = 'Gateway link gl-a-b verification failed';
 
   // Update node-b sync
   const nodeBSync = base.syncStatuses.find(s => s.node_id === 'node-b')!;
@@ -46,8 +46,8 @@ export const scenarioGatewayLinkAnomaly: ScenarioData = (() => {
       title: '网关链路异常',
       description: 'gw_public_a → gw_public_a 链路验证失败，影响跨节点中继路径',
       affectedObjects: [
-        { type: 'gateway', id: 'gw_public_a', name: '主网关' },
-        { type: 'gateway', id: 'gw_private_b', name: '私网网关' },
+        { type: 'gateway', id: 'gw_public_a', name: 'A Public Gateway' },
+        { type: 'gateway', id: 'gw_private_b', name: 'B Private Gateway' },
         { type: 'node', id: 'node-b', name: 'Server B' },
       ],
       workspace: 'fabric',
@@ -71,7 +71,7 @@ export const scenarioGatewayLinkAnomaly: ScenarioData = (() => {
     {
       node_id: 'node-a',
       node_name: 'Server A',
-      error: 'Gateway link link-main-private verification failed: timeout',
+      error: 'Gateway link gl-a-b verification failed: timeout',
       last_seen: NOW,
     },
   ];
