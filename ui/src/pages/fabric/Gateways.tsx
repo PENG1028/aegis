@@ -12,7 +12,7 @@ export default function Gateways() {
   const { data } = useQuery({ queryKey: ['gateways'], queryFn: fetchGateways });
   const { data: routesData } = useQuery({ queryKey: ['routes'], queryFn: fetchRoutes });
   const gws = Array.isArray(data) ? data : [];
-  const routes = (routesData as any)?.routes || [];
+  const routes = Array.isArray(routesData) ? routesData : (routesData as any)?.routes || [];
   const scenario = API_CONFIG.useMock ? getScenario() : null;
 
   return (
@@ -39,47 +39,40 @@ export default function Gateways() {
               )}>
               <div className="flex items-center gap-4">
                 {/* Gateway identity */}
-                <div className="w-48 shrink-0">
-                  <div className="flex items-center gap-2 mb-1">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
                     <HealthDot status={g.status === 'active' ? 'healthy' : g.status === 'error' ? 'failed' : 'unknown'} />
-                    <span className="text-sm font-semibold text-a-fg">{g.name}</span>
+                    <span className="text-sm font-semibold text-a-fg font-mono">{g.bind_addr}:{g.port}</span>
+                    <span className="text-[10px] text-a-muted">{g.provider} · {g.scheme}</span>
                     <StatusBadge status={g.status} />
                   </div>
-                  <div className="text-[10px] text-a-muted font-mono">
-                    {g.provider} · {g.bind_addr}:{g.port} · {g.scheme}
+                  <div className="text-[10px] text-a-muted flex items-center gap-2">
+                    <span>{g.name}</span>
+                    <span>·</span>
+                    <span>{g.node_name || g.node_id}</span>
+                    {g.type && <><span>·</span><span>{g.type}</span></>}
                   </div>
-                </div>
-
-                {/* Arrow */}
-                <svg className="w-4 h-4 text-a-border shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
-
-                {/* Node */}
-                <div className="w-32 shrink-0">
-                  <div className="text-xs text-a-fg2">{g.node_name || g.node_id}</div>
-                  <div className="text-[10px] text-a-muted">节点</div>
                 </div>
 
                 <svg className="w-4 h-4 text-a-border shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
 
                 {/* Routes served */}
                 <div className="flex-1 min-w-0">
-                  {gwRoutes.length > 0 ? (
+                  {gwRoutes.length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {gwRoutes.map((r: any) => (
                         <span key={r.route_id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-a-accent/10 text-a-accent font-mono">
                           {r.domain}
                         </span>
                       ))}
+                      <span className="text-[10px] text-a-muted ml-1">{gwRoutes.length} 路由</span>
                     </div>
-                  ) : (
-                    <span className="text-[10px] text-a-muted">无关联路由</span>
                   )}
                 </div>
 
-                {/* Counts */}
-                <div className="flex items-center gap-3 text-[10px] text-a-muted shrink-0">
-                  <span>{gwRoutes.length} 路由</span>
-                  {g.last_error && <span className="text-[#ff5c72] truncate max-w-[160px]" title={g.last_error}>{g.last_error}</span>}
+                {/* Error */}
+                <div className="shrink-0">
+                  {g.last_error && <span className="text-[10px] text-[#ff5c72] truncate max-w-[200px] block" title={g.last_error}>{g.last_error}</span>}
                 </div>
               </div>
             </div>
