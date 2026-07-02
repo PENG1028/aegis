@@ -330,10 +330,11 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	}
 
 	// v1.8J Embedded UI — catch-all for SPA routes not matching any API path.
-	// Registered without method prefix so it handles all HTTP methods.
+	// Uses /{path...} wildcard to match all paths (Go 1.22+ mux syntax).
+	// The Go 1.22 mux treats "/" as root-only, so we need an explicit wildcard.
 	uiHandler, err := uiassets.Handler()
 	if err != nil {
 		panic("uiassets: failed to initialize embedded UI handler: " + err.Error())
 	}
-	mux.HandleFunc("/", uiHandler.ServeHTTP)
+	mux.HandleFunc("/{path...}", uiHandler.ServeHTTP)
 }

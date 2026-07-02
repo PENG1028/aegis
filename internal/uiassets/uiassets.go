@@ -11,6 +11,7 @@ package uiassets
 
 import (
 	"embed"
+	"io"
 	"io/fs"
 	"net/http"
 	"path/filepath"
@@ -50,27 +51,44 @@ func Handler() (http.Handler, error) {
 		}
 
 		// Try to open as a static file.
-		// If the path has no extension (SPA route like /routes, /nodes),
-		// serve index.html so React Router takes over.
 		ext := filepath.Ext(path)
 		isSPARoute := ext == "" || ext == ".html"
 
 		f, err := sub.Open(path)
 		if err == nil {
+			fi, statErr := f.Stat()
+			if statErr == nil && !fi.IsDir() {
+				f.Close()
+				// Static file exists — serve it directly.
+				w.Header().Set("X-Aegis-Debug", "static:"+path)
+				fileServer.ServeHTTP(w, r)
+				return
+			}
 			f.Close()
-			// Static file exists — serve it directly.
-			fileServer.ServeHTTP(w, r)
-			return
 		}
 
 		if isSPARoute {
-			// SPA fallback — rewrite to index.html.
-			r.URL.Path = "/index.html"
-			fileServer.ServeHTTP(w, r)
+			// SPA fallback — serve index.html directly, bypassing fileServer
+			// which may redirect directory paths unexpectedly.
+			w.Header().Set("X-Aegis-Debug", "spa:"+path)
+			indexFile, err := sub.Open("index.html")
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			defer indexFile.Close()
+			fi, err := indexFile.Stat()
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			http.ServeContent(w, r, "index.html", fi.ModTime(), indexFile.(io.ReadSeeker))
 			return
 		}
 
 		// File not found and not an SPA route — 404.
+		w.Header().Set("X-Aegis-Debug", "notfound:"+path)
 		http.NotFound(w, r)
 	}), nil
 }
