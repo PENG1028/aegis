@@ -351,7 +351,7 @@ export const nodeApi = {
 export async function fetchNodes(): Promise<Node[]> {
   const res = await nodeApi.list();
   // Support paginated {data, meta} and legacy {nodes, count} formats
-  const items = res.data || res.nodes || [];
+  const items = (res as any).data || res.nodes || [];
   return items.map(mapNode);
 }
 
@@ -452,7 +452,7 @@ export const gatewayApi = {
 
 export async function fetchGateways(): Promise<Gateway[]> {
   const res = await gatewayApi.list();
-  const items = res.data || res.gateways || [];
+  const items = (res as any).data || res.gateways || [];
   return items.map(mapGateway);
 }
 
@@ -567,7 +567,7 @@ export const serviceApi = {
 
 export async function fetchServices(): Promise<Service[]> {
   const res = await serviceApi.list();
-  const items = res.data || res.services || [];
+  const items = (res as any).data || res.services || [];
   return items.map(mapService);
 }
 
@@ -648,7 +648,7 @@ export const routeApi = {
 
 export async function fetchRoutes(): Promise<Route[]> {
   const res = await routeApi.list();
-  const items = res.data || res.routes || [];
+  const items = (res as any).data || res.routes || [];
   return items.map(mapRoute);
 }
 
