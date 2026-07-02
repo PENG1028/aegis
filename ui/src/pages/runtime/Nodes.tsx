@@ -1,3 +1,5 @@
+// ─── Nodes ───
+// Real API via fetchNodes. Shows node identity, IPs, config rev, software version.
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { fetchNodes } from '@/lib/api-bridge';
@@ -5,7 +7,11 @@ import { Card, PageHeader, StatusBadge, CapabilityBadge } from '@/components/sha
 
 export default function Nodes() {
   const nav = useNavigate();
-  const { data } = useQuery({ queryKey: ['nodes'], queryFn: fetchNodes });
+  const { data } = useQuery({
+    queryKey: ['nodes'],
+    queryFn: fetchNodes,
+    refetchInterval: 30_000,
+  });
   const nodes = Array.isArray(data) ? data : [];
 
   return (
@@ -13,17 +19,62 @@ export default function Nodes() {
       <PageHeader title="节点列表" subtitle={`${nodes.length} 个节点`} />
       <Card>
         <table className="w-full text-xs">
-          <thead><tr className="border-b border-a-border text-a-muted text-left"><th className="py-2 px-3">名称</th><th className="py-2 px-3">IP</th><th className="py-2 px-3">状态</th><th className="py-2 px-3">同步</th><th className="py-2 px-3">能力</th></tr></thead>
+          <thead>
+            <tr className="border-b border-a-border text-a-muted text-left">
+              <th className="py-2 px-3">节点</th>
+              <th className="py-2 px-3">公网 IP</th>
+              <th className="py-2 px-3">内网 IP</th>
+              <th className="py-2 px-3">运行状态</th>
+              <th className="py-2 px-3">配置版本</th>
+              <th className="py-2 px-3">软件版本</th>
+              <th className="py-2 px-3">能力</th>
+            </tr>
+          </thead>
           <tbody>
             {nodes.map((n: any) => (
-              <tr key={n.node_id} className="border-b border-a-border/50 hover:bg-a-border/10 cursor-pointer" onClick={() => nav(`/runtime/node/${n.node_id}`)}>
-                <td className="py-2.5 px-3 font-medium text-a-fg">{n.name}</td>
-                <td className="py-2.5 px-3 font-mono text-a-muted">{n.public_ip}</td>
+              <tr key={n.node_id}
+                className="border-b border-a-border/50 hover:bg-a-border/10 cursor-pointer"
+                onClick={() => nav(`/runtime/node/${n.node_id}`)}>
+                {/* Name + hostname */}
+                <td className="py-2.5 px-3">
+                  <div className="font-medium text-a-fg">{n.name || n.hostname || n.node_id}</div>
+                  {n.hostname && n.hostname !== n.name && (
+                    <div className="text-[10px] text-a-muted font-mono">{n.hostname}</div>
+                  )}
+                </td>
+                {/* Public IP */}
+                <td className="py-2.5 px-3 font-mono text-a-fg2">{n.public_ip || '—'}</td>
+                {/* Private IP */}
+                <td className="py-2.5 px-3 font-mono text-a-muted">{n.private_ip || '—'}</td>
+                {/* Status */}
                 <td className="py-2.5 px-3"><StatusBadge status={n.status} /></td>
-                <td className="py-2.5 px-3"><StatusBadge status={n.sync_status} /></td>
-                <td className="py-2.5 px-3 flex gap-1 flex-wrap">
-                  {n.capabilities?.gateway_enabled && <CapabilityBadge name="网关" enabled />}
-                  {n.capabilities?.relay_capable && <CapabilityBadge name="中继" enabled />}
+                {/* Config revision: desired == applied */}
+                <td className="py-2.5 px-3">
+                  {n.desired_revision ? (
+                    n.desired_revision === n.applied_revision ? (
+                      <span className="font-mono text-[#4cd964]">r{n.applied_revision}</span>
+                    ) : (
+                      <span className="font-mono">
+                        <span className="text-a-fg">r{n.desired_revision}</span>
+                        <span className="text-a-muted mx-1">→</span>
+                        <span className="text-[#e8b830]">r{n.applied_revision}</span>
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-a-muted">—</span>
+                  )}
+                </td>
+                {/* Software version (agent) */}
+                <td className="py-2.5 px-3">
+                  <span className="font-mono text-a-fg2">{n.agent_version || '—'}</span>
+                </td>
+                {/* Capabilities */}
+                <td className="py-2.5 px-3">
+                  <div className="flex gap-1 flex-wrap">
+                    {n.capabilities?.gateway_enabled && <CapabilityBadge name="网关" enabled />}
+                    {n.capabilities?.relay_capable && <CapabilityBadge name="中继" enabled />}
+                    {n.capabilities?.caddy_installed && <CapabilityBadge name="Caddy" enabled />}
+                  </div>
                 </td>
               </tr>
             ))}
