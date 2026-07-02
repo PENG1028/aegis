@@ -10,7 +10,7 @@ export default function GatewayDetail() {
 
   if (isLoading) return <div className="p-6"><LoadingState text="加载网关链路..." /></div>;
   if (error) return <div className="p-6"><ErrorBanner message={(error as Error).message} /></div>;
-  if (!chain?.gateway) return <div className="p-6"><ErrorBanner message="未找到网关" /></div>;
+  if (!chain?.gateway) return <div className="p-6"><ErrorBanner message={`未找到网关${chain?.error ? '：' + chain.error : ''}`} /></div>;
 
   return (
     <div className="p-6 space-y-6">

@@ -38,6 +38,7 @@ export interface ObjectChain {
   nodes: Node[];
   provider: ProviderRef | null;
   status: ChainHealth;
+  error?: string;
 }
 
 // ─── Entry Point ───
