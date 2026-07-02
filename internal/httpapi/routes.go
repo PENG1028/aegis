@@ -9,6 +9,7 @@ import (
 // RegisterRoutes sets up all API routes on the given mux.
 func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	h := &handlers.Handlers{
+		DB:            svcs.DB,
 		Config:        svcs.Config,
 		Project:       svcs.Project,
 		Service:       svcs.Service,

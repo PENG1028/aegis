@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"database/sql"
 	"net/http"
 
 	"aegis/internal/action"
@@ -39,6 +40,7 @@ import (
 
 // Services holds all application services for the HTTP API.
 type Services struct {
+	DB            *sql.DB
 	Config        *config.Config
 	Project       *project.AppService
 	Service       *service.AppService
