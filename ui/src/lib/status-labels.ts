@@ -72,7 +72,18 @@ export const STATUS_LABEL: Record<string, string> = {
   safe: '安全',
   warning: '警告',
   blocked: '已阻止',
-  // General
+  // ─── Unified Runtime Status (already defined above: healthy, degraded, unreachable) ───
+  // ─── Unified Release Status ───
+  current: '当前',
+  applying: '应用中',
+  drifted: '已漂移',
+  // ─── Unified Security Status ───
+  expired: '已过期',
+  revealed: '已揭示',
+  rotating: '轮换中',
+  // ─── Chain Health ───
+  broken: '已中断',
+  // ─── General ───
   ok: '正常',
   success: '成功',
 };
@@ -126,6 +137,14 @@ export const STATUS_CLASS: Record<string, string> = {
   safe: 'bg-[#4cd964]/20 text-[#4cd964]',
   warning: 'bg-[#e8b830]/20 text-[#e8b830]',
   blocked: 'bg-[#ff5c72]/20 text-[#ff5c72]',
+  // ─── Unified Status ───
+  drifted: 'bg-[#e8b830]/20 text-[#e8b830]',
+  applying: 'bg-a-accent/20 text-a-accent',
+  current: 'bg-[#4cd964]/20 text-[#4cd964]',
+  expired: 'bg-a-border/60 text-a-muted',
+  revealed: 'bg-[#ff5c72]/20 text-[#ff5c72]',
+  rotating: 'bg-a-accent/20 text-a-accent',
+  broken: 'bg-[#ff5c72]/20 text-[#ff5c72]',
   ok: 'bg-[#4cd964]/20 text-[#4cd964]',
   success: 'bg-[#4cd964]/20 text-[#4cd964]',
 };

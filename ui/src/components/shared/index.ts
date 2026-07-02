@@ -21,9 +21,19 @@ export type { Tab } from './TabBar';
 export { PathChain } from './PathChain';
 export type { PathStep } from './PathChain';
 export { ToastProvider, useToast } from './Toast';
-export { default as HelpButton } from './HelpButton';
+export { HelpButton } from './HelpButton';
 export { default as LoadingState } from './LoadingState';
 export { default as ErrorBanner } from './ErrorBanner';
 export { default as RevealSecretModal } from './RevealSecretModal';
 export { default as LoginPage } from './LoginPage';
 export { default as AuthGuard } from './AuthGuard';
+
+// New v2 workspace components
+export { Drawer } from './Drawer';
+export { Wizard } from './Wizard';
+export type { WizardStep } from './Wizard';
+export { ConfirmDialog } from './ConfirmDialog';
+export { SearchInput } from './SearchInput';
+export { HealthDot } from './HealthDot';
+export { Timestamp } from './Timestamp';
+export { CopyButton } from './CopyButton';

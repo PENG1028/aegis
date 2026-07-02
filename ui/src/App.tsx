@@ -1,55 +1,110 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+// ─── Aegis Frontend v2 ───
+// Workspace-based routing: 8 workspaces × nested routes
+// Relationship-driven UI with PathRibbon, RelationshipMap, ImpactPanel, ReleaseDiffViewer
+
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { AuthGuard } from '@/components/shared';
+import { AuthGuard, ToastProvider } from '@/components/shared';
+import { AppShell } from '@/components/layout/AppShell';
+import { LEGACY_REDIRECTS } from '@/lib/constants';
 
-// Existing pages
-import DashboardPage from '@/pages/Dashboard';
-import NodesPage from '@/pages/Nodes';
-import NodeDetailPage from '@/pages/NodeDetail';
-import JoinTokensPage from '@/pages/JoinTokens';
-import GatewaysPage from '@/pages/Gateways';
-import GatewayDetailPage from '@/pages/GatewayDetail';
-import TopologyPage from '@/pages/Topology';
-import TopologyPathPage from '@/pages/TopologyPath';
-import ServicesPage from '@/pages/Services';
-import ServiceDetailPage from '@/pages/ServiceDetail';
-import RoutesPage from '@/pages/Routes';
-import RouteDetailPage from '@/pages/RouteDetail';
-import EndpointsPage from '@/pages/Endpoints';
-import GatewayPoliciesPage from '@/pages/GatewayPolicies';
-import RoutingTablePage from '@/pages/RoutingTable';
-import SyncStatusPage from '@/pages/SyncStatus';
-import LocalGatewayRuntimePage from '@/pages/LocalGatewayRuntime';
-import AcceptancePage from '@/pages/Acceptance';
-import SettingsPage from '@/pages/Settings';
+// ── Command Center ──
+import CommandCenter from '@/pages/command-center/CommandCenter';
 
-// New v2 pages
-import TracePage from '@/pages/Trace';
-import SafetyPage from '@/pages/Safety';
-import RelayPage from '@/pages/Relay';
-import GatewayLinksPage from '@/pages/GatewayLinksPage';
-import GatewayLinkDetailPage from '@/pages/GatewayLinkDetailPage';
-import { ApplyConfigPage } from '@/pages/ApplyConfig';
-import { ConfigPage } from '@/pages/ConfigPage';
-import ProvidersPage from '@/pages/ProvidersPage';
-import ListenersPage from '@/pages/ListenersPage';
-import { DoctorPage } from '@/pages/DoctorPage';
-import { SmokePage } from '@/pages/SmokePage';
-import ScopesPage from '@/pages/ScopesPage';
-import ApiKeysPage from '@/pages/ApiKeysPage';
-import LogsPage from '@/pages/LogsAudit';
-import { SecurityPage } from '@/pages/SecurityPage';
-import { MaintenancePage } from '@/pages/MaintenancePage';
-import { ActionsPage } from '@/pages/ActionsPage';
-import QuickCreatePage from '@/pages/QuickCreate';
-import HealthCheckPage from '@/pages/HealthCheck';
-import ImportConfigPage from '@/pages/ImportConfig';
-import TransparentProxyPage from '@/pages/TransparentProxy';
-import ExposuresPage from '@/pages/Exposures';
-import CredentialsPage from '@/pages/Credentials';
-import MiddlewarePage from '@/pages/Middleware';
-import NotFoundPage from '@/pages/NotFound';
+// ── Exposure ──
+import ExposureLayout from '@/pages/exposure/ExposureLayout';
+import EntryPoints from '@/pages/exposure/EntryPoints';
+import EntryPointDetail from '@/pages/exposure/EntryPointDetail';
+import Services from '@/pages/exposure/Services';
+import ServiceDetail from '@/pages/exposure/ServiceDetail';
+import Endpoints from '@/pages/exposure/Endpoints';
+import QuickConnect from '@/pages/exposure/QuickConnect';
+import ImportConfig from '@/pages/exposure/ImportConfig';
+
+// ── Fabric ──
+import FabricLayout from '@/pages/fabric/FabricLayout';
+import Gateways from '@/pages/fabric/Gateways';
+import GatewayDetail from '@/pages/fabric/GatewayDetail';
+import Listeners from '@/pages/fabric/Listeners';
+import GatewayLinks from '@/pages/fabric/GatewayLinks';
+import Topology from '@/pages/fabric/Topology';
+import RoutingTable from '@/pages/fabric/RoutingTable';
+import Providers from '@/pages/fabric/Providers';
+
+// ── Runtime ──
+import RuntimeLayout from '@/pages/runtime/RuntimeLayout';
+import Nodes from '@/pages/runtime/Nodes';
+import NodeDetail from '@/pages/runtime/NodeDetail';
+import DeployNode from '@/pages/runtime/DeployNode';
+import Updates from '@/pages/runtime/Updates';
+import SyncStatus from '@/pages/runtime/SyncStatus';
+import Binaries from '@/pages/runtime/Binaries';
+
+// ── Release ──
+import ReleaseLayout from '@/pages/release/ReleaseLayout';
+import Changes from '@/pages/release/Changes';
+import DiffView from '@/pages/release/DiffView';
+import DryRun from '@/pages/release/DryRun';
+import Apply from '@/pages/release/Apply';
+import History from '@/pages/release/History';
+import Rollback from '@/pages/release/Rollback';
+
+// ── Observe ──
+import ObserveLayout from '@/pages/observe/ObserveLayout';
+import Trace from '@/pages/observe/Trace';
+import Health from '@/pages/observe/Health';
+import Safety from '@/pages/observe/Safety';
+import Logs from '@/pages/observe/Logs';
+import Doctor from '@/pages/observe/Doctor';
+import Acceptance from '@/pages/observe/Acceptance';
+
+// ── Access ──
+import AccessLayout from '@/pages/access/AccessLayout';
+import Scopes from '@/pages/access/Scopes';
+import ApiKeys from '@/pages/access/ApiKeys';
+import Credentials from '@/pages/access/Credentials';
+import JoinTokens from '@/pages/access/JoinTokens';
+import AdminAccount from '@/pages/access/AdminAccount';
+
+// ── Settings ──
+import SettingsLayout from '@/pages/settings/SettingsLayout';
+import PanelSettings from '@/pages/settings/Panel';
+import DnsSettings from '@/pages/settings/DnsSettings';
+import TlsSettings from '@/pages/settings/TlsSettings';
+import TransparentProxyPage from '@/pages/settings/TransparentProxy';
+import AdvancedSettings from '@/pages/settings/Advanced';
+
+// ── Legacy ──
+import NotFound from '@/pages/NotFound';
+
+// ── Legacy Redirect Component ──
+function LegacyRedirect() {
+  const location = useLocation();
+  const target = LEGACY_REDIRECTS[location.pathname];
+  if (target) {
+    return <Navigate to={target} replace />;
+  }
+  // Handle nested paths like /nodes/:id, /gateways/:id, /routes/:id, /services/:id, /gateway-links/:id
+  if (location.pathname.startsWith('/nodes/')) {
+    return <Navigate to={location.pathname.replace('/nodes/', '/runtime/node/')} replace />;
+  }
+  if (location.pathname.startsWith('/gateways/')) {
+    return <Navigate to={location.pathname.replace('/gateways/', '/fabric/gateway/')} replace />;
+  }
+  if (location.pathname.startsWith('/routes/')) {
+    return <Navigate to={location.pathname.replace('/routes/', '/exposure/entry/')} replace />;
+  }
+  if (location.pathname.startsWith('/services/')) {
+    return <Navigate to={location.pathname.replace('/services/', '/exposure/service/')} replace />;
+  }
+  if (location.pathname.startsWith('/gateway-links')) {
+    return <Navigate to="/fabric/links" replace />;
+  }
+  if (location.pathname.startsWith('/topology/path')) {
+    return <Navigate to="/fabric/topology" replace />;
+  }
+  return <NotFound />;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,100 +119,92 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthGuard>
-          <Routes>
-            <Route element={<AppLayout />}>
-              {/* Dashboard */}
-              <Route path="/" element={<DashboardPage />} />
+      <ToastProvider>
+        <BrowserRouter>
+          <AuthGuard>
+            <Routes>
+              <Route element={<AppShell />}>
+                {/* ── Workspace 1: Command Center ── */}
+                <Route path="/" element={<CommandCenter />} />
 
-              {/* Quick Create & Health */}
-              <Route path="/quick-create" element={<QuickCreatePage />} />
-              <Route path="/health" element={<HealthCheckPage />} />
-              <Route path="/import" element={<ImportConfigPage />} />
+                {/* ── Workspace 2: Exposure / 服务暴露 ── */}
+                <Route path="/exposure" element={<ExposureLayout />}>
+                  <Route index element={<EntryPoints />} />
+                  <Route path="entry/:entryId" element={<EntryPointDetail />} />
+                  <Route path="service/:serviceId" element={<ServiceDetail />} />
+                  <Route path="endpoint/:endpointId" element={<EntryPointDetail />} />
+                  <Route path="connect" element={<QuickConnect />} />
+                  <Route path="import" element={<ImportConfig />} />
+                </Route>
 
-              {/* Nodes & Join Tokens */}
-              <Route path="/nodes" element={<NodesPage />} />
-              <Route path="/nodes/:nodeId" element={<NodeDetailPage />} />
-              <Route path="/join-tokens" element={<JoinTokensPage />} />
+                {/* ── Workspace 3: Fabric / 网关网络 ── */}
+                <Route path="/fabric" element={<FabricLayout />}>
+                  <Route index element={<Gateways />} />
+                  <Route path="gateway/:gatewayId" element={<GatewayDetail />} />
+                  <Route path="listeners" element={<Listeners />} />
+                  <Route path="links" element={<GatewayLinks />} />
+                  <Route path="topology" element={<Topology />} />
+                  <Route path="routing" element={<RoutingTable />} />
+                  <Route path="providers" element={<Providers />} />
+                  <Route path="providers/:providerId" element={<Providers />} />
+                </Route>
 
-              {/* Gateways */}
-              <Route path="/gateways" element={<GatewaysPage />} />
-              <Route path="/gateways/:gatewayId" element={<GatewayDetailPage />} />
+                {/* ── Workspace 4: Runtime / 节点运行时 ── */}
+                <Route path="/runtime" element={<RuntimeLayout />}>
+                  <Route index element={<Nodes />} />
+                  <Route path="node/:nodeId" element={<NodeDetail />} />
+                  <Route path="deploy" element={<DeployNode />} />
+                  <Route path="updates" element={<Updates />} />
+                  <Route path="sync" element={<SyncStatus />} />
+                  <Route path="binaries" element={<Binaries />} />
+                </Route>
 
-              {/* Topology */}
-              <Route path="/topology" element={<TopologyPage />} />
-              <Route path="/topology/path" element={<TopologyPathPage />} />
+                {/* ── Workspace 5: Release / 配置发布 ── */}
+                <Route path="/release" element={<ReleaseLayout />}>
+                  <Route index element={<Changes />} />
+                  <Route path="diff" element={<DiffView />} />
+                  <Route path="dry-run" element={<DryRun />} />
+                  <Route path="apply" element={<Apply />} />
+                  <Route path="history" element={<History />} />
+                  <Route path="rollback" element={<Rollback />} />
+                </Route>
 
-              {/* Services */}
-              <Route path="/services" element={<ServicesPage />} />
-              <Route path="/services/:serviceId" element={<ServiceDetailPage />} />
+                {/* ── Workspace 6: Observe / 观测诊断 ── */}
+                <Route path="/observe" element={<ObserveLayout />}>
+                  <Route index element={<Trace />} />
+                  <Route path="health" element={<Health />} />
+                  <Route path="safety" element={<Safety />} />
+                  <Route path="logs" element={<Logs />} />
+                  <Route path="audit" element={<Logs />} />
+                  <Route path="doctor" element={<Doctor />} />
+                  <Route path="acceptance" element={<Acceptance />} />
+                </Route>
 
-              {/* Routes */}
-              <Route path="/routes" element={<RoutesPage />} />
-              <Route path="/routes/:routeId" element={<RouteDetailPage />} />
+                {/* ── Workspace 7: Access / 访问控制 ── */}
+                <Route path="/access" element={<AccessLayout />}>
+                  <Route index element={<Scopes />} />
+                  <Route path="keys" element={<ApiKeys />} />
+                  <Route path="credentials" element={<Credentials />} />
+                  <Route path="tokens" element={<JoinTokens />} />
+                  <Route path="admin" element={<AdminAccount />} />
+                </Route>
 
-              {/* Endpoints */}
-              <Route path="/endpoints" element={<EndpointsPage />} />
+                {/* ── Workspace 8: Settings / 系统设置 ── */}
+                <Route path="/settings" element={<SettingsLayout />}>
+                  <Route index element={<PanelSettings />} />
+                  <Route path="dns" element={<DnsSettings />} />
+                  <Route path="tls" element={<TlsSettings />} />
+                  <Route path="proxy" element={<TransparentProxyPage />} />
+                  <Route path="advanced" element={<AdvancedSettings />} />
+                </Route>
 
-              {/* Policies & Routing */}
-              <Route path="/policies" element={<GatewayPoliciesPage />} />
-              <Route path="/routing" element={<RoutingTablePage />} />
-
-              {/* Sync & Local Gateway */}
-              <Route path="/sync" element={<SyncStatusPage />} />
-              <Route path="/local-gateway" element={<LocalGatewayRuntimePage />} />
-
-              {/* Acceptance & Settings */}
-              <Route path="/acceptance" element={<AcceptancePage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-
-              {/* === New v2 pages === */}
-
-              {/* Trace / Safety / Relay / Exposures */}
-              <Route path="/trace" element={<TracePage />} />
-              <Route path="/transparent" element={<TransparentProxyPage />} />
-              <Route path="/exposures" element={<ExposuresPage />} />
-              <Route path="/credentials" element={<CredentialsPage />} />
-              <Route path="/safety" element={<SafetyPage />} />
-              <Route path="/relay" element={<RelayPage />} />
-
-              {/* Gateway Links */}
-              <Route path="/gateway-links" element={<GatewayLinksPage />} />
-              <Route path="/gateway-links/:id" element={<GatewayLinkDetailPage />} />
-
-              {/* Apply / Config */}
-              <Route path="/apply" element={<ApplyConfigPage />} />
-              <Route path="/config" element={<ConfigPage />} />
-
-              {/* Providers / Listeners */}
-              <Route path="/providers" element={<ProvidersPage />} />
-              <Route path="/middleware" element={<MiddlewarePage />} />
-              <Route path="/listeners" element={<ListenersPage />} />
-
-              {/* Doctor / Smoke */}
-              <Route path="/doctor" element={<DoctorPage />} />
-              <Route path="/smoke" element={<SmokePage />} />
-
-              {/* Scopes / API Keys */}
-              <Route path="/scopes" element={<ScopesPage />} />
-              <Route path="/api-keys" element={<ApiKeysPage />} />
-
-              {/* Logs */}
-              <Route path="/logs" element={<LogsPage />} />
-              <Route path="/audit" element={<LogsPage />} />
-
-              {/* Security / Maintenance / Actions */}
-              <Route path="/security" element={<SecurityPage />} />
-              <Route path="/maintenance" element={<MaintenancePage />} />
-              <Route path="/actions" element={<ActionsPage />} />
-
-              {/* 404 */}
-              <Route path="*" element={<NotFoundPage />} />
-            </Route>
-          </Routes>
-        </AuthGuard>
-      </BrowserRouter>
+                {/* ── Legacy redirects + 404 ── */}
+                <Route path="*" element={<LegacyRedirect />} />
+              </Route>
+            </Routes>
+          </AuthGuard>
+        </BrowserRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }
