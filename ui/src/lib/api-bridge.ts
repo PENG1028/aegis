@@ -191,6 +191,10 @@ export const auth: typeof realAuth = useMock
       },
       logout: async () => { await new Promise(r => setTimeout(r, 200)); return { message: '已登出' }; },
       me: async () => ({ user: { id: '1', username: 'admin' } }),
+      changePassword: async (_current: string, _newPassword: string) => {
+        await new Promise(r => setTimeout(r, 300));
+        return { message: '密码已修改' };
+      },
     }
   : realAuth;
 
