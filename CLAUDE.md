@@ -156,6 +156,12 @@ make update-server-b # 安全更新 Server B
 make update-all      # 依次更新 Server B → Server A
 ```
 
+部署脚本 (`scripts/update.sh`) 传输逻辑 (v1.8L-10)：
+- gzip 压缩二进制 (~22MB→~11MB) 减少跨海传输窗口
+- 上传到 `/tmp/aegis.upload.tmp` 而非直接覆盖运行中文件
+- 校验文件大小一致后 `mv` 原子替换 → 无 "Text file busy" 风险
+- SSH 中断也只会残留 `/tmp` 临时文件，不影响服务
+
 ### 首次部署流程
 
 ```bash
