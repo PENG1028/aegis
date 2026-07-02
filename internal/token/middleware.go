@@ -65,6 +65,12 @@ func isPublicPath(path, method string) bool {
 	if path == "/" || strings.HasPrefix(path, "/assets/") || path == "/favicon.ico" || path == "/favicon.svg" {
 		return true
 	}
+	// SPA routes: any path without a dot extension and not under /api/
+	// (e.g. /exposure, /fabric, /runtime). React Router handles them.
+	// The UI handler serves index.html for these.
+	if !strings.HasPrefix(path, "/api/") && !strings.Contains(path, ".") {
+		return true
+	}
 	return false
 }
 
