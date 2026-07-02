@@ -64,7 +64,7 @@ export default function Trace() {
     setLoading(true);
     setResult(null);
     try {
-      if (API_CONFIG.useMock && inputType === 'domain') {
+      if (API_CONFIG.useMock) {
         await new Promise(r => setTimeout(r, 400));
         setResult(mockTrace(domain || 'api.proofnote.dev'));
       } else if (inputType === 'domain') {
@@ -109,7 +109,7 @@ export default function Trace() {
           )}
           <Btn primary onClick={handleTrace} disabled={loading}>{loading ? '追踪中...' : '开始追踪'}</Btn>
         </div>
-        {/* Quick test domains */}
+        {/* Quick test domains — mock mode only */}
         {API_CONFIG.useMock && (
           <div className="flex gap-1.5 mt-2">
             <span className="text-[10px] text-a-muted">快捷:</span>
@@ -117,6 +117,11 @@ export default function Trace() {
               <button key={d} onClick={() => { setDomain(d); setInputType('domain'); }}
                 className="text-[10px] px-1.5 py-0.5 rounded bg-a-bg border border-a-border text-a-muted hover:text-a-fg cursor-pointer">{d}</button>
             ))}
+          </div>
+        )}
+        {!API_CONFIG.useMock && (
+          <div className="text-[10px] text-a-muted mt-2">
+            输入域名、SNI 主机名或 Route ID 进行全链路追踪
           </div>
         )}
       </Card>

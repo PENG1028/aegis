@@ -1,11 +1,17 @@
 // ─── Updates ───
+// Real API: fetchNodes for node version/sync status.
+import { useQuery } from '@tanstack/react-query';
 import { PageHeader, Card, StatusBadge, Btn, Timestamp } from '@/components/shared';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+import { fetchNodes } from '@/lib/api-bridge';
 
 export default function Updates() {
-  const nodes = API_CONFIG.useMock ? getScenario().nodes : [];
-  const outdated = nodes.filter(n => n.sync_status === 'outdated' || n.desired_revision !== n.applied_revision);
+  const { data } = useQuery({
+    queryKey: ['updates-nodes'],
+    queryFn: fetchNodes,
+    refetchInterval: 60_000,
+  });
+  const nodes = Array.isArray(data) ? data : [];
+  const outdated = nodes.filter(n => n.sync_status === 'outdated' || (n.desired_revision && n.applied_revision && n.desired_revision !== n.applied_revision));
 
   return (
     <div className="p-6 space-y-6">
@@ -30,18 +36,22 @@ export default function Updates() {
         </Card>
       )}
 
-      <Card title="所有节点">
-        <div className="space-y-1">
-          {nodes.map(n => (
-            <div key={n.node_id} className="flex items-center gap-3 px-3 py-2 text-xs">
-              <span className="font-medium text-a-fg w-24">{n.name}</span>
-              <span className="font-mono text-a-muted">v{n.applied_revision}</span>
-              <StatusBadge status={n.sync_status} />
-              <span className="text-a-muted">{n.agent_version}</span>
-              <Timestamp iso={n.last_heartbeat_at} />
-            </div>
-          ))}
-        </div>
+      <Card title={`所有节点 (${nodes.length})`}>
+        {nodes.length === 0 ? (
+          <div className="text-center py-8 text-xs text-a-muted">暂无节点数据</div>
+        ) : (
+          <div className="space-y-1">
+            {nodes.map(n => (
+              <div key={n.node_id} className="flex items-center gap-3 px-3 py-2 text-xs">
+                <span className="font-medium text-a-fg w-32">{n.name}</span>
+                <span className="font-mono text-a-muted">v{n.applied_revision || '?'}</span>
+                <StatusBadge status={n.sync_status} />
+                <span className="text-a-muted">{n.agent_version}</span>
+                <Timestamp iso={n.last_heartbeat_at} />
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
