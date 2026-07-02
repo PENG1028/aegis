@@ -56,8 +56,9 @@ async function fetchChain(type: string, id: string): Promise<ObjectChain> {
       } catch { /* endpoints optional */ }
     }
     // Further real-mode chain assembly would go here
-  } catch {
+  } catch (err) {
     chain.status = 'broken';
+    chain.error = (err as Error).message || String(err);
   }
 
   return chain;

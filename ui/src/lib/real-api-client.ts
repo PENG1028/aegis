@@ -458,11 +458,13 @@ export async function fetchGateways(): Promise<Gateway[]> {
 
 export async function fetchGatewayDetail(id: string): Promise<GatewayDetail> {
   const raw = await gatewayApi.get(id);
-  const gw = mapGateway(raw);
+  // AdminGetGateway returns {gateway: {...}}; handle both wrapped and bare
+  const gwRaw = raw.gateway || raw;
+  const gw = mapGateway(gwRaw);
   return {
     ...gw,
-    routes_served: raw.routes_served ?? 0,
-    gateway_links: raw.gateway_links || [],
+    routes_served: gwRaw.routes_served ?? 0,
+    gateway_links: gwRaw.gateway_links || [],
   };
 }
 

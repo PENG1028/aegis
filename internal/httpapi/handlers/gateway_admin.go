@@ -65,7 +65,9 @@ func (h *Handlers) AdminGetGateway(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "gateway not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, gw)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"gateway": gw,
+	})
 }
 
 // AdminUpdateGateway handles PATCH /api/admin/v1/gateways/{id}
