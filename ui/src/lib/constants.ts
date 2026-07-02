@@ -22,7 +22,6 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   exposure: [
     { path: '/exposure', label: '入口总览' },
     { path: '/exposure/connect', label: '快速接入' },
-    { path: '/exposure/import', label: '导入配置' },
   ],
   fabric: [
     { path: '/fabric', label: '网关' },
@@ -103,7 +102,7 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/join-tokens': '/access/tokens',
   '/apply': '/release',
   '/config': '/release',
-  '/import': '/exposure/import',
+  '/import': '/exposure',
   '/quick-create': '/exposure/connect',
   '/trace': '/observe',
   '/health': '/observe/health',

@@ -4,7 +4,7 @@ import { Card, PageHeader, StatusBadge, HealthDot } from '@/components/shared';
 
 export default function Endpoints() {
   const { data, isLoading } = useQuery({ queryKey: ['endpoints'], queryFn: fetchEndpoints });
-  const endpoints = (data as any)?.endpoints || [];
+  const endpoints = Array.isArray(data) ? data : [];
 
   return (
     <div className="p-6 space-y-6">

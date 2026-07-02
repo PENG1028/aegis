@@ -2,14 +2,16 @@
 // Core page: each row shows the full chain flow, not isolated columns.
 // domain → listener → gateway → service → endpoints → [health] [release]
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { fetchRoutes } from '@/lib/api-bridge';
-import { PageHeader, HealthDot, StatusBadge } from '@/components/shared';
+import { PageHeader, HealthDot, StatusBadge, Btn } from '@/components/shared';
 import { getScenario } from '@/mocks';
 import { API_CONFIG } from '@/lib/api-config';
 import { cn } from '@/lib/utils';
 import type { EntryPointSummary } from '@/types/workspace';
+import ImportDrawer from './ImportConfig';
 
 function ChainRow({ ep }: { ep: EntryPointSummary }) {
   const nav = useNavigate();
@@ -87,6 +89,7 @@ function ChainRow({ ep }: { ep: EntryPointSummary }) {
 }
 
 export default function EntryPoints() {
+  const [importOpen, setImportOpen] = useState(false);
   const { data: routesData } = useQuery({
     queryKey: ['routes'],
     queryFn: fetchRoutes,
@@ -94,7 +97,7 @@ export default function EntryPoints() {
 
   const entryPoints: EntryPointSummary[] = API_CONFIG.useMock
     ? getScenario().entryPoints
-    : ((routesData as any)?.routes || []).map((r: any) => ({
+    : (Array.isArray(routesData) ? routesData : (routesData as any)?.routes || []).map((r: any) => ({
         route_id: r.route_id, domain: r.domain,
         protocol: 'http', tls_mode: r.tls_mode,
         listener: null, gateway_id: null, gateway_name: null,
@@ -111,6 +114,7 @@ export default function EntryPoints() {
         title="入口总览"
         subtitle={`${entryPoints.length} 个入口${degraded > 0 ? ` · ${degraded} 异常` : ''}${pending > 0 ? ` · ${pending} 待发布` : ''}`}
         className="px-6 pt-6 pb-2"
+        actions={<Btn onClick={() => setImportOpen(true)}>导入</Btn>}
       />
 
       {/* Column guide */}
@@ -134,7 +138,9 @@ export default function EntryPoints() {
         ) : (
           entryPoints.map(ep => <ChainRow key={ep.route_id} ep={ep} />)
         )}
+        </div>
+
+        <ImportDrawer open={importOpen} onClose={() => setImportOpen(false)} />
       </div>
-    </div>
-  );
+    );
 }

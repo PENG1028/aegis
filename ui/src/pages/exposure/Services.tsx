@@ -7,7 +7,7 @@ import { Card, PageHeader, StatusBadge } from '@/components/shared';
 export default function Services() {
   const navigate = useNavigate();
   const { data, isLoading } = useQuery({ queryKey: ['services'], queryFn: fetchServices });
-  const services = (data as any)?.services || [];
+  const services = Array.isArray(data) ? data : [];
 
   return (
     <div className="p-6 space-y-6">

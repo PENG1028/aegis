@@ -11,7 +11,7 @@ export default function Gateways() {
   const nav = useNavigate();
   const { data } = useQuery({ queryKey: ['gateways'], queryFn: fetchGateways });
   const { data: routesData } = useQuery({ queryKey: ['routes'], queryFn: fetchRoutes });
-  const gws = (data as any)?.gateways || [];
+  const gws = Array.isArray(data) ? data : [];
   const routes = (routesData as any)?.routes || [];
   const scenario = API_CONFIG.useMock ? getScenario() : null;
 

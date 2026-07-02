@@ -4,7 +4,7 @@ import { Card, PageHeader, StatusBadge, Btn } from '@/components/shared';
 
 export default function ApiKeys() {
   const { data } = useQuery({ queryKey: ['api-keys'], queryFn: () => adminApi.listApiKeys() });
-  const keys = (data as any)?.api_keys || [];
+  const keys = Array.isArray(data) ? data : [];
 
   return (
     <div className="p-6 space-y-6">

@@ -4,7 +4,7 @@ import { Card, PageHeader, StatusBadge, Btn } from '@/components/shared';
 
 export default function Credentials() {
   const { data } = useQuery({ queryKey: ['credentials'], queryFn: () => credentialApi.list() });
-  const creds = (data as any)?.credentials || [];
+  const creds = Array.isArray(data) ? data : [];
 
   return (
     <div className="p-6 space-y-6">
