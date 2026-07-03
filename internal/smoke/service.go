@@ -390,7 +390,7 @@ func (s *Service) RunFailureMatrix(ctx context.Context) *SmokeResult {
 				fp.ValidateErr = "syntax error at line 42"
 			},
 			verify: func(fp *fake.FakeProvider) bool {
-				err := fp.Validate(fp.ConfigPath)
+				err := fp.Validate(fp.ConfigPath())
 				if err == nil {
 					return false
 				}

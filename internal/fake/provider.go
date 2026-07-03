@@ -11,7 +11,7 @@ import (
 type FakeProvider struct {
 	ProviderName string // renamed from "Name" to avoid conflict with Provider.Name() method
 	Protocol     string
-	ConfigPath   string
+	ProvConfigPath string // renamed from "ConfigPath" to avoid conflict with Provider.ConfigPath() method
 
 	// Failure injection matrix (v1.7R enhanced)
 	MissingBinary          bool   // → Info() returns "unavailable", Diagnose() returns PROVIDER_MISSING
@@ -35,12 +35,12 @@ type FakeProvider struct {
 // NewFakeProvider creates a fake provider with defaults.
 func NewFakeProvider(name, protocol string) *FakeProvider {
 	return &FakeProvider{
-		ProviderName: name,
-		Protocol:   protocol,
-		Installed:  true,
-		Version:    "1.0.0",
-		Running:    true,
-		ConfigPath: "/tmp/fake-config.conf",
+		ProviderName:   name,
+		Protocol:       protocol,
+		Installed:      true,
+		Version:        "1.0.0",
+		Running:        true,
+		ProvConfigPath: "/tmp/fake-config.conf",
 	}
 }
 
@@ -60,7 +60,7 @@ func (fp *FakeProvider) Info() provider.Info {
 		Type:       provider.TypeHTTPTerm, // fake; real providers return their actual type
 		Status:     status,
 		Message:    msg,
-		ConfigPath: fp.ConfigPath,
+		ConfigPath: fp.ProvConfigPath,
 	}
 }
 
@@ -148,7 +148,7 @@ func (fp *FakeProvider) Restore(backupPath string) error {
 
 func (fp *FakeProvider) GetCurrentConfig() (string, error) {
 	if fp.ConfigFileMissing {
-		return "", fmt.Errorf("%s: %s", provider.DiagCodeConfigFileMissing, fp.ConfigPath)
+		return "", fmt.Errorf("%s: %s", provider.DiagCodeConfigFileMissing, fp.ProvConfigPath)
 	}
 	return "# fake current config\n", nil
 }
@@ -161,7 +161,7 @@ func (fp *FakeProvider) Diagnose() provider.ProviderDiagnostic {
 		BinaryPath:       "/usr/bin/" + fp.ProviderName,
 		Version:          fp.Version,
 		VersionSupported: !fp.VersionUnsupported,
-		ConfigPath:       fp.ConfigPath,
+		ConfigPath:       fp.ProvConfigPath,
 		ConfigExists:     !fp.ConfigFileMissing,
 		ListenerOK:       !fp.ListenerConflict,
 	}
@@ -181,7 +181,7 @@ func (fp *FakeProvider) Diagnose() provider.ProviderDiagnostic {
 
 	if fp.ConfigFileMissing {
 		diag.LastErrorCode = provider.DiagCodeConfigFileMissing
-		diag.LastErrorMessage = fmt.Sprintf("config file not found: %s", fp.ConfigPath)
+		diag.LastErrorMessage = fmt.Sprintf("config file not found: %s", fp.ProvConfigPath)
 		return diag
 	}
 
@@ -245,9 +245,31 @@ func (fp *FakeProvider) ResetErrors() {
 	fp.Running = true
 }
 
-// Ensure FakeProvider implements Provider and Diagnoser
+// ─── Layer 2: LOCATION ────────────────────────────────────────────────────
+
+func (fp *FakeProvider) ConfigPath() string  { return fp.ProvConfigPath }
+func (fp *FakeProvider) BinaryPath() string  { return "/usr/bin/" + fp.ProviderName }
+func (fp *FakeProvider) ServiceName() string { return fp.ProviderName }
+
+// ─── Layer 3: INSTALL / UNINSTALL ─────────────────────────────────────────
+
+func (fp *FakeProvider) CanUninstall() bool { return true }
+func (fp *FakeProvider) Uninstall() error   { return nil }
+
+// ─── Layer 4: CONFIG ──────────────────────────────────────────────────────
+
+func (fp *FakeProvider) WriteConfig(content []byte) error {
+	if fp.FailBackup {
+		return fmt.Errorf("backup failed")
+	}
+	if fp.FailReload {
+		return fmt.Errorf("%s: %s", provider.DiagCodeServiceNotRunning, fp.ReloadErr)
+	}
+	return nil
+}
+
+// Ensure FakeProvider implements Provider
 var _ provider.Provider = (*FakeProvider)(nil)
-var _ provider.Diagnoser = (*FakeProvider)(nil)
 
 // FakeCluster simulates multi-node cluster scenarios for testing.
 type FakeCluster struct {

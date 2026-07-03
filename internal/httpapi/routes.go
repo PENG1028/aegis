@@ -44,6 +44,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		RoutingTableSvc: svcs.RoutingTableSvc,
 		RelayResolver:   &handlers.RelayResolver{Resolver: svcs.RelaySvc},
 		TransparentMgr:  svcs.TransparentMgr,
+		ProvReg:         svcs.ProvReg, // v1.8L-19 — provider registry for install/uninstall/config handlers
 		Version:         svcs.Version,
 		BuildTime:       svcs.BuildTime,
 	}

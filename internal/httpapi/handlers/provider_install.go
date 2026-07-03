@@ -3,34 +3,30 @@ package handlers
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 )
 
-// providerInstallMap maps a provider name to the package name and post-install
-// service name used by apt-get.
-var providerInstallMap = map[string]struct {
-	Package string
-	Service string
-}{
-	"caddy":   {Package: "caddy", Service: "caddy"},
-	"haproxy": {Package: "haproxy", Service: "haproxy"},
-}
-
-// ProviderInstall installs a middleware provider (caddy / haproxy) via apt-get.
+// ProviderInstall installs a middleware provider via its Provider interface.
 // POST /api/admin/v1/providers/{provider}/install
+// Delegates to provider.CanInstall() and provider.Install() — no raw apt-get calls.
 func (h *Handlers) ProviderInstall(w http.ResponseWriter, r *http.Request) {
 	providerName := strings.ToLower(r.PathValue("provider"))
 
-	info, ok := providerInstallMap[providerName]
-	if !ok {
+	p := h.providerForName(providerName)
+	if p == nil {
 		writeError(w, http.StatusBadRequest,
 			fmt.Sprintf("unsupported provider: %s (supported: caddy, haproxy)", providerName))
 		return
 	}
 
-	// Check if already installed
+	if !p.CanInstall() {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("provider %s cannot be installed directly (shared binary or built-in)", providerName))
+		return
+	}
+
+	// Check if already installed (binary exists in PATH)
 	if _, err := exec.LookPath(providerName); err == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"provider": providerName,
@@ -40,68 +36,43 @@ func (h *Handlers) ProviderInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Run apt-get install
-	updateCmd := exec.Command("sudo", "apt-get", "update", "-qq")
-	updateOut, _ := updateCmd.CombinedOutput()
-
-	installCmd := exec.Command("sudo", "apt-get", "install", "-y", "-qq", info.Package)
-	installOut, installErr := installCmd.CombinedOutput()
-
-	if installErr != nil {
+	// Delegate to provider.Install()
+	if err := p.Install(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"provider":        providerName,
-			"status":          "install_failed",
-			"message":         installErr.Error(),
-			"apt_update_out":  string(updateOut),
-			"apt_install_out": string(installOut),
+			"provider": providerName,
+			"status":   "install_failed",
+			"error":    err.Error(),
 		})
 		return
 	}
 
-	// Enable and start the service
-	enableCmd := exec.Command("sudo", "systemctl", "enable", "--now", info.Service)
-	enableOut, enableErr := enableCmd.CombinedOutput()
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"provider":       providerName,
-		"status":         "installed",
-		"message":        fmt.Sprintf("%s installed and %s service started", providerName, info.Service),
-		"apt_update_out":  string(updateOut),
-		"apt_install_out": string(installOut),
-		"systemctl_out":  string(enableOut),
-		"systemctl_error": func() string {
-			if enableErr != nil {
-				return enableErr.Error()
-			}
-			return ""
-		}(),
+		"provider": providerName,
+		"status":   "installed",
+		"message":  fmt.Sprintf("%s installed and service started", providerName),
 	})
 }
 
 // ProviderConfigPreview returns the current config for a provider.
 // GET /api/admin/v1/providers/{provider}/config
+// Delegates to provider.GetCurrentConfig() and provider.ConfigPath().
 func (h *Handlers) ProviderConfigPreview(w http.ResponseWriter, r *http.Request) {
 	providerName := strings.ToLower(r.PathValue("provider"))
 
-	var configPath string
-	switch providerName {
-	case "caddy":
-		if h.Config != nil {
-			configPath = h.Config.Proxy.CaddyfilePath
-		}
-	case "haproxy":
-		configPath = "/etc/haproxy/haproxy.cfg"
-	default:
-		writeError(w, http.StatusBadRequest, "unsupported provider: "+providerName)
+	p := h.providerForName(providerName)
+	if p == nil {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("unsupported provider: %s (supported: caddy, haproxy)", providerName))
 		return
 	}
 
+	configPath := p.ConfigPath()
 	if configPath == "" {
 		writeError(w, http.StatusNotFound, "config path not configured")
 		return
 	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := p.GetCurrentConfig()
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"provider":    providerName,
@@ -113,10 +84,11 @@ func (h *Handlers) ProviderConfigPreview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	exists := data != ""
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"provider":    providerName,
 		"config_path": configPath,
-		"exists":      true,
-		"content":     string(data),
+		"exists":      exists,
+		"content":     data,
 	})
 }

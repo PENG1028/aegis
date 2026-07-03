@@ -27,6 +27,7 @@ import (
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
 	"aegis/internal/project"
+	"aegis/internal/provider"
 	"aegis/internal/relay"
 	"aegis/internal/dns"
 	"aegis/internal/route"
@@ -79,6 +80,7 @@ type Services struct {
 	DNSMgmt         *dns.Manager            // v1.8E DNS resolver
 	TransparentMgr  *transparent.Manager    // v1.8H transparent IP:port proxy
 	CredentialSvc   *credential.Service     // v1.8K encrypted connection strings
+	ProvReg         *provider.Registry      // v1.8L-19 — provider registry for install/uninstall/config handlers
 	Version         string                  // build-injected version
 	BuildTime       string                  // build-injected timestamp
 	OnShutdown      func()                  // graceful shutdown hook — stops DNS, backups, reconcile, proxies

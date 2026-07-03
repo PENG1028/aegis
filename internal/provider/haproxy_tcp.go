@@ -13,10 +13,17 @@ import (
 )
 
 // HAProxyTCPProvider generates HAProxy config for TCP forwarding.
+// Uses a separate config file (haproxy_tcp.cfg) to avoid conflict
+// with the EdgeMux SNI provider which manages haproxy.cfg.
+//
+// SHARED BINARY: This provider shares the haproxy binary with HAProxyEdgeMuxProvider.
+// Installation/uninstallation is handled by the EdgeMux provider (the "primary" owner).
+// CanInstall() and CanUninstall() return false — use HAProxyEdgeMuxProvider instead.
 type HAProxyTCPProvider struct {
 	cfg        *config.Config
 	configPath string
 	backupDir  string
+	binaryPath string // resolved from shared haproxy binary
 }
 
 // NewHAProxyTCPProvider creates an HAProxy TCP provider.
@@ -28,10 +35,15 @@ func NewHAProxyTCPProvider(cfg *config.Config) *HAProxyTCPProvider {
 	if backupDir == "" {
 		backupDir = "/var/lib/aegis/backups"
 	}
+	bp := "haproxy"
+	if resolved, err := exec.LookPath("haproxy"); err == nil {
+		bp = resolved
+	}
 	return &HAProxyTCPProvider{
 		cfg:        cfg,
 		configPath: configPath,
 		backupDir:  backupDir,
+		binaryPath: bp,
 	}
 }
 
@@ -286,16 +298,62 @@ func (p *HAProxyTCPProvider) Diagnose() ProviderDiagnostic {
 // NOTE: parseHAProxyVersionParts has been consolidated into discovery.go → ParseHAProxyVersion.
 // This file uses the canonical implementation from there.
 
-// ─── Provider interface methods (added v1.8L-16) ───
+// ─── Layer 1: DETECTION ──────────────────────────────────────────────────
+// Diagnose() is defined earlier in this file
 
-func (p *HAProxyTCPProvider) ID() string        { return "haproxy_tcp" }
-func (p *HAProxyTCPProvider) Name() string      { return "haproxy_tcp" }
-func (p *HAProxyTCPProvider) Type() GatewayType { return TypeTCPForward }
+// ─── Layer 2: LOCATION ────────────────────────────────────────────────────
+
+func (p *HAProxyTCPProvider) ID() string         { return "haproxy_tcp" }
+func (p *HAProxyTCPProvider) Name() string       { return "haproxy_tcp" }
+func (p *HAProxyTCPProvider) Type() GatewayType  { return TypeTCPForward }
+func (p *HAProxyTCPProvider) ConfigPath() string { return p.configPath }
+func (p *HAProxyTCPProvider) BinaryPath() string { return p.binaryPath }
+// ServiceName returns "haproxy" — shared with HAProxyEdgeMuxProvider.
+// Both providers use the same systemd service; reloading one config affects both.
+func (p *HAProxyTCPProvider) ServiceName() string { return "haproxy" }
+
+// ─── Layer 3: INSTALL / UNINSTALL ─────────────────────────────────────────
+// SHARED BINARY: The haproxy binary is owned by HAProxyEdgeMuxProvider.
+// This provider only manages its own config file (haproxy_tcp.cfg).
+// Use HAProxyEdgeMuxProvider for install/uninstall of the haproxy package.
+
+func (p *HAProxyTCPProvider) CanInstall() bool   { return false }
+func (p *HAProxyTCPProvider) Install() error     { return fmt.Errorf("haproxy_tcp: shared binary — install via haproxy_edge_mux provider") }
+func (p *HAProxyTCPProvider) CanUninstall() bool { return false }
+func (p *HAProxyTCPProvider) Uninstall() error   { return fmt.Errorf("haproxy_tcp: shared binary — uninstall via haproxy_edge_mux provider") }
+
+// ─── Layer 4: CONFIG ──────────────────────────────────────────────────────
+
+// WriteConfig validates, backs up, writes, and reloads the HAProxy TCP config.
+func (p *HAProxyTCPProvider) WriteConfig(content []byte) error {
+	tmpFile := p.configPath + ".tmp"
+	if err := os.WriteFile(tmpFile, content, 0644); err != nil {
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	defer os.Remove(tmpFile)
+
+	if err := p.Validate(tmpFile); err != nil {
+		return fmt.Errorf("validate config: %w", err)
+	}
+
+	if existing, err := os.ReadFile(p.configPath); err == nil {
+		os.WriteFile(p.configPath+".bak", existing, 0644)
+	}
+
+	if err := os.Rename(tmpFile, p.configPath); err != nil {
+		data, _ := os.ReadFile(tmpFile)
+		if err := os.WriteFile(p.configPath, data, 0644); err != nil {
+			return fmt.Errorf("write config: %w", err)
+		}
+	}
+
+	return p.Reload()
+}
+
+// ─── Layer 5: UI ──────────────────────────────────────────────────────────
+
 func (p *HAProxyTCPProvider) Capabilities() ProviderCapabilities { return HAProxyTCPCapabilities() }
 func (p *HAProxyTCPProvider) UIHints() ProviderUIHints         { return HAProxyTCPUIHints() }
-func (p *HAProxyTCPProvider) CanInstall() bool  { return false } // HAProxy is a shared binary; installed separately
-func (p *HAProxyTCPProvider) Install() error    { return installPackage("haproxy", "haproxy") }
 
-// Ensure HAProxyTCPProvider implements Provider and Diagnoser
+// Ensure HAProxyTCPProvider implements Provider
 var _ Provider = (*HAProxyTCPProvider)(nil)
-var _ Diagnoser = (*HAProxyTCPProvider)(nil)
