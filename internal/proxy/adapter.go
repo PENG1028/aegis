@@ -14,6 +14,10 @@ type ProxyAdapter interface {
 type GatewayConfig struct {
 	Routes []RouteConfig
 	Email  string
+	// PortPolicyMode determines port allocation: "legacy" (Caddy: 80+443) or
+	// "edge_mux" (HAProxy: 443, Caddy: 80+8443). Empty string defaults to legacy.
+	// Set from provider.CurrentPortPolicyMode() before calling Render().
+	PortPolicyMode string
 }
 
 // RouteConfig represents a single route to be proxied.

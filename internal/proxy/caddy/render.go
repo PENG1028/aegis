@@ -21,8 +21,22 @@ func sanitizeCaddyValue(s string) string {
 
 func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
 	var buf bytes.Buffer
-	if email != "" {
-		buf.WriteString("{\n    email " + sanitizeCaddyValue(email) + "\n}\n\n")
+
+	// Global options block — emitted when we need non-default settings.
+	// In edge_mux mode, Caddy must NOT bind :443 (HAProxy owns it).
+	// Instead, Caddy binds :8443 for internal TLS termination.
+	// When both email AND edge_mux are configured, they share one global block.
+	needGlobalBlock := email != "" || gwCfg.PortPolicyMode == "edge_mux"
+
+	if needGlobalBlock {
+		buf.WriteString("{\n")
+		if email != "" {
+			buf.WriteString("    email " + sanitizeCaddyValue(email) + "\n")
+		}
+		if gwCfg.PortPolicyMode == "edge_mux" {
+			buf.WriteString("    https_port 8443\n")
+		}
+		buf.WriteString("}\n\n")
 	}
 
 	// Render all routes as HTTP site blocks (no TCP/UDP port forwarding)

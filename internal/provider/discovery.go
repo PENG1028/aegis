@@ -215,6 +215,36 @@ func ComputePortPolicy(discovered []DiscoveredProvider) PortPolicy {
 	return DefaultLegacyPortPolicy()
 }
 
+// CurrentPortPolicyMode returns the active port policy mode string ("legacy" or
+// "edge_mux") by checking whether HAProxy is installed and running on this node.
+//
+// Unlike ComputePortPolicy(), this function does NOT require a provider registry
+// or a full discovery scan. It only checks for the HAProxy binary and service,
+// which is sufficient to determine the mode.
+//
+// This is the lightweight entry point used by config rendering to inject the
+// correct https_port into the generated Caddyfile.
+//
+// Rules:
+//   - HAProxy binary found AND haproxy service running → "edge_mux"
+//   - Otherwise → "legacy"
+func CurrentPortPolicyMode() string {
+	// Check if HAProxy binary exists
+	if _, err := exec.LookPath("haproxy"); err != nil {
+		return "legacy"
+	}
+
+	// HAProxy exists — check if it's actually running.
+	// The EdgeMux mode only activates when HAProxy is actively managing :443.
+	// If the binary is installed but the service is stopped, we stay in legacy
+	// mode so Caddy continues to handle :443 (no outage from partial install).
+	if err := exec.Command("systemctl", "is-active", "--quiet", "haproxy").Run(); err != nil {
+		return "legacy"
+	}
+
+	return "edge_mux"
+}
+
 // DetectSystemServices checks for the presence of system-level services that
 // are relevant to gateway operation but aren't themselves providers.
 // Currently checks: systemd, iptables, ss/netstat.
