@@ -20,6 +20,7 @@ import (
 	"aegis/internal/node"
 	"aegis/internal/nodeauth"
 	"aegis/internal/nodestate"
+	"aegis/internal/provider"
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
 	"aegis/internal/topology"
@@ -169,5 +170,34 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 			"unhealthy_endpoints": unhealthyCount,
 			"unknown_endpoints":   unknownCount,
 		},
+	})
+}
+
+// PortPolicy returns the current port allocation strategy for this node.
+// GET /api/system/port-policy
+//
+// Returns the active port policy mode (legacy or edge_mux) and the list of
+// port bindings that result from that mode. This is a public endpoint — no
+// authentication required (the data is non-sensitive node metadata).
+//
+// Modes:
+//
+//	"legacy"   — Caddy owns :80 + :443 (no HAProxy detected)
+//	"edge_mux" — HAProxy owns :443, Caddy owns :80 + :8443
+//
+// The frontend uses this to show which gateway types are available and
+// whether TCP/UDP forwarding requires installing HAProxy first.
+func (h *Handlers) PortPolicy(w http.ResponseWriter, r *http.Request) {
+	mode := provider.CurrentPortPolicyMode()
+	var policy provider.PortPolicy
+	if mode == "edge_mux" {
+		policy = provider.DefaultEdgeMuxPortPolicy()
+	} else {
+		policy = provider.DefaultLegacyPortPolicy()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"mode":     policy.Mode,
+		"bindings": policy.Bindings,
 	})
 }

@@ -64,8 +64,9 @@ func (p *CaddyHTTPProvider) Info() Info {
 
 func (p *CaddyHTTPProvider) Render(routes []proxy.RouteConfig) ([]byte, error) {
 	cfg := proxy.GatewayConfig{
-		Routes: routes,
-		Email:  p.cfg.Proxy.Email,
+		Routes:         routes,
+		Email:          p.cfg.Proxy.Email,
+		PortPolicyMode: CurrentPortPolicyMode(),
 	}
 	return p.adapter.Render(cfg)
 }

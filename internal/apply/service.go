@@ -17,6 +17,7 @@ import (
 	"aegis/internal/id"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
+	"aegis/internal/provider"
 	"aegis/internal/proxy"
 	"aegis/internal/route"
 	"aegis/internal/safety"
@@ -86,8 +87,9 @@ func (s *AppService) DryRun(ctx context.Context) (*ApplyPlan, error) {
 	}
 
 	rendered, err := s.adapter.Render(proxy.GatewayConfig{
-		Routes: plan.Routes,
-		Email:  s.cfg.Proxy.Email,
+		Routes:         plan.Routes,
+		Email:          s.cfg.Proxy.Email,
+		PortPolicyMode: provider.CurrentPortPolicyMode(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render: %w", err)
@@ -163,8 +165,9 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	// Step 3: Render
 	stepLog.record("render_config", "started", "rendering provider config")
 	rendered, err := s.adapter.Render(proxy.GatewayConfig{
-		Routes: plan.Routes,
-		Email:  s.cfg.Proxy.Email,
+		Routes:         plan.Routes,
+		Email:          s.cfg.Proxy.Email,
+		PortPolicyMode: provider.CurrentPortPolicyMode(),
 	})
 	if err != nil {
 		stepLog.record("render_config", "failed", fmt.Sprintf("render failed: %v", err))
@@ -365,8 +368,9 @@ func (s *AppService) Validate(ctx context.Context) error {
 	}
 
 	rendered, err := s.adapter.Render(proxy.GatewayConfig{
-		Routes: plan.Routes,
-		Email:  s.cfg.Proxy.Email,
+		Routes:         plan.Routes,
+		Email:          s.cfg.Proxy.Email,
+		PortPolicyMode: provider.CurrentPortPolicyMode(),
 	})
 	if err != nil {
 		return fmt.Errorf("render: %w", err)

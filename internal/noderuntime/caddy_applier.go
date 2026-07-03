@@ -6,6 +6,7 @@ import (
 
 	"aegis/internal/apply"
 	"aegis/internal/config"
+	"aegis/internal/provider"
 	"aegis/internal/proxy"
 	"aegis/internal/proxy/caddy"
 )
@@ -43,8 +44,9 @@ func (a *caddyApplier) Apply(entries []RoutingTableEntry) error {
 
 	// 2. Render Caddyfile
 	rendered, err := a.adapter.Render(proxy.GatewayConfig{
-		Routes: routes,
-		Email:  a.cfg.Proxy.Email,
+		Routes:         routes,
+		Email:          a.cfg.Proxy.Email,
+		PortPolicyMode: provider.CurrentPortPolicyMode(),
 	})
 	if err != nil {
 		return fmt.Errorf("render caddyfile: %w", err)
