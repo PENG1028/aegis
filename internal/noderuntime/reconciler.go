@@ -55,14 +55,14 @@ func (r *Reconciler) SetCaddyfileApplier(a CaddyfileApplier) {
 // SyncOnce performs a single sync cycle.
 // Returns the updated actual state cache on success.
 func (r *Reconciler) SyncOnce() (*ActualStateCache, error) {
-	// Step 0: Collect gateway status for heartbeat
-	var gwInfo *LocalGatewayInfo
+	// Step 0: Collect all gateway statuses for heartbeat
+	var gwInfos []*LocalGatewayInfo
 	if r.gwStatusProvider != nil {
-		gwInfo = r.gwStatusProvider.LocalGatewayStatus()
+		gwInfos = r.gwStatusProvider.LocalGatewayStatuses()
 	}
 
 	// Step 1: Send heartbeat
-	hbResp, err := r.client.SendHeartbeat("online", "v1.8C", r.nodeID, gwInfo)
+	hbResp, err := r.client.SendHeartbeat("online", "v1.8C", r.nodeID, gwInfos)
 	if err != nil {
 		return r.failedState(0, "", fmt.Sprintf("heartbeat failed: %v", err))
 	}
@@ -164,11 +164,24 @@ func (r *Reconciler) processDesiredState(ds *DesiredStateResponse) (*ActualState
 	}
 	diagJSON := jsonMarshalSimple(diagnostics)
 
-	// Build gateway status string for actual state
+	// Build gateway status string for actual state (aggregate from all providers)
 	gwStatusStr := ""
 	if r.gwStatusProvider != nil {
-		if info := r.gwStatusProvider.LocalGatewayStatus(); info != nil {
-			gwStatusStr = info.Status
+		infos := r.gwStatusProvider.LocalGatewayStatuses()
+		if len(infos) > 0 {
+			// Aggregate: "online" if all online, "degraded" if any degraded, else first non-ok status
+			allOnline := true
+			for _, info := range infos {
+				if info.Status != "online" && info.Status != "ready" {
+					allOnline = false
+					break
+				}
+			}
+			if allOnline {
+				gwStatusStr = "online"
+			} else {
+				gwStatusStr = "degraded"
+			}
 		}
 	}
 

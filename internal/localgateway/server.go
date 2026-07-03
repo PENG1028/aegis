@@ -78,10 +78,10 @@ func (g *Gateway) Status() GatewayStatusInfo {
 	return g.status.Get()
 }
 
-// LocalGatewayStatus implements noderuntime.GatewayStatusProvider.
-// Returns the gateway's current status as a LocalGatewayInfo struct
+// LocalGatewayStatuses implements noderuntime.GatewayStatusProvider.
+// Returns the gateway's current status as a slice of LocalGatewayInfo structs
 // suitable for heartbeat payloads.
-func (g *Gateway) LocalGatewayStatus() *noderuntime.LocalGatewayInfo {
+func (g *Gateway) LocalGatewayStatuses() []*noderuntime.LocalGatewayInfo {
 	s := g.status.Get()
 	// Use config values for static fields; status tracker for dynamic fields
 	bindAddr := s.BindAddr
@@ -96,7 +96,7 @@ func (g *Gateway) LocalGatewayStatus() *noderuntime.LocalGatewayInfo {
 	if !enabled && g.config.Enabled {
 		enabled = true
 	}
-	return &noderuntime.LocalGatewayInfo{
+	return []*noderuntime.LocalGatewayInfo{{
 		Name:      "local-gateway",
 		Type:      "local",
 		Provider:  "aegis",
@@ -107,7 +107,7 @@ func (g *Gateway) LocalGatewayStatus() *noderuntime.LocalGatewayInfo {
 		Enabled:   enabled,
 		Status:    s.Status,
 		LastError: s.LastError,
-	}
+	}}
 }
 
 // SetRoutingTableStatusProvider sets the routing table status provider on the handler.

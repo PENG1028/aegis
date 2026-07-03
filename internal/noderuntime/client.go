@@ -62,8 +62,11 @@ func NewClient(baseURL, nodeID, nodeToken string) *Client {
 }
 
 // SendHeartbeat sends a heartbeat to the control plane.
-// gwInfo is optional local gateway status for inventory reporting.
-func (c *Client) SendHeartbeat(status, agentVersion, hostname string, gwInfo *LocalGatewayInfo) (*HeartbeatResponse, error) {
+// gwInfos is an optional list of gateway statuses discovered on this node.
+// Each entry populates a row in the control plane's gateway inventory table.
+// The first enabled HTTP gateway's status is also sent as local_gateway_status
+// for backward compatibility with older control planes.
+func (c *Client) SendHeartbeat(status, agentVersion, hostname string, gwInfos []*LocalGatewayInfo) (*HeartbeatResponse, error) {
 	body := map[string]interface{}{
 		"node_id":       c.nodeID,
 		"status":        status,
@@ -71,28 +74,37 @@ func (c *Client) SendHeartbeat(status, agentVersion, hostname string, gwInfo *Lo
 		"hostname":      hostname,
 	}
 
-	// Include gateway status for heartbeat inventory upsert
-	if gwInfo != nil {
-		body["gateways"] = []map[string]interface{}{
-			{
-				"name":       gwInfo.Name,
-				"type":       gwInfo.Type,
-				"provider":   gwInfo.Provider,
-				"bind_addr":  gwInfo.BindAddr,
-				"host":       gwInfo.Host,
-				"port":       gwInfo.Port,
-				"scheme":     gwInfo.Scheme,
-				"enabled":    gwInfo.Enabled,
-				"status":     gwInfo.Status,
-				"last_error": gwInfo.LastError,
-			},
+	// Include all discovered gateway statuses for heartbeat inventory upsert
+	if len(gwInfos) > 0 {
+		gateways := make([]map[string]interface{}, 0, len(gwInfos))
+		for _, gw := range gwInfos {
+			gateways = append(gateways, map[string]interface{}{
+				"name":       gw.Name,
+				"type":       gw.Type,
+				"provider":   gw.Provider,
+				"bind_addr":  gw.BindAddr,
+				"host":       gw.Host,
+				"port":       gw.Port,
+				"scheme":     gw.Scheme,
+				"enabled":    gw.Enabled,
+				"status":     gw.Status,
+				"last_error": gw.LastError,
+			})
 		}
-		body["local_gateway_status"] = map[string]interface{}{
-			"enabled":    gwInfo.Enabled,
-			"bind_addr":  gwInfo.BindAddr,
-			"port":       gwInfo.Port,
-			"status":     gwInfo.Status,
-			"last_error": gwInfo.LastError,
+		body["gateways"] = gateways
+
+		// Backward compat: set local_gateway_status from the first enabled HTTP gateway
+		for _, gw := range gwInfos {
+			if gw.Enabled && (gw.Scheme == "http" || gw.Scheme == "https") {
+				body["local_gateway_status"] = map[string]interface{}{
+					"enabled":    gw.Enabled,
+					"bind_addr":  gw.BindAddr,
+					"port":       gw.Port,
+					"status":     gw.Status,
+					"last_error": gw.LastError,
+				}
+				break
+			}
 		}
 	}
 	resp, err := c.doPost("/api/node/v1/heartbeat", body)
