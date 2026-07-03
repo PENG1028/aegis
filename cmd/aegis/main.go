@@ -179,6 +179,7 @@ func main() {
 	endpointResolver := endpoint.NewResolver(endpointRepo)
 	provRegistry := provider.NewRegistry()
 	provRegistry.Register(provider.NewCaddyHTTPProvider(cfg))
+	provRegistry.Register(provider.NewHAProxyEdgeMuxProvider("", cfg.Proxy.BackupDir))
 	provRegistry.Register(provider.NewHAProxyTCPProvider(cfg))
 	exposureSvc := exposure.NewAppService(exposureRepo, logSvc, provRegistry, listenerSvc)
 
@@ -368,6 +369,7 @@ func main() {
 		DNSMgmt:         dnsMgmt,
 		TransparentMgr:  transparentMgr,
 		CredentialSvc:   credSvc,
+		ProvReg:         provRegistry, // v1.8L-19 — provider registry for install/uninstall/config handlers
 		Version:         Version,
 		BuildTime:       BuildTime,
 		OnShutdown: func() {
