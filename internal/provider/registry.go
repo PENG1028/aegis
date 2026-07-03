@@ -9,26 +9,22 @@ import "fmt"
 //   reg := provider.NewRegistry()
 //   reg.Register(myProvider)
 //   p, ok := reg.Get("caddy")  // look up by ID
-//   all := reg.List()          // all registered providers
-//   p, ok := reg.SelectForProtocol("http")  // auto-select
+//   all := reg.List()          // all registered providers (ProviderState)
+//   allInstances := reg.ListAll() // all Provider instances (for iteration)
 //
-// Registration happens in two ways:
-//   1. Explicit: cmd/aegis/main.go calls reg.Register(NewCaddyHTTPProvider(cfg))
-//      for providers instantiated with runtime configuration.
-//   2. Auto: built-in providers that don't need config (Aegis TCP/UDP Manager)
-//      are registered via RegisterBuiltin() which uses zero-config constructors.
+// Registration happens in cmd/aegis/main.go. Each Provider is instantiated
+// with its runtime configuration and registered here.
 //
 // The registry is used by:
 //   - Provider discovery (discovery.go): iterate all registered types, detect each
-//   - Config apply pipeline (apply/): iterate all, render + reload each
-//   - API /api/admin/v1/providers: list known types with capabilities
-//   - API /api/admin/v1/nodes/{id}/discovered-providers: detection results per node
+//   - Config apply pipeline (apply/): iterate all, render + apply each
+//   - API /api/admin/v1/providers: list known types with state
 // ============================================================================
 
 // Registry manages a set of Provider implementations.
 type Registry struct {
-	providers map[string]Provider     // keyed by Provider.ID()
-	order     []string                // registration order
+	providers map[string]Provider       // keyed by Provider.State().ID
+	order     []string                  // registration order
 	builtins  map[string]func() Provider // zero-config constructors for built-in providers
 }
 
@@ -43,7 +39,7 @@ func NewRegistry() *Registry {
 // Register adds a fully-initialized Provider to the registry.
 // Use this for providers that need runtime configuration (Caddy, HAProxy).
 func (r *Registry) Register(p Provider) {
-	id := p.ID()
+	id := p.State().ID
 	if _, exists := r.providers[id]; !exists {
 		r.order = append(r.order, id)
 	}
@@ -51,8 +47,8 @@ func (r *Registry) Register(p Provider) {
 }
 
 // RegisterBuiltin registers a zero-config constructor for a built-in provider.
-// Built-in providers (Aegis TCP/UDP Manager, Transparent Proxy) don't need
-// external config — they can be instantiated on demand during discovery.
+// Built-in providers don't need external config — they can be instantiated
+// on demand during discovery.
 func (r *Registry) RegisterBuiltin(id string, ctor func() Provider) {
 	r.builtins[id] = ctor
 }
@@ -63,7 +59,6 @@ func (r *Registry) Get(id string) Provider {
 	if ok {
 		return p
 	}
-	// Try built-in constructors
 	ctor, ok := r.builtins[id]
 	if ok {
 		return ctor()
@@ -81,40 +76,30 @@ func (r *Registry) Has(id string) bool {
 	return ok
 }
 
-// List returns Info summaries for all registered providers.
-func (r *Registry) List() []Info {
-	var infos []Info
+// List returns ProviderState snapshots for all registered providers.
+// Suitable for list views and status badges.
+func (r *Registry) List() []ProviderState {
+	var states []ProviderState
 	for _, id := range r.order {
 		p := r.providers[id]
-		infos = append(infos, Info{
-			ID:         p.ID(),
-			Name:       p.Name(),
-			Type:       p.Type(),
-			ConfigPath: "", // filled by discovery
-		})
+		states = append(states, p.State())
 	}
-	// Add built-ins not yet explicitly registered
 	for id, ctor := range r.builtins {
 		if _, exists := r.providers[id]; !exists {
 			p := ctor()
-			infos = append(infos, Info{
-				ID:   p.ID(),
-				Name: p.Name(),
-				Type: p.Type(),
-			})
+			states = append(states, p.State())
 		}
 	}
-	return infos
+	return states
 }
 
-// ListAll returns all registered Provider instances.
-// Use for iteration during apply/discovery.
+// ListAll returns all registered Provider instances for iteration.
+// Use during discovery and apply pipelines.
 func (r *Registry) ListAll() []Provider {
 	var all []Provider
 	for _, id := range r.order {
 		all = append(all, r.providers[id])
 	}
-	// Add built-ins not yet explicitly registered
 	for id, ctor := range r.builtins {
 		if _, exists := r.providers[id]; !exists {
 			all = append(all, ctor())
@@ -123,34 +108,28 @@ func (r *Registry) ListAll() []Provider {
 	return all
 }
 
-// SelectForProtocol picks a default provider for the given protocol.
-// Used by the config generation pipeline when a route doesn't specify a provider.
-//
-// Selection logic:
-//   "http", "https"  → caddy (HTTP termination)
-//   "tcp"            → haproxy_tcp if registered, otherwise aegis_tcp
-//   "udp"            → aegis_udp (built-in)
-func (r *Registry) SelectForProtocol(protocol string) (Provider, error) {
-	switch protocol {
-	case "http", "https":
-		if p := r.Get("caddy"); p != nil {
-			return p, nil
-		}
-		return nil, fmt.Errorf("no provider registered for protocol %s", protocol)
-	case "tcp":
-		if p := r.Get("haproxy_tcp"); p != nil {
-			return p, nil
-		}
-		if p := r.Get("aegis_tcp"); p != nil {
-			return p, nil
-		}
-		return nil, fmt.Errorf("no provider registered for protocol %s", protocol)
-	case "udp":
-		if p := r.Get("aegis_udp"); p != nil {
-			return p, nil
-		}
-		return nil, fmt.Errorf("no provider registered for protocol %s", protocol)
-	default:
-		return nil, fmt.Errorf("unsupported protocol: %s", protocol)
+// SelectForProtocol returns the best provider for a given protocol type.
+// This is a simple lookup — the topology planner (dimension 2) is the full
+// capability-based selector. This method is a convenience bridge for code
+// that hasn't been migrated to the topology planner yet.
+func (r *Registry) SelectForProtocol(protoType string) (Provider, error) {
+	// Map protocol types to preferred provider IDs
+	preferred := map[string]string{
+		"http":     "caddy",
+		"tcp":      "haproxy",
+		"udp":      "haproxy",
+		"tunnel":   "haproxy",
+		"internal": "caddy",
 	}
+
+	id, ok := preferred[protoType]
+	if !ok {
+		id = "caddy"
+	}
+
+	p := r.Get(id)
+	if p == nil {
+		return nil, fmt.Errorf("no provider available for protocol %s", protoType)
+	}
+	return p, nil
 }

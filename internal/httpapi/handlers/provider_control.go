@@ -11,27 +11,15 @@ import (
 )
 
 // providerForName looks up a Provider from the registry by its URL-friendly name.
-// Maps: "caddy" → provider ID "caddy", "haproxy" → provider ID "haproxy_edge_mux".
-// Returns nil if the provider is not found or the registry is not configured.
+// Maps: "caddy" → "caddy", "haproxy" → "haproxy".
 func (h *Handlers) providerForName(name string) provider.Provider {
 	if h.ProvReg == nil {
 		return nil
 	}
-	// Direct lookup by name
-	if p := h.ProvReg.Get(name); p != nil {
-		return p
-	}
-	// "haproxy" → "haproxy_edge_mux" (the primary HAProxy provider)
-	if name == "haproxy" {
-		if p := h.ProvReg.Get("haproxy_edge_mux"); p != nil {
-			return p
-		}
-	}
-	return nil
+	return h.ProvReg.Get(name)
 }
 
 // ProviderReload handles POST /api/admin/v1/providers/{provider}/reload
-// Delegates to provider.Reload() — no raw systemctl calls.
 func (h *Handlers) ProviderReload(w http.ResponseWriter, r *http.Request) {
 	providerName := strings.ToLower(r.PathValue("provider"))
 
@@ -42,7 +30,15 @@ func (h *Handlers) ProviderReload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := p.Reload(); err != nil {
+	// Check for optional ReloadableProvider interface
+	reloadable, ok := p.(provider.ReloadableProvider)
+	if !ok {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("provider %s does not support standalone reload", providerName))
+		return
+	}
+
+	if err := reloadable.Reload(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"provider": providerName,
 			"action":   "reload",
@@ -61,7 +57,6 @@ func (h *Handlers) ProviderReload(w http.ResponseWriter, r *http.Request) {
 
 // ProviderServiceControl handles POST /api/admin/v1/providers/{provider}/service
 // Body: {"action": "start" | "stop" | "restart"}
-// Uses provider.ServiceName() for the systemd unit name.
 func (h *Handlers) ProviderServiceControl(w http.ResponseWriter, r *http.Request) {
 	providerName := strings.ToLower(r.PathValue("provider"))
 
@@ -72,9 +67,10 @@ func (h *Handlers) ProviderServiceControl(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	svc := p.ServiceName()
+	// Derive systemd service name from provider ID
+	svc := p.State().ID
 	if svc == "" {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %s has no standalone service", providerName))
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %s has no service", providerName))
 		return
 	}
 
@@ -121,7 +117,6 @@ func (h *Handlers) ProviderServiceControl(w http.ResponseWriter, r *http.Request
 }
 
 // ProviderUninstall handles DELETE /api/admin/v1/providers/{provider}
-// Delegates to provider.Uninstall() — no raw apt-get calls.
 func (h *Handlers) ProviderUninstall(w http.ResponseWriter, r *http.Request) {
 	providerName := strings.ToLower(r.PathValue("provider"))
 
@@ -132,13 +127,15 @@ func (h *Handlers) ProviderUninstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !p.CanUninstall() {
+	// Check for optional LifecycleProvider interface
+	lc, ok := p.(provider.LifecycleProvider)
+	if !ok || !lc.CanUninstall() {
 		writeError(w, http.StatusBadRequest,
 			fmt.Sprintf("provider %s cannot be uninstalled (shared binary or built-in)", providerName))
 		return
 	}
 
-	if err := p.Uninstall(); err != nil {
+	if err := lc.Uninstall(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"provider": providerName,
 			"status":   "uninstall_failed",
@@ -150,13 +147,12 @@ func (h *Handlers) ProviderUninstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"provider": providerName,
 		"status":   "uninstalled",
-		"message":  fmt.Sprintf("%s removed. Config files preserved (delete manually if needed).", providerName),
+		"message":  fmt.Sprintf("%s removed. Config files preserved.", providerName),
 	})
 }
 
 // ProviderSaveConfig handles PUT /api/admin/v1/providers/{provider}/config
 // Body: {"content": "<full config file content>"}
-// Delegates to provider.WriteConfig() — no raw os.WriteFile or exec.Command.
 func (h *Handlers) ProviderSaveConfig(w http.ResponseWriter, r *http.Request) {
 	providerName := strings.ToLower(r.PathValue("provider"))
 
@@ -180,11 +176,15 @@ func (h *Handlers) ProviderSaveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delegate to provider — handles validate → backup → write → reload
-	if err := p.WriteConfig([]byte(req.Content + "\n")); err != nil {
+	configPath := p.State().ConfigPath
+
+	// Delegate to provider.Apply() — handles validate → backup → write → reload
+	if err := p.Apply([]provider.ConfigFile{
+		{Path: configPath, Content: []byte(req.Content + "\n")},
+	}); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"provider":    providerName,
-			"config_path": p.ConfigPath(),
+			"config_path": configPath,
 			"status":      "save_failed",
 			"error":       err.Error(),
 		})
@@ -193,7 +193,7 @@ func (h *Handlers) ProviderSaveConfig(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"provider":    providerName,
-		"config_path": p.ConfigPath(),
+		"config_path": configPath,
 		"status":      "saved",
 		"message":     "config validated, backed up, written, and reloaded",
 	})

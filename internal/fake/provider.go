@@ -4,29 +4,28 @@ import (
 	"fmt"
 
 	"aegis/internal/provider"
-	"aegis/internal/proxy"
 )
 
 // FakeProvider implements the Provider interface for testing failure scenarios.
 type FakeProvider struct {
-	ProviderName string // renamed from "Name" to avoid conflict with Provider.Name() method
-	Protocol     string
-	ProvConfigPath string // renamed from "ConfigPath" to avoid conflict with Provider.ConfigPath() method
+	ProviderName   string
+	Protocol       string
+	ProvConfigPath string
 
-	// Failure injection matrix (v1.7R enhanced)
-	MissingBinary          bool   // → Info() returns "unavailable", Diagnose() returns PROVIDER_MISSING
-	FailValidate           bool   // → Validate returns CONFIG_VALIDATE_FAILED
-	ValidateErr            string // stderr content for validate failure
-	FailReload             bool   // → Reload returns SERVICE_NOT_RUNNING
+	// Failure injection matrix
+	MissingBinary          bool
+	FailValidate           bool
+	ValidateErr            string
+	FailReload             bool
 	ReloadErr              string
 	FailBackup             bool
 	FailRestore            bool
-	RuntimeVerifyFailed    bool   // → runtime verify failure
+	RuntimeVerifyFailed    bool
 	RuntimeVerifyErr       string
-	ListenerConflict       bool   // → LISTENER_CONFLICT
+	ListenerConflict       bool
 	ListenerConflictDetail string
-	ConfigFileMissing      bool   // → CONFIG_FILE_MISSING
-	VersionUnsupported     bool   // → PROVIDER_VERSION_UNSUPPORTED
+	ConfigFileMissing      bool
+	VersionUnsupported     bool
 	Installed              bool
 	Version                string
 	Running                bool
@@ -44,116 +43,30 @@ func NewFakeProvider(name, protocol string) *FakeProvider {
 	}
 }
 
-func (fp *FakeProvider) Info() provider.Info {
-	status := "ready"
-	msg := ""
-	if !fp.Installed || fp.MissingBinary {
-		status = "unavailable"
-		msg = fmt.Sprintf("%s: binary not found", provider.DiagCodeProviderMissing)
-	} else if fp.VersionUnsupported {
-		status = "degraded"
-		msg = fmt.Sprintf("%s: version %s is unsupported", provider.DiagCodeVersionUnsupported, fp.Version)
+// State implements provider.Provider.
+func (fp *FakeProvider) State() provider.ProviderState {
+	s := provider.ProviderState{
+		ID:           fp.ProviderName,
+		Name:         fp.ProviderName,
+		GatewayType:  provider.TypeHTTPTerm,
+		Status:       "ready",
+		ConfigPath:   fp.ProvConfigPath,
+		BinaryPath:   "/usr/bin/" + fp.ProviderName,
+		Installed:    fp.Installed && !fp.MissingBinary,
+		Running:      fp.Running && !fp.MissingBinary,
+		Version:      fp.Version,
+		Capabilities: fp.fakeCapabilities(),
 	}
-	return provider.Info{
-		ID:         fp.ProviderName,
-		Name:       fp.ProviderName,
-		Type:       provider.TypeHTTPTerm, // fake; real providers return their actual type
-		Status:     status,
-		Message:    msg,
-		ConfigPath: fp.ProvConfigPath,
+	if !s.Installed || !s.Running {
+		s.Status = "unavailable"
 	}
+	if fp.FailValidate || fp.ListenerConflict {
+		s.Status = "degraded"
+	}
+	return s
 }
 
-// ID implements provider.Provider.
-func (fp *FakeProvider) ID() string { return fp.ProviderName }
-
-// Name implements provider.Provider (conflicts with field, so method returns field value).
-func (fp *FakeProvider) Name() string { return fp.ProviderName }
-
-// Type implements provider.Provider.
-func (fp *FakeProvider) Type() provider.GatewayType { return provider.TypeHTTPTerm }
-
-// Capabilities implements provider.Provider.
-func (fp *FakeProvider) Capabilities() provider.ProviderCapabilities {
-	return provider.CaddyCapabilities() // fake: use Caddy capabilities as default
-}
-
-// UIHints implements provider.Provider.
-func (fp *FakeProvider) UIHints() provider.ProviderUIHints {
-	return provider.CaddyUIHints()
-}
-
-// CanInstall implements provider.Provider.
-func (fp *FakeProvider) CanInstall() bool { return true }
-
-// Install implements provider.Provider.
-func (fp *FakeProvider) Install() error { return nil }
-
-func (fp *FakeProvider) Render(routes []proxy.RouteConfig) ([]byte, error) {
-	return []byte("# fake rendered config\n"), nil
-}
-
-func (fp *FakeProvider) Validate(configPath string) error {
-	if fp.ConfigFileMissing {
-		return fmt.Errorf("%s: config file not found at %s", provider.DiagCodeConfigFileMissing, configPath)
-	}
-	if fp.FailValidate {
-		errMsg := fp.ValidateErr
-		if errMsg == "" {
-			errMsg = "syntax error at line 1"
-		}
-		return fmt.Errorf("%s: %s", provider.DiagCodeConfigValidateFailed, errMsg)
-	}
-	if fp.ListenerConflict {
-		detail := fp.ListenerConflictDetail
-		if detail == "" {
-			detail = "port 443 already in use"
-		}
-		return fmt.Errorf("%s: %s", provider.DiagCodeListenerConflict, detail)
-	}
-	return nil
-}
-
-func (fp *FakeProvider) Reload() error {
-	if fp.FailReload {
-		errMsg := fp.ReloadErr
-		if errMsg == "" {
-			errMsg = "service not running"
-		}
-		return fmt.Errorf("%s: %s", provider.DiagCodeServiceNotRunning, errMsg)
-	}
-	if fp.RuntimeVerifyFailed {
-		errMsg := fp.RuntimeVerifyErr
-		if errMsg == "" {
-			errMsg = "health check returned 502"
-		}
-		return fmt.Errorf("%s: %s", provider.DiagCodeRuntimeVerifyFailed, errMsg)
-	}
-	return nil
-}
-
-func (fp *FakeProvider) Backup() (string, error) {
-	if fp.FailBackup {
-		return "", fmt.Errorf("backup failed")
-	}
-	return "/tmp/fake-backup.bak", nil
-}
-
-func (fp *FakeProvider) Restore(backupPath string) error {
-	if fp.FailRestore {
-		return fmt.Errorf("restore failed")
-	}
-	return nil
-}
-
-func (fp *FakeProvider) GetCurrentConfig() (string, error) {
-	if fp.ConfigFileMissing {
-		return "", fmt.Errorf("%s: %s", provider.DiagCodeConfigFileMissing, fp.ProvConfigPath)
-	}
-	return "# fake current config\n", nil
-}
-
-// Diagnose implements the provider.Diagnoser interface.
+// Diagnose implements provider.Provider.
 func (fp *FakeProvider) Diagnose() provider.ProviderDiagnostic {
 	diag := provider.ProviderDiagnostic{
 		Provider:         fp.ProviderName,
@@ -169,7 +82,6 @@ func (fp *FakeProvider) Diagnose() provider.ProviderDiagnostic {
 	if !fp.Installed || fp.MissingBinary {
 		diag.LastErrorCode = provider.DiagCodeProviderMissing
 		diag.LastErrorMessage = fmt.Sprintf("%s binary not found in PATH", fp.ProviderName)
-		diag.Stderr = ""
 		return diag
 	}
 
@@ -226,6 +138,45 @@ func (fp *FakeProvider) Diagnose() provider.ProviderDiagnostic {
 	return diag
 }
 
+// Render implements provider.Provider.
+func (fp *FakeProvider) Render(plan provider.Plan) ([]provider.ConfigFile, error) {
+	return []provider.ConfigFile{
+		{
+			Path:    fp.ProvConfigPath,
+			Content: []byte("# fake rendered config\n"),
+		},
+	}, nil
+}
+
+// Apply implements provider.Provider.
+func (fp *FakeProvider) Apply(configs []provider.ConfigFile) error {
+	if fp.FailBackup {
+		return fmt.Errorf("backup failed")
+	}
+	if fp.FailValidate {
+		errMsg := fp.ValidateErr
+		if errMsg == "" {
+			errMsg = "syntax error at line 1"
+		}
+		return fmt.Errorf("%s: %s", provider.DiagCodeConfigValidateFailed, errMsg)
+	}
+	if fp.FailReload {
+		errMsg := fp.ReloadErr
+		if errMsg == "" {
+			errMsg = "service not running"
+		}
+		return fmt.Errorf("%s: %s", provider.DiagCodeServiceNotRunning, errMsg)
+	}
+	if fp.RuntimeVerifyFailed {
+		errMsg := fp.RuntimeVerifyErr
+		if errMsg == "" {
+			errMsg = "health check returned 502"
+		}
+		return fmt.Errorf("%s: %s", provider.DiagCodeRuntimeVerifyFailed, errMsg)
+	}
+	return nil
+}
+
 // ResetErrors clears all failure injection flags.
 func (fp *FakeProvider) ResetErrors() {
 	fp.MissingBinary = false
@@ -245,31 +196,77 @@ func (fp *FakeProvider) ResetErrors() {
 	fp.Running = true
 }
 
-// ─── Layer 2: LOCATION ────────────────────────────────────────────────────
-
-func (fp *FakeProvider) ConfigPath() string  { return fp.ProvConfigPath }
-func (fp *FakeProvider) BinaryPath() string  { return "/usr/bin/" + fp.ProviderName }
-func (fp *FakeProvider) ServiceName() string { return fp.ProviderName }
-
-// ─── Layer 3: INSTALL / UNINSTALL ─────────────────────────────────────────
-
-func (fp *FakeProvider) CanUninstall() bool { return true }
-func (fp *FakeProvider) Uninstall() error   { return nil }
-
-// ─── Layer 4: CONFIG ──────────────────────────────────────────────────────
-
-func (fp *FakeProvider) WriteConfig(content []byte) error {
-	if fp.FailBackup {
-		return fmt.Errorf("backup failed")
+// fakeCapabilities returns a minimal capability set for testing.
+func (fp *FakeProvider) fakeCapabilities() []provider.Capability {
+	return []provider.Capability{
+		provider.CapListenTCP,
+		provider.CapUpstreamTCP,
+		provider.CapTLSTerminate,
+		provider.CapHTTP1,
+		provider.CapRouteHost,
+		provider.CapHotReload,
+		provider.CapValidateConfig,
 	}
-	if fp.FailReload {
-		return fmt.Errorf("%s: %s", provider.DiagCodeServiceNotRunning, fp.ReloadErr)
-	}
-	return nil
 }
 
 // Ensure FakeProvider implements Provider
 var _ provider.Provider = (*FakeProvider)(nil)
+
+// ============================================================================
+// Test helpers (not part of Provider interface)
+// ============================================================================
+
+// Validate returns an error based on failure injection flags.
+// Test helper — not part of the Provider interface.
+func (fp *FakeProvider) Validate(configPath string) error {
+	if fp.ConfigFileMissing {
+		return fmt.Errorf("%s: config file not found at %s", provider.DiagCodeConfigFileMissing, configPath)
+	}
+	if fp.FailValidate {
+		errMsg := fp.ValidateErr
+		if errMsg == "" {
+			errMsg = "syntax error at line 1"
+		}
+		return fmt.Errorf("%s: %s", provider.DiagCodeConfigValidateFailed, errMsg)
+	}
+	if fp.ListenerConflict {
+		detail := fp.ListenerConflictDetail
+		if detail == "" {
+			detail = "port 443 already in use"
+		}
+		return fmt.Errorf("%s: %s", provider.DiagCodeListenerConflict, detail)
+	}
+	return nil
+}
+
+// ConfigPath returns the fake config path. Test helper.
+func (fp *FakeProvider) ConfigPath() string { return fp.ProvConfigPath }
+
+// Info returns the provider state. Test helper — use State() for interface compliance.
+func (fp *FakeProvider) Info() provider.ProviderState { return fp.State() }
+
+// Reload simulates a reload. Test helper — not part of the Provider interface.
+func (fp *FakeProvider) Reload() error {
+	if fp.FailReload {
+		errMsg := fp.ReloadErr
+		if errMsg == "" {
+			errMsg = "service not running"
+		}
+		return fmt.Errorf("%s: %s", provider.DiagCodeServiceNotRunning, errMsg)
+	}
+	if fp.RuntimeVerifyFailed {
+		errMsg := fp.RuntimeVerifyErr
+		if errMsg == "" {
+			errMsg = "health check returned 502"
+		}
+		return fmt.Errorf("%s: %s", provider.DiagCodeRuntimeVerifyFailed, errMsg)
+	}
+	return nil
+}
+
+// ============================================================================
+// FakeCluster — multi-node cluster simulation for testing
+// ============================================================================
 
 // FakeCluster simulates multi-node cluster scenarios for testing.
 type FakeCluster struct {
@@ -277,7 +274,7 @@ type FakeCluster struct {
 	ACKTimeout      bool
 	SplitBrain      bool
 	NoLeader        bool
-	VersionMismatch bool // v1.7R: version mismatch across nodes
+	VersionMismatch bool
 }
 
 // FakeNode represents a simulated node in a cluster.
@@ -353,7 +350,7 @@ func (fc *FakeCluster) InjectStaleNode(nodeIndex int) {
 	}
 }
 
-// InjectVersionMismatch creates version differences across all nodes (v1.7R).
+// InjectVersionMismatch creates version differences across all nodes.
 func (fc *FakeCluster) InjectVersionMismatch() {
 	fc.VersionMismatch = true
 	for i := range fc.Nodes {
@@ -361,7 +358,7 @@ func (fc *FakeCluster) InjectVersionMismatch() {
 	}
 }
 
-// CheckDrift reports a drift severity between two nodes.
+// CheckDrift reports drift severity between two nodes.
 func (fc *FakeCluster) CheckDrift(nodeA, nodeB int) string {
 	vA := fc.Nodes[nodeA].StateVersion
 	vB := fc.Nodes[nodeB].StateVersion

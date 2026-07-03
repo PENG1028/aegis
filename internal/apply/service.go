@@ -1,3 +1,7 @@
+// DEPRECATED (v1.8L cleanup): This file implements a Caddy-only Apply pipeline
+// hardcoded to s.adapter (CaddyAdapter). It will be replaced by a provider-iterating
+// pipeline that walks provRegistry.ListAll() and calls each Provider's Render,
+// Validate, WriteConfig, and Reload methods.
 package apply
 
 import (

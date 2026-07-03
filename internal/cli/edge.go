@@ -241,22 +241,13 @@ func newEdgeCheckCmd(svc *edgemux.AppService) *cobra.Command {
 }
 
 func printProviderStatus(s provider.ProviderStatus) {
-	fmt.Printf("  %s:\n", s.Name)
+	fmt.Printf("  %s:\n", s.Provider)
 	fmt.Printf("    status:          %s\n", s.Status)
-	fmt.Printf("    installed:       %v\n", s.Installed)
+	fmt.Printf("    running:         %v\n", s.Running)
 	if s.Version != "" && s.Version != "unknown" {
 		fmt.Printf("    version:         %s\n", s.Version)
 	}
-	if s.SNIPassthroughReady {
-		fmt.Printf("    sni_passthrough: supported\n")
-	}
-	if s.ConfigValid != nil {
-		fmt.Printf("    config_valid:    %v\n", *s.ConfigValid)
-	}
-	if s.ServiceRunning != nil {
-		fmt.Printf("    service_running: %v\n", *s.ServiceRunning)
-	}
-	fmt.Printf("    edge_mux_ready:  %v\n", s.EdgeMuxReady)
+	fmt.Printf("    config_ok:       %v\n", s.ConfigOK)
 	if s.Message != "" {
 		fmt.Printf("    message:         %s\n", s.Message)
 	}

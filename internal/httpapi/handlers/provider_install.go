@@ -5,11 +5,12 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+
+	"aegis/internal/provider"
 )
 
-// ProviderInstall installs a middleware provider via its Provider interface.
+// ProviderInstall installs a middleware provider.
 // POST /api/admin/v1/providers/{provider}/install
-// Delegates to provider.CanInstall() and provider.Install() — no raw apt-get calls.
 func (h *Handlers) ProviderInstall(w http.ResponseWriter, r *http.Request) {
 	providerName := strings.ToLower(r.PathValue("provider"))
 
@@ -20,7 +21,9 @@ func (h *Handlers) ProviderInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !p.CanInstall() {
+	// Check for optional LifecycleProvider interface
+	lc, ok := p.(provider.LifecycleProvider)
+	if !ok || !lc.CanInstall() {
 		writeError(w, http.StatusBadRequest,
 			fmt.Sprintf("provider %s cannot be installed directly (shared binary or built-in)", providerName))
 		return
@@ -36,8 +39,7 @@ func (h *Handlers) ProviderInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delegate to provider.Install()
-	if err := p.Install(); err != nil {
+	if err := lc.Install(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"provider": providerName,
 			"status":   "install_failed",
@@ -55,7 +57,6 @@ func (h *Handlers) ProviderInstall(w http.ResponseWriter, r *http.Request) {
 
 // ProviderConfigPreview returns the current config for a provider.
 // GET /api/admin/v1/providers/{provider}/config
-// Delegates to provider.GetCurrentConfig() and provider.ConfigPath().
 func (h *Handlers) ProviderConfigPreview(w http.ResponseWriter, r *http.Request) {
 	providerName := strings.ToLower(r.PathValue("provider"))
 
@@ -66,13 +67,22 @@ func (h *Handlers) ProviderConfigPreview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	configPath := p.ConfigPath()
+	configPath := p.State().ConfigPath
 	if configPath == "" {
 		writeError(w, http.StatusNotFound, "config path not configured")
 		return
 	}
 
-	data, err := p.GetCurrentConfig()
+	// Try ConfigReader optional interface
+	var data string
+	var err error
+	if reader, ok := p.(provider.ConfigReader); ok {
+		data, err = reader.GetCurrentConfig()
+	} else {
+		writeError(w, http.StatusNotFound, "provider does not support config reading")
+		return
+	}
+
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"provider":    providerName,

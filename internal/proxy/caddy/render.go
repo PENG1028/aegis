@@ -1,3 +1,7 @@
+// DEPRECATED (v1.8L cleanup): This file takes proxy.RouteConfig (Caddy-centric
+// flat model) as input. It will be replaced by a renderer that accepts the new
+// 5-dimension intent model (transport × tlsMode × appProtocol × match × upstream)
+// and generates Caddyfile from that instead.
 package caddy
 
 import (

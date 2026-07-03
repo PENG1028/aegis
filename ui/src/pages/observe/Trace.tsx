@@ -1,19 +1,85 @@
 // ─── Trace ───
 // Core troubleshooting page: trace any domain/SNI/route, show full chain with failure layer highlighted.
+// v2: Port policy awareness, SNI passthrough recognition, Unix socket detection.
+//
+// Pipeline visualization:
+//   Legacy mode:    DNS → Caddy :80/:443 (TLS 终止) → Route → Gateway → Service → Endpoint (TCP/Unix)
+//   EdgeMux mode:   DNS → HAProxy :443 (SNI 直通) → Caddy :8443 (TLS 终止) → Route → Gateway → Service → Endpoint (TCP/Unix)
 
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Card, PageHeader, Btn, StatusBadge, HealthDot } from '@/components/shared';
 import Input from '@/components/ui/Input';
 import { PathRibbon } from '@/components/workspace/PathRibbon';
 import { useChain } from '@/hooks/useChain';
-import { traceApi } from '@/lib/api-bridge';
+import { traceApi, providerApi } from '@/lib/api-bridge';
 import { resolveChain } from '@/mocks/generators/chain-factory';
 import { getScenario } from '@/mocks';
 import { API_CONFIG } from '@/lib/api-config';
 import { cn } from '@/lib/utils';
 
-// In mock mode, build trace result from scenario data
+// ─── Port policy indicator ───
+
+function PortPolicyPill({ mode, loading }: { mode: string | null; loading: boolean }) {
+  if (loading) return <span className="text-[10px] text-a-muted">加载端口策略...</span>;
+  if (!mode) return null;
+
+  const isEdgeMux = mode === 'edge_mux';
+
+  return (
+    <div className={cn(
+      'inline-flex items-center gap-2 px-3 py-1.5 rounded text-[11px]',
+      isEdgeMux ? 'bg-a-accent/10 border border-a-accent/20' : 'bg-a-border/20 border border-a-border/30',
+    )}>
+      <span className="text-a-muted">端口策略:</span>
+      <span className={cn('font-mono font-medium', isEdgeMux ? 'text-a-accent' : 'text-a-fg2')}>
+        {isEdgeMux ? 'EdgeMux' : 'Legacy'}
+      </span>
+      <span className="text-[10px] text-a-muted">
+        {isEdgeMux ? 'HAProxy :443 SNI → Caddy :8443 TLS' : 'Caddy :80 + :443 TLS'}
+      </span>
+    </div>
+  );
+}
+
+// ─── Pipeline summary diagram ───
+
+function PipelineSummary({ mode, domain }: { mode: string | null; domain: string }) {
+  const isEdgeMux = mode === 'edge_mux';
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap text-[11px] font-mono">
+      <span className="text-a-fg">🌐 请求</span>
+      <svg className="w-3 h-3 text-a-border" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+      <span className="text-a-fg2">DNS → {domain}</span>
+      <svg className="w-3 h-3 text-a-border" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+
+      {isEdgeMux ? (
+        <>
+          <span className="px-1.5 py-0.5 rounded bg-a-accent/10 text-a-accent">HAProxy :443</span>
+          <span className="text-[10px] text-a-muted">SNI 直通</span>
+          <svg className="w-3 h-3 text-a-border" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+          <span className="px-1.5 py-0.5 rounded bg-[#4cd964]/10 text-[#4cd964]">Caddy :8443</span>
+          <span className="text-[10px] text-a-muted">TLS 终止</span>
+        </>
+      ) : (
+        <>
+          <span className="px-1.5 py-0.5 rounded bg-[#4cd964]/10 text-[#4cd964]">Caddy :443</span>
+          <span className="text-[10px] text-a-muted">TLS 终止</span>
+        </>
+      )}
+
+      <svg className="w-3 h-3 text-a-border" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+      <span className="text-a-fg2">Route</span>
+      <svg className="w-3 h-3 text-a-border" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+      <span className="text-a-fg2">Upstream</span>
+    </div>
+  );
+}
+
+// ─── Enhanced mock trace with SNI + Unix socket recognition ───
+
 function mockTrace(domain: string) {
   const route = getScenario().routes.find(r => r.domain === domain);
   if (!route) return { error: `未找到域名 ${domain} 对应的路由` };
@@ -23,18 +89,93 @@ function mockTrace(domain: string) {
     a.affectedObjects.some(o => o.id === route.route_id || o.id === route.service_id)
   );
 
+  // Determine port policy mode (mock: check if haproxy scenario is active)
+  const scenario = getScenario();
+  const isEdgeMux = scenario.anomalies?.some(a => a.id === 'gateway-link-failure') || false;
+
   const steps = [
-    { name: 'DNS 解析', status: 'ok', description: `${domain} → ${chain.nodes[0]?.public_ip || '43.160.211.232'}` },
-    { name: 'TLS 终止', status: route.tls_mode !== 'http_only' ? 'ok' : 'skipped', description: route.tls_mode === 'terminate_local' ? 'Caddy 本地终止 TLS' : 'HTTP 明文' },
-    { name: '路由匹配', status: 'ok', description: `匹配路由 ${route.route_id}` },
-    { name: '网关转发', status: chain.gateway?.status === 'active' ? 'ok' : 'failed', description: chain.gateway ? `${chain.gateway.name} (${chain.gateway.provider})` : '无网关', error: chain.gateway?.status !== 'active' ? chain.gateway?.last_error : undefined },
-    { name: '服务解析', status: chain.service?.health_status === 'healthy' ? 'ok' : chain.service?.health_status === 'unhealthy' ? 'failed' : 'ok', description: chain.service?.name || '—', error: chain.service?.health_status === 'unhealthy' ? '服务健康检查失败' : undefined },
-    ...chain.endpoints.map(ep => ({
-      name: `端点 ${ep.node_name || ep.node_id}`,
-      status: ep.health_status === 'healthy' ? 'ok' : 'failed',
-      description: `${ep.target_local_host}:${ep.target_local_port} (${ep.address_type})`,
-      error: ep.health_status !== 'healthy' ? '端点不可达' : undefined,
-    })),
+    {
+      name: 'DNS 解析',
+      phase: 'match',
+      status: 'ok',
+      description: `${domain} → ${chain.nodes[0]?.public_ip || '43.160.211.232'}`,
+      detail: 'A 记录解析到 Server A 公网 IP',
+    },
+    ...(isEdgeMux ? [{
+      name: 'SNI 直通 (HAProxy :443)',
+      phase: 'gateway',
+      status: 'ok' as const,
+      description: `TLS ClientHello SNI: ${domain}`,
+      detail: 'HAProxy 读取 SNI 字段，不解密 TLS，按 SNI 分流到 Caddy :8443',
+      sni: domain,
+      passthrough: true,
+    }] : []),
+    {
+      name: isEdgeMux ? 'TLS 终止 (Caddy :8443)' : 'TLS 终止 (Caddy :443)',
+      phase: 'gateway',
+      status: 'ok' as const,
+      description: route.tls_mode !== 'http_only'
+        ? `Caddy 本地终止 TLS，证书自动管理`
+        : 'HTTP 明文（无 TLS）',
+      detail: route.tls_mode === 'terminate_local'
+        ? 'Let\'s Encrypt 自动签发 + 续期'
+        : route.tls_mode === 'passthrough_deferred'
+          ? 'TLS 直通到上游，Caddy 不终止'
+          : 'HTTP 模式，80 端口直接转发',
+      tls_mode: route.tls_mode,
+    },
+    {
+      name: '路由匹配',
+      phase: 'match',
+      status: 'ok' as const,
+      description: `匹配路由 ${route.route_id}`,
+      detail: `Host: ${domain} → ${route.service_name || 'upstream'}`,
+    },
+    {
+      name: '网关转发',
+      phase: 'forwarding',
+      status: chain.gateway?.status === 'active' ? 'ok' as const : 'failed' as const,
+      description: chain.gateway
+        ? `${chain.gateway.name} (${chain.gateway.provider}) → ${chain.gateway.bind_addr}:${chain.gateway.port}`
+        : '无网关配置',
+      detail: chain.gateway?.status === 'active' ? '反向代理转发到上游服务' : '网关未激活',
+      error: chain.gateway?.status !== 'active' ? chain.gateway?.last_error : undefined,
+    },
+    {
+      name: '服务解析',
+      phase: 'target',
+      status: chain.service?.health_status === 'healthy' ? 'ok' as const
+        : chain.service?.health_status === 'unhealthy' ? 'failed' as const
+        : 'ok' as const,
+      description: chain.service?.name || '—',
+      detail: chain.service?.health_status === 'healthy'
+        ? `健康检查通过 · 延迟 ${chain.service?.latency_ms || '—'}ms`
+        : '服务健康检查失败',
+      error: chain.service?.health_status === 'unhealthy' ? '服务健康检查失败' : undefined,
+    },
+    ...chain.endpoints.map(ep => {
+      // Detect Unix socket endpoint
+      const isUnixSocket = ep.protocol === 'unix'
+        || ep.target_local_host?.startsWith('unix://')
+        || ep.target_local_host?.startsWith('/');
+      const isSNI = ep.protocol === 'tcp' && ep.address_type === 'remote';
+
+      return {
+        name: `端点: ${ep.node_name || ep.node_id}`,
+        phase: 'target',
+        status: ep.health_status === 'healthy' ? 'ok' as const
+          : ep.health_status === 'unhealthy' ? 'failed' as const
+          : 'ok' as const,
+        description: isUnixSocket
+          ? `unix://${ep.target_local_host}`
+          : `${ep.target_local_host}:${ep.target_local_port}`,
+        detail: isUnixSocket
+          ? `Unix Socket 本地通信 · ${ep.address_type} · TCP 健康检查自动跳过`
+          : `${ep.protocol} · ${ep.address_type} · ${ep.relay_eligible ? '支持中继' : '直达'}`,
+        error: ep.health_status !== 'healthy' ? '端点不可达' : undefined,
+        isUnixSocket,
+      };
+    }),
   ];
 
   const failedStep = steps.find(s => s.status === 'failed');
@@ -43,11 +184,29 @@ function mockTrace(domain: string) {
     input_type: 'domain',
     trace_status: failedStep ? 'degraded' : 'ok',
     route_id: route.route_id,
+    port_policy_mode: isEdgeMux ? 'edge_mux' : 'legacy',
     steps,
     summary: failedStep ? `失败于: ${failedStep.name}` : '全链路正常',
     anomalies: anomalies.map(a => a.title),
+    hasSNIPassthrough: isEdgeMux,
+    unixSocketEndpoints: chain.endpoints.filter(ep =>
+      ep.protocol === 'unix' || ep.target_local_host?.startsWith('unix://') || ep.target_local_host?.startsWith('/')
+    ).length,
   };
 }
+
+// ─── Step renderer ───
+
+function getStepColor(status: string) {
+  switch (status) {
+    case 'ok': return { dot: 'bg-[#4cd964] border-[#4cd964]', bg: 'bg-[#4cd964]/3 border-[#4cd964]/10', line: 'bg-[#4cd964]/30' };
+    case 'failed': return { dot: 'bg-[#ff5c72] border-[#ff5c72] ring-2 ring-[#ff5c72]/30', bg: 'bg-[#ff5c72]/5 border-[#ff5c72]/20', line: 'bg-[#ff5c72]/30' };
+    case 'skipped': return { dot: 'bg-a-border border-a-border', bg: 'bg-a-bg/30 border-a-border/30 opacity-50', line: 'bg-a-border/50' };
+    default: return { dot: 'bg-a-bg border-a-border', bg: 'bg-a-bg border-a-border', line: 'bg-a-border/50' };
+  }
+}
+
+// ─── Main Page ───
 
 export default function Trace() {
   const nav = useNavigate();
@@ -59,6 +218,17 @@ export default function Trace() {
 
   const chainRouteId = result?.route_id;
   const { data: chain } = useChain('route', chainRouteId);
+
+  // Fetch port policy for pipeline visualization
+  const { data: portPolicy } = useQuery({
+    queryKey: ['port-policy'],
+    queryFn: () => providerApi.portPolicy().catch(() => null),
+    refetchInterval: 120_000,
+  });
+
+  const portPolicyMode = API_CONFIG.useMock
+    ? result?.port_policy_mode || 'legacy'
+    : portPolicy?.mode || null;
 
   const handleTrace = async () => {
     setLoading(true);
@@ -88,7 +258,25 @@ export default function Trace() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="链路追踪" subtitle="追踪完整请求路径 · 自动定位失败层" />
+      <PageHeader title="链路追踪" subtitle="追踪完整请求路径 · 自动定位失败层 · 端口策略感知" />
+
+      {/* Port Policy + Pipeline Summary */}
+      <Card title="当前搭配">
+        <div className="flex items-center gap-4 mb-3">
+          <PortPolicyPill mode={portPolicyMode} loading={false} />
+          {result?.hasSNIPassthrough && (
+            <span className="text-[11px] px-2 py-1 rounded bg-a-accent/10 text-a-accent flex items-center gap-1">
+              🔐 SNI 直通
+            </span>
+          )}
+          {result?.unixSocketEndpoints > 0 && (
+            <span className="text-[11px] px-2 py-1 rounded bg-[#e8b830]/10 text-[#e8b830] flex items-center gap-1">
+              🔗 {result.unixSocketEndpoints} 个 Unix Socket
+            </span>
+          )}
+        </div>
+        <PipelineSummary mode={portPolicyMode} domain={domain || '(输入域名后显示)'} />
+      </Card>
 
       {/* Input */}
       <Card title="输入">
@@ -109,7 +297,6 @@ export default function Trace() {
           )}
           <Btn primary onClick={handleTrace} disabled={loading}>{loading ? '追踪中...' : '开始追踪'}</Btn>
         </div>
-        {/* Quick test domains — mock mode only */}
         {API_CONFIG.useMock && (
           <div className="flex gap-1.5 mt-2">
             <span className="text-[10px] text-a-muted">快捷:</span>
@@ -121,7 +308,7 @@ export default function Trace() {
         )}
         {!API_CONFIG.useMock && (
           <div className="text-[10px] text-a-muted mt-2">
-            输入域名、SNI 主机名或 Route ID 进行全链路追踪
+            输入域名、SNI 主机名或 Route ID 进行全链路追踪 · 自动识别端口策略和传输协议
           </div>
         )}
       </Card>
@@ -133,63 +320,72 @@ export default function Trace() {
         </Card>
       )}
 
-      {/* Steps with failure highlight */}
+      {/* Steps with pipeline phase markers */}
       {result?.steps?.length > 0 && (
         <Card title="追踪步骤" subtitle={result.summary}>
           <div className="relative">
-            {result.steps.map((step: any, i: number) => (
-              <div key={i} className="flex items-stretch">
-                {/* Step connector line */}
-                <div className="flex flex-col items-center mr-3">
-                  <div className={cn(
-                    'w-2.5 h-2.5 rounded-full border-2 shrink-0',
-                    step.status === 'ok' ? 'bg-[#4cd964] border-[#4cd964]' :
-                    step.status === 'failed' ? 'bg-[#ff5c72] border-[#ff5c72] ring-2 ring-[#ff5c72]/30' :
-                    step.status === 'skipped' ? 'bg-a-border border-a-border' :
-                    'bg-a-bg border-a-border',
-                  )} />
-                  {i < result.steps.length - 1 && (
-                    <div className={cn('w-0.5 flex-1 min-h-[20px]',
-                      step.status === 'failed' ? 'bg-[#ff5c72]/30' :
-                      step.status === 'ok' ? 'bg-[#4cd964]/30' :
-                      'bg-a-border/50',
-                    )} />
-                  )}
-                </div>
-                {/* Step content */}
-                <div className={cn(
-                  'flex-1 pb-4',
-                  step.status === 'failed' && 'pb-6',
-                )}>
-                  <div className={cn(
-                    'p-3 rounded-a-sm border text-xs',
-                    step.status === 'ok' ? 'bg-[#4cd964]/3 border-[#4cd964]/10' :
-                    step.status === 'failed' ? 'bg-[#ff5c72]/5 border-[#ff5c72]/20' :
-                    step.status === 'skipped' ? 'bg-a-bg/30 border-a-border/30 opacity-50' :
-                    'bg-a-bg border-a-border',
-                  )}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] text-a-muted font-mono">#{i + 1}</span>
-                      <span className="font-semibold text-a-fg">{step.name}</span>
-                      <StatusBadge status={step.status === 'ok' ? 'active' : step.status === 'failed' ? 'error' : step.status === 'skipped' ? 'disabled' : 'pending'} />
-                    </div>
-                    <p className="text-a-fg2">{step.description}</p>
-                    {step.error && (
-                      <div className="mt-2 p-2 rounded bg-[#ff5c72]/10 border border-[#ff5c72]/20 text-[#ff5c72] text-[11px] font-medium">
-                        ✕ {step.error}
-                      </div>
-                    )}
-                    {/* Action button on failed step */}
-                    {step.status === 'failed' && chain && (
-                      <button onClick={() => chain.entryPoint && nav(`/exposure/entry/${chain.entryPoint.route_id}`)}
-                        className="mt-2 text-[10px] text-a-accent hover:underline cursor-pointer">
-                        查看详情 →
-                      </button>
+            {result.steps.map((step: any, i: number) => {
+              const colors = getStepColor(step.status);
+              return (
+                <div key={i} className="flex items-stretch">
+                  {/* Step connector */}
+                  <div className="flex flex-col items-center mr-3">
+                    <div className={cn('w-2.5 h-2.5 rounded-full border-2 shrink-0', colors.dot)} />
+                    {i < result.steps.length - 1 && (
+                      <div className={cn('w-0.5 flex-1 min-h-[20px]', colors.line)} />
                     )}
                   </div>
+                  {/* Step content */}
+                  <div className={cn('flex-1 pb-4', step.status === 'failed' && 'pb-6')}>
+                    <div className={cn('p-3 rounded-a-sm border text-xs', colors.bg)}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] text-a-muted font-mono">#{i + 1}</span>
+                        {/* Phase badge */}
+                        {step.phase && (
+                          <span className={cn(
+                            'text-[10px] px-1 py-0.5 rounded font-medium',
+                            step.phase === 'match' ? 'bg-a-accent/10 text-a-accent' :
+                            step.phase === 'gateway' ? 'bg-[#4cd964]/10 text-[#4cd964]' :
+                            step.phase === 'forwarding' ? 'bg-[#e8b830]/10 text-[#e8b830]' :
+                            step.phase === 'target' ? 'bg-a-border/30 text-a-fg2' :
+                            'bg-a-border/20 text-a-muted',
+                          )}>
+                            {step.phase === 'match' ? '匹配' :
+                             step.phase === 'gateway' ? '网关' :
+                             step.phase === 'forwarding' ? '转发' :
+                             step.phase === 'target' ? '目标' :
+                             step.phase === 'fallback' ? '回退' :
+                             step.phase === 'health' ? '健康' : step.phase}
+                          </span>
+                        )}
+                        <span className="font-semibold text-a-fg">{step.name}</span>
+                        {/* Special markers */}
+                        {step.passthrough && (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-a-accent/10 text-a-accent font-medium">SNI 直通</span>
+                        )}
+                        {step.isUnixSocket && (
+                          <span className="text-[10px] px-1 py-0.5 rounded bg-[#e8b830]/10 text-[#e8b830] font-medium">Unix Socket</span>
+                        )}
+                        <StatusBadge status={step.status === 'ok' ? 'active' : step.status === 'failed' ? 'error' : step.status === 'skipped' ? 'disabled' : 'pending'} />
+                      </div>
+                      <p className="text-a-fg2">{step.description}</p>
+                      {step.detail && <p className="text-[10px] text-a-muted mt-0.5">{step.detail}</p>}
+                      {step.error && (
+                        <div className="mt-2 p-2 rounded bg-[#ff5c72]/10 border border-[#ff5c72]/20 text-[#ff5c72] text-[11px] font-medium">
+                          ✕ {step.error}
+                        </div>
+                      )}
+                      {step.status === 'failed' && chain && (
+                        <button onClick={() => chain.entryPoint && nav(`/exposure/entry/${chain.entryPoint.route_id}`)}
+                          className="mt-2 text-[10px] text-a-accent hover:underline cursor-pointer">
+                          查看详情 →
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}
@@ -201,7 +397,7 @@ export default function Trace() {
         </Card>
       )}
 
-      {/* Anomalies from mock */}
+      {/* Anomalies */}
       {result?.anomalies?.length > 0 && (
         <Card title="关联异常">
           {result.anomalies.map((a: string, i: number) => (

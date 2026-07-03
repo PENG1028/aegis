@@ -89,12 +89,12 @@ func (s *AppService) CreateExposure(ctx context.Context, input CreateExposureInp
 		provName = ""
 		status = StatusPending
 		msg = fmt.Sprintf("no provider available for protocol %s", input.Type)
-	} else if selectedProvider.Info().Status == "unavailable" {
-		provName = selectedProvider.Info().Name
+	} else if !selectedProvider.State().Running {
+		provName = selectedProvider.State().Name
 		status = "pending_provider"
-		msg = fmt.Sprintf("provider %s is unavailable: %s", provName, selectedProvider.Info().Message)
+		msg = fmt.Sprintf("provider %s is not running", provName)
 	} else {
-		provName = selectedProvider.Info().Name
+		provName = selectedProvider.State().Name
 		status = StatusPending
 	}
 

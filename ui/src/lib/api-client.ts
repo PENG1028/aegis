@@ -281,10 +281,100 @@ export const providerApi = {
     await delay();
     return {
       providers: [
-        { name: 'caddy_http', protocol: 'http', status: 'available', message: 'caddy is running', config_path: '/etc/caddy/Caddyfile' },
-        { name: 'haproxy_edge_mux', protocol: 'tls_mux', status: 'available', message: 'haproxy is running and configured', config_path: '/etc/haproxy/haproxy.cfg' },
+        {
+          provider_id: 'caddy', provider_name: 'Caddy HTTP', gateway_type: 'http_terminate',
+          detected: true, binary_path: '/usr/bin/caddy', version: 'v2.8.4',
+          config_path: '/etc/caddy/Caddyfile', config_valid: true,
+          service_running: true, running: true, status_message: '运行中',
+          listening_ports: [80, 443],
+          can_install: true,
+          capabilities: {
+            provider_id: 'caddy', provider_name: 'Caddy', gateway_type: 'http_terminate',
+            match_keys: ['host_path'],
+            protocols: ['http/1.1', 'http/2', 'http/3', 'websocket', 'grpc', 'sse'],
+            auto_tls: true, load_balance: true, health_check: false, rate_limit: true,
+            config_import: true, sni_passthrough: false, can_install: true,
+          },
+          diagnostic: {
+            provider: 'caddy', installed: true, binary_path: '/usr/bin/caddy',
+            version: 'v2.8.4', version_supported: true,
+            config_path: '/etc/caddy/Caddyfile', config_exists: true, config_valid: true,
+            service_running: true, listener_ok: true, runtime_verify_ok: true,
+            last_error_code: '', last_error_message: '', stderr: '', checked_at: new Date().toISOString(),
+          },
+        },
+        {
+          provider_id: 'haproxy_edge_mux', provider_name: 'HAProxy EdgeMux', gateway_type: 'sni_passthrough',
+          detected: true, binary_path: '/usr/sbin/haproxy', version: '2.8.5',
+          config_path: '/etc/haproxy/haproxy.cfg', config_valid: true,
+          service_running: true, running: true, status_message: '运行中 · EdgeMux 模式',
+          listening_ports: [443],
+          can_install: true,
+          capabilities: {
+            provider_id: 'haproxy_edge_mux', provider_name: 'HAProxy EdgeMux', gateway_type: 'sni_passthrough',
+            match_keys: ['sni'],
+            protocols: ['tcp'],
+            auto_tls: false, load_balance: false, health_check: true, rate_limit: false,
+            config_import: false, sni_passthrough: true, can_install: true,
+          },
+          diagnostic: {
+            provider: 'haproxy_edge_mux', installed: true, binary_path: '/usr/sbin/haproxy',
+            version: '2.8.5', version_supported: true,
+            config_path: '/etc/haproxy/haproxy.cfg', config_exists: true, config_valid: true,
+            service_running: true, listener_ok: true, runtime_verify_ok: true,
+            last_error_code: '', last_error_message: '', stderr: '', checked_at: new Date().toISOString(),
+          },
+        },
+        {
+          provider_id: 'haproxy_tcp', provider_name: 'HAProxy TCP', gateway_type: 'tcp_forward',
+          detected: true, binary_path: '/usr/sbin/haproxy', version: '2.8.5',
+          config_path: '/etc/haproxy/haproxy.cfg', config_valid: true,
+          service_running: true, running: true, status_message: '共享 HAProxy 二进制',
+          listening_ports: [],
+          can_install: false, // shared binary
+          capabilities: {
+            provider_id: 'haproxy_tcp', provider_name: 'HAProxy TCP', gateway_type: 'tcp_forward',
+            match_keys: ['port'],
+            protocols: ['tcp'],
+            auto_tls: false, load_balance: false, health_check: true, rate_limit: false,
+            config_import: false, sni_passthrough: false, can_install: false,
+          },
+          diagnostic: null,
+        },
+        {
+          provider_id: 'aegis_tcp', provider_name: 'Aegis TCP Manager', gateway_type: 'tcp_forward',
+          detected: true, binary_path: '', version: 'built-in',
+          config_path: '', config_valid: null,
+          service_running: null, running: true, status_message: '内置于 Aegis，无需额外安装',
+          listening_ports: [],
+          can_install: false,
+          capabilities: {
+            provider_id: 'aegis_tcp', provider_name: 'Aegis TCP Manager', gateway_type: 'tcp_forward',
+            match_keys: ['port'],
+            protocols: ['tcp', 'unix'],
+            auto_tls: false, load_balance: false, health_check: false, rate_limit: false,
+            config_import: false, sni_passthrough: false, can_install: false,
+          },
+          diagnostic: null,
+        },
+        {
+          provider_id: 'aegis_udp', provider_name: 'Aegis UDP Manager', gateway_type: 'udp_forward',
+          detected: true, binary_path: '', version: 'built-in',
+          config_path: '', config_valid: null,
+          service_running: null, running: true, status_message: '内置于 Aegis，无需额外安装',
+          listening_ports: [],
+          can_install: false,
+          capabilities: {
+            provider_id: 'aegis_udp', provider_name: 'Aegis UDP Manager', gateway_type: 'udp_forward',
+            match_keys: ['port'],
+            protocols: ['udp', 'unix'],
+            auto_tls: false, load_balance: false, health_check: false, rate_limit: false,
+            config_import: false, sni_passthrough: false, can_install: false,
+          },
+          diagnostic: null,
+        },
       ],
-      count: 2,
+      count: 5,
     };
   },
   diagnoseAll: async () => {
@@ -310,6 +400,17 @@ export const providerApi = {
   reload: async (provider: string) => { await delay(500); return { provider, action: 'reload', status: 'success', output: 'OK' }; },
   serviceControl: async (provider: string, action: string) => { await delay(1000); return { provider, action, status: 'success', running: action !== 'stop' }; },
   uninstall: async (provider: string) => { await delay(2000); return { provider, status: 'uninstalled', message: `${provider} removed` }; },
+  portPolicy: async () => {
+    await delay(100);
+    // Return current port policy — defaults to legacy in mock
+    return {
+      mode: 'legacy',
+      bindings: [
+        { port: 80, owner: 'caddy', protocol: 'tcp', purpose: 'http', status: 'active' },
+        { port: 443, owner: 'caddy', protocol: 'tcp', purpose: 'https', status: 'active' },
+      ],
+    };
+  },
 };
 
 // ─── Exposure (TCP/UDP port exposure) ───

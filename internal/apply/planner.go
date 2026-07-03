@@ -1,3 +1,7 @@
+// DEPRECATED (v1.8L cleanup): This file implements a Route→Caddyfile converter,
+// not a Topology Planner. It will be replaced by internal/topology/planner.go
+// which will use the 5-dimension intent model (transport × tlsMode × appProtocol
+// × match × upstream) and capability-based topology template matching.
 package apply
 
 import (

@@ -440,7 +440,8 @@ func (s *Service) RunFailureMatrix(ctx context.Context) *SmokeResult {
 			verify: func(fp *fake.FakeProvider) bool {
 				// Apply locked is verified at the service layer via TryLock
 				// Here we verify the fake provider works correctly for apply
-				return fp.Info().Status == "ready"
+				s := fp.State()
+				return s.Running && s.Installed
 			},
 		},
 		{
