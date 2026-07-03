@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"aegis/internal/apply"
 	"net/http"
 	"regexp"
+	"strings"
 )
 
 // redactGatewaySecrets replaces gateway link secret values in rendered config
@@ -14,23 +14,33 @@ func redactGatewaySecrets(config string) string {
 	return redactGatewaySecretsRe.ReplaceAllString(config, `${1}"***REDACTED***"`)
 }
 
+// v1.8L: handlers now use h.Workflow (new orchestrator) instead of h.Apply.
+// The old AppService is kept for backward compat during migration.
+
 func (h *Handlers) ConfigPreview(w http.ResponseWriter, r *http.Request) {
-	plan, err := h.Apply.DryRun(r.Context())
+	result, err := h.Workflow.Preview(r.Context(), "")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	// Flatten rendered configs into a single string for backward compat
+	var rendered strings.Builder
+	for path, content := range result.Rendered {
+		rendered.WriteString("# " + path + "\n")
+		rendered.WriteString(content)
+		rendered.WriteString("\n")
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"rendered_config":      redactGatewaySecrets(plan.RenderedConfig),
-		"warnings":             plan.Warnings,
-		"route_count":          plan.RouteCount,
-		"managed_domain_count": plan.ManagedDomainCount,
-		"skipped_count":        plan.SkippedCount,
+		"rendered_config": redactGatewaySecrets(rendered.String()),
+		"warnings":        result.Plan.Warnings,
+		"route_count":     len(result.Plan.Plans),
 	})
 }
 
 func (h *Handlers) ConfigCurrent(w http.ResponseWriter, r *http.Request) {
-	config, err := h.Apply.GetCurrentConfig()
+	config, err := h.Workflow.GetCurrentConfig()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -41,57 +51,62 @@ func (h *Handlers) ConfigCurrent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ConfigDiff(w http.ResponseWriter, r *http.Request) {
-	current, _ := h.Apply.GetCurrentConfig()
-	plan, err := h.Apply.DryRun(r.Context())
+	current, _ := h.Workflow.GetCurrentConfig()
+	result, err := h.Workflow.Preview(r.Context(), "")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	diff := generateUnifiedDiff(redactGatewaySecrets(current), redactGatewaySecrets(plan.RenderedConfig))
+	var rendered strings.Builder
+	for _, content := range result.Rendered {
+		rendered.WriteString(content)
+	}
+
+	diff := generateUnifiedDiff(redactGatewaySecrets(current), redactGatewaySecrets(rendered.String()))
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"format":   "unified",
 		"diff":     diff,
-		"warnings": plan.Warnings,
+		"warnings": result.Plan.Warnings,
 	})
 }
 
 func (h *Handlers) ApplyConfig(w http.ResponseWriter, r *http.Request) {
-	plan, err := h.Apply.Apply(r.Context())
+	result, err := h.Workflow.TryApplyCtx(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"version":              plan.RenderedConfig[:min(20, len(plan.RenderedConfig))],
-		"warnings":             plan.Warnings,
-		"route_count":          plan.RouteCount,
-		"managed_domain_count": plan.ManagedDomainCount,
+		"status":   result.Status,
+		"warnings": result.Warnings,
+		"provider": result.Provider,
 	})
 }
 
 func (h *Handlers) ApplyDryRun(w http.ResponseWriter, r *http.Request) {
-	plan, err := h.Apply.DryRun(r.Context())
+	result, err := h.Workflow.Preview(r.Context(), "")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	var rendered strings.Builder
+	for path, content := range result.Rendered {
+		rendered.WriteString("# " + path + "\n")
+		rendered.WriteString(content)
+		rendered.WriteString("\n")
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"rendered_config":      redactGatewaySecrets(plan.RenderedConfig),
-		"warnings":             plan.Warnings,
-		"route_count":          plan.RouteCount,
-		"managed_domain_count": plan.ManagedDomainCount,
-		"skipped_count":        plan.SkippedCount,
+		"rendered_config": redactGatewaySecrets(rendered.String()),
+		"warnings":        result.Plan.Warnings,
+		"route_count":     len(result.Plan.Plans),
 	})
 }
 
 func (h *Handlers) Rollback(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Version string `json:"version"`
-	}
-	decodeJSON(r, &input)
-
-	if err := h.Apply.Rollback(r.Context(), input.Version); err != nil {
+	if err := h.Workflow.Rollback(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -99,7 +114,7 @@ func (h *Handlers) Rollback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ApplyHistory(w http.ResponseWriter, r *http.Request) {
-	history, err := h.Apply.History(r.Context())
+	history, err := h.Workflow.History(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -127,7 +142,6 @@ func generateUnifiedDiff(current, preview string) string {
 		return "(no changes)"
 	}
 	lines := "--- current\n+++ preview\n"
-	// Simple line-by-line diff
 	cLines := splitLines(current)
 	pLines := splitLines(preview)
 	maxLen := len(cLines)
@@ -170,6 +184,3 @@ func splitLines(s string) []string {
 	}
 	return lines
 }
-
-// ensure apply.AppService is compatible
-var _ = (*apply.AppService).Plan

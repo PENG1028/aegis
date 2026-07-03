@@ -51,6 +51,7 @@ type Services struct {
 	ManagedDomain *manageddomain.AppService
 	Exposure      *exposure.AppService
 	Apply         *apply.AppService
+	Workflow      *apply.Workflow // v1.8L: new orchestrator (replaces Apply)
 	Health        *health.AppService
 	Logs          logs.Logger
 	Auth          *token.AuthMiddleware

@@ -1,11 +1,11 @@
 package main
 
 import (
-	"aegis/internal/id"
 	"context"
 	"fmt"
 	"os"
 	"strings"
+
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
 	"aegis/internal/apply"
@@ -20,32 +20,32 @@ import (
 	"aegis/internal/gateway_link"
 	"aegis/internal/health"
 	"aegis/internal/httpapi"
+	"aegis/internal/id"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
 	"aegis/internal/nodeauth"
 	"aegis/internal/nodestate"
-	"aegis/internal/topology"
-	"aegis/internal/provider"
 	"aegis/internal/project"
+	"aegis/internal/provider"
 	"aegis/internal/relay"
-	"aegis/internal/proxy"
-	"aegis/internal/proxy/caddy"
 	"aegis/internal/route"
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
-	"aegis/internal/secrets"
 	"aegis/internal/safety"
+	"aegis/internal/secrets"
 	"aegis/internal/service"
 	"aegis/internal/space"
 	"aegis/internal/store"
 	"aegis/internal/sync"
 	"aegis/internal/tcp"
 	"aegis/internal/token"
-	"aegis/internal/udp"
+	"aegis/internal/topology"
 	"aegis/internal/trace"
 	"aegis/internal/transparent"
+	"aegis/internal/udp"
+
 	cli "aegis/internal/cli"
 )
 
@@ -95,8 +95,6 @@ func main() {
 				loaded = true
 				break
 			}
-			// If the file exists but failed to load (corrupt YAML, empty, etc.),
-			// warn the user instead of silently falling through.
 			if _, statErr := os.Stat(p); statErr == nil {
 				fmt.Fprintf(os.Stderr, "warning: config file %s exists but could not be loaded: %v\n", p, err)
 			}
@@ -114,7 +112,6 @@ func main() {
 	}
 	defer db.Close()
 
-	// Periodic database backup (default: every 6h, keep 7)
 	backupMgr := store.NewBackupManager(db, cfg.Store.SQLitePath,
 		cfg.Store.BackupDir, cfg.Store.BackupIntervalHrs, cfg.Store.BackupKeepCount)
 	if backupMgr != nil {
@@ -156,7 +153,6 @@ func main() {
 	if err := listenerSvc.RegisterDefaults(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to register listeners: %v\n", err)
 	}
-	// TCP proxy manager will be wired to exposure activation below.
 	nodeSvc := node.NewService(nodeRepo)
 	nodeAuthRepo := nodeauth.NewRepository(db)
 	nodeAuthSvc := nodeauth.NewService(nodeAuthRepo, nodeRepo, nodeSvc)
@@ -182,23 +178,20 @@ func main() {
 	provRegistry.Register(provider.NewHAProxyProvider("", "", cfg.Proxy.BackupDir))
 	exposureSvc := exposure.NewAppService(exposureRepo, logSvc, provRegistry, listenerSvc)
 
-	// Wire TCP/UDP proxy managers to exposure activation.
 	tcpMgr := tcp.NewManager()
 	exposureSvc.SetTCPManager(tcpMgr)
 	defer tcpMgr.Shutdown()
 	udpMgr := udp.NewManager()
 	exposureSvc.SetUDPManager(udpMgr)
 	defer udpMgr.Shutdown()
-	var proxyAdapter proxy.ProxyAdapter = caddy.NewAdapter(cfg)
+
 	// --- Gateway Link (v1.7AB) ---
 	gwLinkRepo := gatewaylink.NewRepository(db)
-	// v1.8B-5: Load master key for secret-at-rest encryption
 	masterKey, err := secrets.LoadMasterKey(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: master key not available — gateway link secrets will use legacy HMAC storage: %v\n", err)
 		masterKey = nil
 	}
-	// v1.8K: Credential store for encrypted connection strings
 	credRepo := credential.NewRepository(db)
 	credSvc := credential.NewService(credRepo, masterKey, logSvc)
 	exposureSvc.SetCredentialService(credSvc)
@@ -210,7 +203,6 @@ func main() {
 		GWLinkRepo:   gwLinkRepo,
 		ListenerRepo: listenerRepo,
 	})
-	// --- Relay Resolver (v1.8B) ---
 	relaySvc := relay.NewResolver(relay.Dependencies{
 		RouteRepo:    routeRepo,
 		ServiceRepo:  serviceRepo,
@@ -219,11 +211,26 @@ func main() {
 		GWLinkRepo:   gwLinkRepo,
 		ListenerRepo: listenerRepo,
 	})
+
+	// --- v1.8L: Topology Planner (dimension 2) + Workflow orchestrator ---
+	topoPlanner := topology.NewPlanner(nil, topology.Dependencies{
+		RouteRepo:        routeRepo,
+		ServiceRepo:      serviceRepo,
+		EndpointResolver: endpointResolver,
+		GwLinkRepo:       gwLinkRepo,
+		SafetySvc:        safetySvc,
+		MasterKey:        masterKey,
+	})
+	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc)
+
+	// DEPRECATED: old AppService, replaced by Workflow above.
+	// Still used by actionSvc and CLI commands during migration.
 	applySvc := apply.NewAppService(
-		cfg, proxyAdapter, routeRepo, mdRepo, exposureRepo, serviceRepo,
+		cfg, nil, routeRepo, mdRepo, exposureRepo, serviceRepo,
 		endpointResolver, applyRepo, logSvc,
 		gwLinkRepo, safetySvc, masterKey,
 	)
+
 	adminUserRepo := adminauth.NewAdminUserRepository(db)
 	adminSessionRepo := adminauth.NewAdminSessionRepository(db)
 	adminAuthSvc := adminauth.NewService(adminUserRepo, adminSessionRepo)
@@ -245,9 +252,6 @@ func main() {
 	gatewayInvSvc := gateway.NewInventoryService(gatewayInvRepo)
 	topologyRepo := topology.NewRepository(db)
 	topologySvc := topology.NewService(topologyRepo)
-	// v1.8G-3: Use a random unique self ID instead of hardcoded "gw_main".
-	// This ensures the gateway identity check in HMAC auth is meaningful —
-	// each Aegis instance has a distinct identity that cannot be impersonated.
 	gwSelfID := "gw_" + id.GenerateRandomHex(8)
 	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, gwSelfID, "main-gateway", masterKey)
 	spaceRepo := space.NewRepository(db)
@@ -255,7 +259,6 @@ func main() {
 	endpointSvc := endpoint.NewAppService(endpointRepo, logSvc)
 	actionSvc := action.NewActionService(serviceSvc, routeSvc, edgeSvc, endpointRepo, endpointSvc, applySvc, spaceRepo, logSvc, listenerSvc)
 
-	// --- Desired State Generator (v1.8F multi-node) ---
 	routingPolicyRepo := routingpolicy.NewRepository(db)
 	routingPolicySvc := routingpolicy.NewService(routingPolicyRepo)
 	routingTableSvc := routingtable.NewService()
@@ -264,23 +267,15 @@ func main() {
 	)
 	dsGenerator := nodestate.NewGenerator(nodeStateSvc, dsDataSource)
 
-	// --- Transparent Proxy Manager (v1.8H) ---
-	// Intercepts direct IP:port outbound connections and routes them
-	// through Aegis port 80 for unified traffic management.
 	transparentMgr := transparent.NewManager()
 	defer transparentMgr.Shutdown()
-
-	// Set current node ID so StartRedirect knows local vs cross-node
 	if currentNode, err := nodeRepo.FindCurrent(); err == nil && currentNode != nil {
 		transparentMgr.SetCurrentNodeID(currentNode.NodeID)
 	}
-	// Remove any iptables rules left over from a previous crash
 	if err := transparentMgr.CleanupStaleRules(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: transparent proxy cleanup: %v\n", err)
 	}
 
-	// Wire mutation hooks: any change triggers desired state regeneration
-	// AND transparent proxy rule sync (v1.8H)
 	dsHook := &desiredStateHook{
 		gen:            dsGenerator,
 		transparentMgr: transparentMgr,
@@ -294,16 +289,15 @@ func main() {
 	token.SetAuditLogger(logSvc)
 	adminauth.SetAuditLogger(logSvc)
 	traceSvc := trace.NewService(trace.Dependencies{
-		RouteRepo:    routeRepo,
-		EdgeSvc:      edgeSvc,
-		ListenerSvc:  listenerSvc,
-		NodeRepo:     nodeRepo,
-		EndpointRepo: endpointRepo,
+		RouteRepo:       routeRepo,
+		EdgeSvc:         edgeSvc,
+		ListenerSvc:     listenerSvc,
+		NodeRepo:        nodeRepo,
+		EndpointRepo:    endpointRepo,
 		GatewayLinkRepo: gwLinkRepo,
 	})
 	authMiddleware := token.NewAuthMiddleware(cfg.Server.AdminToken, tokenRepo)
 
-	// --- DNS Resolver (v1.8E) ---
 	dnsMgmt := dns.NewManager(
 		routeRepo,
 		service.NewRepository(db),
@@ -322,87 +316,90 @@ func main() {
 	}
 
 	httpSvcs := &httpapi.Services{
-			DB:            db,
-		Config:        cfg,
-		Project:       projectSvc,
-		Service:       serviceSvc,
-		EndpointRepo:  endpointRepo,
-		EndpointSvc:   endpointSvc,
-		Route:         routeSvc,
-		ManagedDomain: mdSvc,
-		Exposure:      exposureSvc,
-		Apply:         applySvc,
-		Health:        healthSvc,
-		Logs:          logSvc,
-		Auth:          authMiddleware,
-		Action:        actionSvc,
-		Space:         spaceSvc,
-		TokenRepo:     tokenRepo,
-		AdminAuth:     adminAuthSvc,
-		EdgeSvc:       edgeSvc,
-		ListenerSvc:   listenerSvc,
-		NodeRepo:      nodeRepo,
-		NodeSvc:       nodeSvc,
-		NodeAuthSvc:   nodeAuthSvc,
-		NodeStateSvc:  nodeStateSvc,
-		GatewayInvRepo: gatewayInvRepo,
-		GatewayInvSvc:  gatewayInvSvc,
-		TopologySvc:    topologySvc,
-		PolicySvc:       routingPolicySvc,
-		RoutingTableSvc: routingTableSvc,
-		Gateway:       nil,
-		DepSvc:        nil,
-		PendingState:  pendingState,
-		TraceSvc:      traceSvc,
-		GatewayLinkSvc: gwLinkSvc,
-		SafetySvc:     safetySvc,
-		RelaySvc:      relaySvc,
+		DB:               db,
+		Config:           cfg,
+		Project:          projectSvc,
+		Service:          serviceSvc,
+		EndpointRepo:     endpointRepo,
+		EndpointSvc:      endpointSvc,
+		Route:            routeSvc,
+		ManagedDomain:    mdSvc,
+		Exposure:         exposureSvc,
+		Apply:            applySvc,
+		Workflow:         workflow,
+		Health:           healthSvc,
+		Logs:             logSvc,
+		Auth:             authMiddleware,
+		Action:           actionSvc,
+		Space:            spaceSvc,
+		TokenRepo:        tokenRepo,
+		AdminAuth:        adminAuthSvc,
+		EdgeSvc:          edgeSvc,
+		ListenerSvc:      listenerSvc,
+		NodeRepo:         nodeRepo,
+		NodeSvc:          nodeSvc,
+		NodeAuthSvc:      nodeAuthSvc,
+		NodeStateSvc:     nodeStateSvc,
+		GatewayInvRepo:   gatewayInvRepo,
+		GatewayInvSvc:    gatewayInvSvc,
+		TopologySvc:      topologySvc,
+		PolicySvc:        routingPolicySvc,
+		RoutingTableSvc:  routingTableSvc,
+		Gateway:          nil,
+		DepSvc:           nil,
+		PendingState:     pendingState,
+		TraceSvc:         traceSvc,
+		GatewayLinkSvc:   gwLinkSvc,
+		SafetySvc:        safetySvc,
+		RelaySvc:         relaySvc,
 		RelayHTTPHandler: relay.RelayHandlerForMux(relay.NewRelayHandler(relay.HandlerDeps{
-			RouteRepo:     routeRepo,
-			EndpointRepo:  endpointRepo,
-			NodeRepo:      nodeRepo,
-			GWLinkRepo:    gwLinkRepo,
-			LogSvc:        logSvc,
-			MasterKey:     masterKey,
+			RouteRepo:    routeRepo,
+			EndpointRepo: endpointRepo,
+			NodeRepo:     nodeRepo,
+			GWLinkRepo:   gwLinkRepo,
+			LogSvc:       logSvc,
+			MasterKey:    masterKey,
 		})),
-		DNSMgmt:         dnsMgmt,
-		TransparentMgr:  transparentMgr,
-		CredentialSvc:   credSvc,
-		ProvReg:         provRegistry, // v1.8L-19 — provider registry for install/uninstall/config handlers
-		Version:         Version,
-		BuildTime:       BuildTime,
+		DNSMgmt:        dnsMgmt,
+		TransparentMgr: transparentMgr,
+		CredentialSvc:  credSvc,
+		ProvReg:        provRegistry,
+		Version:        Version,
+		BuildTime:      BuildTime,
 		OnShutdown: func() {
 			fmt.Fprintf(os.Stderr, "stopping subsystems...\n")
 			tcpMgr.Shutdown()
 			udpMgr.Shutdown()
 			transparentMgr.Shutdown()
 			reconcileLoop.Stop()
-			if backupMgr != nil { backupMgr.Stop() }
+			if backupMgr != nil {
+				backupMgr.Stop()
+			}
 		},
 	}
 	cliSvcs := &cli.Services{
-		Config:        cfg,
-		Project:       projectSvc,
-		Service:       serviceSvc,
-		Route:         routeSvc,
-		EndpointRepo:  endpointRepo,
-		ManagedDomain: mdSvc,
-		EndpointSvc:   endpointSvc,
-		Exposure:      exposureSvc,
-		ListenerSvc:   listenerSvc,
-		EdgeSvc:       edgeSvc,
-		LeaderSvc:     leaderSvc,
-		NodeRepo:      nodeRepo,
-		StateVer:      stateVer,
-		DB:            db,
-		Apply:         applySvc,
-		Health:        healthSvc,
-		Logs:          logSvc,
-		Action:        actionSvc,
-		Space:         spaceSvc,
-		HTTPServices:  httpSvcs,
-		PendingState:  pendingState,
-		TraceSvc:      traceSvc,
+		Config:         cfg,
+		Project:        projectSvc,
+		Service:        serviceSvc,
+		Route:          routeSvc,
+		EndpointRepo:   endpointRepo,
+		ManagedDomain:  mdSvc,
+		EndpointSvc:    endpointSvc,
+		Exposure:       exposureSvc,
+		ListenerSvc:    listenerSvc,
+		EdgeSvc:        edgeSvc,
+		LeaderSvc:      leaderSvc,
+		NodeRepo:       nodeRepo,
+		StateVer:       stateVer,
+		DB:             db,
+		Apply:          applySvc,
+		Health:         healthSvc,
+		Logs:           logSvc,
+		Action:         actionSvc,
+		Space:          spaceSvc,
+		HTTPServices:   httpSvcs,
+		PendingState:   pendingState,
+		TraceSvc:       traceSvc,
 		RelaySvc:       relaySvc,
 		SafetySvc:      safetySvc,
 		TransparentMgr: transparentMgr,
@@ -415,6 +412,7 @@ func main() {
 		os.Exit(1)
 	}
 }
+
 // desiredStateHook implements route.MutationHook, service.MutationHook,
 // and endpoint.MutationHook to trigger desired state regeneration AND
 // transparent proxy rule sync on any change.
@@ -449,19 +447,11 @@ func (h *desiredStateHook) OnEndpointChanged(ctx context.Context, endpointID str
 	return nil
 }
 
-// syncTransparentRules reconciles transparent proxy iptables rules with
-// the current endpoint database. For every endpoint on a remote node,
-// it generates interception rules for ALL IPs (public + private) of that node.
-//
-// Example: endpoint 127.0.0.1:9100 on node_b (public=<SERVER_B_IP>, private=10.0.0.5)
-// → intercept BOTH <SERVER_B_IP>:9100 AND 10.0.0.5:9100
-// → any outbound connection to either IP:port gets DNAT'd to a local proxy
 func (h *desiredStateHook) syncTransparentRules() {
 	if h.transparentMgr == nil || h.endpointRepo == nil || h.nodeRepo == nil {
 		return
 	}
 
-	// Get current node to skip local endpoints
 	currentNode, err := h.nodeRepo.FindCurrent()
 	if err != nil || currentNode == nil {
 		return
@@ -472,7 +462,6 @@ func (h *desiredStateHook) syncTransparentRules() {
 		return
 	}
 
-	// Load all nodes for IP lookup
 	allNodes, err := h.nodeRepo.FindAll()
 	if err != nil {
 		return
@@ -482,15 +471,8 @@ func (h *desiredStateHook) syncTransparentRules() {
 		nodeByID[allNodes[i].NodeID] = &allNodes[i]
 	}
 
-	// Build desired rules: for each cross-node endpoint, intercept
-	// all known IPs (public + private) of the target node.
 	desiredMap := make(map[string]transparent.RedirectRule)
 	for _, ep := range eps {
-		// Require a node assignment. Do NOT skip same-node —
-		// a process connecting to its own machine's public IP
-		// (e.g. <SERVER_A_IP>:8080) would go through the cloud
-		// network and get dropped by the security group.
-		// Intercepting same-node IPs keeps traffic local.
 		if ep.NodeID == "" {
 			continue
 		}
@@ -505,12 +487,6 @@ func (h *desiredStateHook) syncTransparentRules() {
 			continue
 		}
 
-		// Collect IPs to intercept for this node.
-		// Public IPs are always intercepted (globally unique).
-		// Private IPs are only intercepted if the target is in the SAME
-		// NetworkID — otherwise the private IP belongs to a different
-		// VPC and is not routable from here (or worse, could collide
-		// with a local private IP from our own VPC).
 		myNetwork := currentNode.NetworkID
 		sameNetwork := myNetwork != "" && targetNode.NetworkID != "" &&
 			myNetwork == targetNode.NetworkID
@@ -539,33 +515,27 @@ func (h *desiredStateHook) syncTransparentRules() {
 		}
 	}
 
-	// Get current rules
 	current := h.transparentMgr.ListStatus()
 	currentMap := make(map[string]bool)
 	for _, s := range current {
 		currentMap[s.Rule.ID] = s.Active
 	}
 
-	// Remove rules no longer desired
 	for id := range currentMap {
 		if _, ok := desiredMap[id]; !ok {
 			h.transparentMgr.StopRedirect(id)
 		}
 	}
 
-	// Add new desired rules
 	for _, r := range desiredMap {
 		if _, ok := currentMap[r.ID]; !ok {
 			if err := h.transparentMgr.StartRedirect(r); err != nil {
-				// iptables may not be available (non-Linux, no root)
 				_ = err
 			}
 		}
 	}
 }
 
-// generateRandomHex returns a cryptographically random hex string of n bytes.
-// Delegates to id.GenerateRandomHex — the project's canonical random-hex generator.
 func generateRandomHex(n int) string {
 	return id.GenerateRandomHex(n)
 }
