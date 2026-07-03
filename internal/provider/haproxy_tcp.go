@@ -43,8 +43,9 @@ func (p *HAProxyTCPProvider) Info() Info {
 		msg = "haproxy binary not found"
 	}
 	return Info{
+		ID:         "haproxy_tcp",
 		Name:       "haproxy_tcp",
-		Protocol:   "tcp",
+		Type:       TypeTCPForward,
 		Status:     status,
 		Message:    msg,
 		ConfigPath: p.configPath,
@@ -239,7 +240,7 @@ func (p *HAProxyTCPProvider) Diagnose() ProviderDiagnostic {
 	}
 	diag.Version = strings.TrimSpace(string(verOut))
 	// HAProxy >= 1.8 required for SNI passthrough
-	major, minor := parseHAProxyVersionParts(diag.Version)
+	major, minor := ParseHAProxyVersion(diag.Version) // canonical parser in discovery.go
 	diag.VersionSupported = major >= 2 || (major == 1 && minor >= 8)
 
 	// 3. Check config file exists
@@ -282,29 +283,19 @@ func (p *HAProxyTCPProvider) Diagnose() ProviderDiagnostic {
 	return diag
 }
 
-// parseHAProxyVersionParts extracts major and minor version from HAProxy version string.
-func parseHAProxyVersionParts(version string) (major, minor int) {
-	// HAProxy version output: "HAProxy version 2.4.22-1ubuntu1 ..."
-	fields := strings.Fields(version)
-	for i, f := range fields {
-		if f == "version" && i+1 < len(fields) {
-			ver := strings.TrimRight(fields[i+1], ",")
-			parts := strings.Split(ver, ".")
-			if len(parts) >= 2 {
-				fmt.Sscanf(parts[0], "%d", &major)
-				fmt.Sscanf(parts[1], "%d", &minor)
-			}
-			return
-		}
-	}
-	// Fallback: try parsing directly
-	parts := strings.Split(version, ".")
-	if len(parts) >= 2 {
-		fmt.Sscanf(parts[0], "%d", &major)
-		fmt.Sscanf(parts[1], "%d", &minor)
-	}
-	return
-}
+// NOTE: parseHAProxyVersionParts has been consolidated into discovery.go → ParseHAProxyVersion.
+// This file uses the canonical implementation from there.
 
-// Ensure HAProxyTCPProvider implements Diagnoser
+// ─── Provider interface methods (added v1.8L-16) ───
+
+func (p *HAProxyTCPProvider) ID() string        { return "haproxy_tcp" }
+func (p *HAProxyTCPProvider) Name() string      { return "haproxy_tcp" }
+func (p *HAProxyTCPProvider) Type() GatewayType { return TypeTCPForward }
+func (p *HAProxyTCPProvider) Capabilities() ProviderCapabilities { return HAProxyTCPCapabilities() }
+func (p *HAProxyTCPProvider) UIHints() ProviderUIHints         { return HAProxyTCPUIHints() }
+func (p *HAProxyTCPProvider) CanInstall() bool  { return false } // HAProxy is a shared binary; installed separately
+func (p *HAProxyTCPProvider) Install() error    { return installPackage("haproxy", "haproxy") }
+
+// Ensure HAProxyTCPProvider implements Provider and Diagnoser
+var _ Provider = (*HAProxyTCPProvider)(nil)
 var _ Diagnoser = (*HAProxyTCPProvider)(nil)

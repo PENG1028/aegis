@@ -9,9 +9,9 @@ import (
 
 // FakeProvider implements the Provider interface for testing failure scenarios.
 type FakeProvider struct {
-	Name       string
-	Protocol   string
-	ConfigPath string
+	ProviderName string // renamed from "Name" to avoid conflict with Provider.Name() method
+	Protocol     string
+	ConfigPath   string
 
 	// Failure injection matrix (v1.7R enhanced)
 	MissingBinary          bool   // → Info() returns "unavailable", Diagnose() returns PROVIDER_MISSING
@@ -35,7 +35,7 @@ type FakeProvider struct {
 // NewFakeProvider creates a fake provider with defaults.
 func NewFakeProvider(name, protocol string) *FakeProvider {
 	return &FakeProvider{
-		Name:       name,
+		ProviderName: name,
 		Protocol:   protocol,
 		Installed:  true,
 		Version:    "1.0.0",
@@ -55,13 +55,39 @@ func (fp *FakeProvider) Info() provider.Info {
 		msg = fmt.Sprintf("%s: version %s is unsupported", provider.DiagCodeVersionUnsupported, fp.Version)
 	}
 	return provider.Info{
-		Name:       fp.Name,
-		Protocol:   fp.Protocol,
+		ID:         fp.ProviderName,
+		Name:       fp.ProviderName,
+		Type:       provider.TypeHTTPTerm, // fake; real providers return their actual type
 		Status:     status,
 		Message:    msg,
 		ConfigPath: fp.ConfigPath,
 	}
 }
+
+// ID implements provider.Provider.
+func (fp *FakeProvider) ID() string { return fp.ProviderName }
+
+// Name implements provider.Provider (conflicts with field, so method returns field value).
+func (fp *FakeProvider) Name() string { return fp.ProviderName }
+
+// Type implements provider.Provider.
+func (fp *FakeProvider) Type() provider.GatewayType { return provider.TypeHTTPTerm }
+
+// Capabilities implements provider.Provider.
+func (fp *FakeProvider) Capabilities() provider.ProviderCapabilities {
+	return provider.CaddyCapabilities() // fake: use Caddy capabilities as default
+}
+
+// UIHints implements provider.Provider.
+func (fp *FakeProvider) UIHints() provider.ProviderUIHints {
+	return provider.CaddyUIHints()
+}
+
+// CanInstall implements provider.Provider.
+func (fp *FakeProvider) CanInstall() bool { return true }
+
+// Install implements provider.Provider.
+func (fp *FakeProvider) Install() error { return nil }
 
 func (fp *FakeProvider) Render(routes []proxy.RouteConfig) ([]byte, error) {
 	return []byte("# fake rendered config\n"), nil
@@ -130,9 +156,9 @@ func (fp *FakeProvider) GetCurrentConfig() (string, error) {
 // Diagnose implements the provider.Diagnoser interface.
 func (fp *FakeProvider) Diagnose() provider.ProviderDiagnostic {
 	diag := provider.ProviderDiagnostic{
-		Provider:         fp.Name,
+		Provider:         fp.ProviderName,
 		Installed:        fp.Installed && !fp.MissingBinary,
-		BinaryPath:       "/usr/bin/" + fp.Name,
+		BinaryPath:       "/usr/bin/" + fp.ProviderName,
 		Version:          fp.Version,
 		VersionSupported: !fp.VersionUnsupported,
 		ConfigPath:       fp.ConfigPath,
@@ -142,7 +168,7 @@ func (fp *FakeProvider) Diagnose() provider.ProviderDiagnostic {
 
 	if !fp.Installed || fp.MissingBinary {
 		diag.LastErrorCode = provider.DiagCodeProviderMissing
-		diag.LastErrorMessage = fmt.Sprintf("%s binary not found in PATH", fp.Name)
+		diag.LastErrorMessage = fmt.Sprintf("%s binary not found in PATH", fp.ProviderName)
 		diag.Stderr = ""
 		return diag
 	}

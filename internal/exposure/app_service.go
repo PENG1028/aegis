@@ -79,13 +79,13 @@ func (s *AppService) CreateExposure(ctx context.Context, input CreateExposureInp
 	}
 
 	// Auto-select provider
-	selectedProvider, provOk := s.provReg.SelectForProtocol(input.Type)
+	selectedProvider, provErr := s.provReg.SelectForProtocol(input.Type)
 
 	var provName string
 	var status string
 	var msg string
 
-	if !provOk {
+	if provErr != nil {
 		provName = ""
 		status = StatusPending
 		msg = fmt.Sprintf("no provider available for protocol %s", input.Type)
