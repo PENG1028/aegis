@@ -16,11 +16,13 @@ import (
 	"aegis/internal/config"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
-	"aegis/internal/exposure"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/project"
-	"aegis/internal/proxy"
+	"aegis/internal/provider"
+	"aegis/internal/fake"
+	"aegis/internal/topology"
+	"aegis/internal/topology/templates"
 	"aegis/internal/route"
 	"aegis/internal/safety"
 	"aegis/internal/secrets"
@@ -164,10 +166,8 @@ func TestFullFlow_SingleNode(t *testing.T) {
 	t.Logf("route active: id=%s status=%s", rt.ID, rt.Status)
 
 	// Step 7: Set up Apply service with FakeProxyAdapter and PendingState
-	fakeAdapter := proxy.NewFakeAdapter()
 
 	mdRepo := manageddomain.NewRepository(st.DB)
-	exposureRepo := exposure.NewRepository(st.DB)
 	endpointResolver := endpoint.NewResolver(endpointRepo)
 	applyRepo := apply.NewRepository(st.DB)
 	gwLinkRepo := gatewaylink.NewRepository(st.DB)
@@ -184,12 +184,18 @@ func TestFullFlow_SingleNode(t *testing.T) {
 
 	masterKey := secrets.MustDevKey(t)
 
-	applySvc := apply.NewAppService(
-		cfg, fakeAdapter,
-		routeRepo, mdRepo, exposureRepo, serviceRepo,
-		endpointResolver, applyRepo, logSvc,
-		gwLinkRepo, safetySvc, masterKey,
-	)
+	provReg := provider.NewRegistry()
+	provReg.Register(fake.NewFakeProvider("caddy", "http"))
+	topoPlanner := topology.NewPlanner(templates.Default(), topology.Dependencies{
+		RouteRepo:        routeRepo,
+		ServiceRepo:      serviceRepo,
+		EndpointResolver: endpointResolver,
+		GwLinkRepo:       gwLinkRepo,
+		SafetySvc:        safetySvc,
+		MasterKey:        masterKey,
+	})
+	workflow := apply.NewWorkflow(topoPlanner, provReg, applyRepo, cfg, logSvc)
+	applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 
 	// Wire up pending state (used by mutation hooks to MarkPending)
 	pendingState := cluster.NewPendingState(st.DB)

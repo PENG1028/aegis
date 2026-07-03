@@ -223,13 +223,7 @@ func main() {
 	})
 	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc)
 
-	// DEPRECATED: old AppService, replaced by Workflow above.
-	// Still used by actionSvc and CLI commands during migration.
-	applySvc := apply.NewAppService(
-		cfg, nil, routeRepo, mdRepo, exposureRepo, serviceRepo,
-		endpointResolver, applyRepo, logSvc,
-		gwLinkRepo, safetySvc, masterKey,
-	)
+		applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 
 	adminUserRepo := adminauth.NewAdminUserRepository(db)
 	adminSessionRepo := adminauth.NewAdminSessionRepository(db)
