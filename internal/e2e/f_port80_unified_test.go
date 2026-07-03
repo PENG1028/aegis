@@ -15,11 +15,12 @@ import (
 	"aegis/internal/config"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
-	"aegis/internal/exposure"
 	"aegis/internal/logs"
-	"aegis/internal/manageddomain"
 	"aegis/internal/project"
-	"aegis/internal/proxy"
+	"aegis/internal/provider"
+	"aegis/internal/fake"
+	"aegis/internal/topology"
+	"aegis/internal/topology/templates"
 	"aegis/internal/route"
 	"aegis/internal/safety"
 	"aegis/internal/secrets"
@@ -43,18 +44,23 @@ func setupApplySvc(t *testing.T, db *sql.DB, cfg *config.Config, gwLinkRepo *gat
 	logSvc := logs.NewAppService(logRepo)
 
 	routeRepo := route.NewRepository(db)
-	mdRepo := manageddomain.NewRepository(db)
-	exposureRepo := exposure.NewRepository(db)
 	serviceRepo := service.NewRepository(db)
 	endpointResolver := endpoint.NewResolver(endpoint.NewRepository(db))
 	applyRepo := apply.NewRepository(db)
 	safetySvc := safety.NewService(safety.Dependencies{})
 
-	applySvc := apply.NewAppService(
-		cfg, proxy.NewFakeAdapter(), routeRepo, mdRepo, exposureRepo,
-		serviceRepo, endpointResolver, applyRepo, logSvc,
-		gwLinkRepo, safetySvc, masterKey,
-	)
+	provReg := provider.NewRegistry()
+	provReg.Register(fake.NewFakeProvider("caddy", "http"))
+	topoPlanner := topology.NewPlanner(templates.Default(), topology.Dependencies{
+		RouteRepo:        routeRepo,
+		ServiceRepo:      serviceRepo,
+		EndpointResolver: endpointResolver,
+		GwLinkRepo:       gwLinkRepo,
+		SafetySvc:        safetySvc,
+		MasterKey:        masterKey,
+	})
+	workflow := apply.NewWorkflow(topoPlanner, provReg, applyRepo, cfg, logSvc)
+	applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 	applySvc.SetPendingState(cluster.NewPendingState(db))
 	return applySvc
 }

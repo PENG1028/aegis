@@ -16,10 +16,13 @@ import (
 	"aegis/internal/config"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
-	"aegis/internal/exposure"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
+	"aegis/internal/provider"
+	"aegis/internal/fake"
 	"aegis/internal/proxy"
+	"aegis/internal/topology"
+	"aegis/internal/topology/templates"
 	"aegis/internal/route"
 	"aegis/internal/safety"
 	"aegis/internal/secrets"
@@ -83,7 +86,6 @@ e2e-test.aegis.local {
 	endpointResolver := endpoint.NewResolver(endpointRepo)
 	routeRepo := route.NewRepository(st.DB)
 	mdRepo := manageddomain.NewRepository(st.DB)
-	exposureRepo := exposure.NewRepository(st.DB)
 	applyRepo := apply.NewRepository(st.DB)
 	gwLinkRepo := gatewaylink.NewRepository(st.DB)
 
@@ -137,12 +139,18 @@ e2e-test.aegis.local {
 
 	// Step 3: First apply — should succeed with normal FakeProxyAdapter
 	fakeAdapter := proxy.NewFakeAdapter()
-	applySvc := apply.NewAppService(
-		cfg, fakeAdapter,
-		routeRepo, mdRepo, exposureRepo, serviceRepo,
-		endpointResolver, applyRepo, logSvc,
-		gwLinkRepo, safetySvc, masterKey,
-	)
+	provReg := provider.NewRegistry()
+	provReg.Register(fake.NewFakeProvider("caddy", "http"))
+	topoPlanner := topology.NewPlanner(templates.Default(), topology.Dependencies{
+		RouteRepo:        routeRepo,
+		ServiceRepo:      serviceRepo,
+		EndpointResolver: endpointResolver,
+		GwLinkRepo:       gwLinkRepo,
+		SafetySvc:        safetySvc,
+		MasterKey:        masterKey,
+	})
+	workflow := apply.NewWorkflow(topoPlanner, provReg, applyRepo, cfg, logSvc)
+	applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 
 	pendingState := cluster.NewPendingState(st.DB)
 	applySvc.SetPendingState(pendingState)
