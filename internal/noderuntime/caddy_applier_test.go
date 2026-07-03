@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestRoutingTableToRouteConfigs(t *testing.T) {
+func TestRoutingTableToRouteSpecs(t *testing.T) {
 	entries := []RoutingTableEntry{
 		{
 			Domain:          "app.example.com",
@@ -30,62 +30,56 @@ func TestRoutingTableToRouteConfigs(t *testing.T) {
 			ServiceID:       "svc-3",
 			TargetLocalHost: "10.0.0.1",
 			TargetLocalPort: 8080,
-			Status:          "disabled", // should be skipped
+			Status:          "disabled",
 		},
 		{
 			Domain:          "missing.example.com",
 			RouteID:         "rt-4",
 			ServiceID:       "svc-4",
-			TargetLocalHost: "",     // missing host — should be skipped
-			TargetLocalPort: 0,       // missing port — should be skipped
+			TargetLocalHost: "",
+			TargetLocalPort: 0,
 			Status:          "available",
 		},
 	}
 
-	routes := routingTableToRouteConfigs(entries)
+	routes := routingTableToRouteSpecs(entries)
 
 	if len(routes) != 2 {
 		t.Fatalf("expected 2 routes, got %d", len(routes))
 	}
 
-	if routes[0].Domain != "app.example.com" {
-		t.Errorf("expected first route domain 'app.example.com', got %q", routes[0].Domain)
+	if routes[0].Match.Host != "app.example.com" {
+		t.Errorf("expected first route domain 'app.example.com', got %q", routes[0].Match.Host)
 	}
-	if routes[0].UpstreamURL != "http://127.0.0.1:3001" {
-		t.Errorf("expected upstream URL 'http://127.0.0.1:3001', got %q", routes[0].UpstreamURL)
-	}
-	if routes[0].Kind != "reverse_proxy" {
-		t.Errorf("expected kind 'reverse_proxy', got %q", routes[0].Kind)
-	}
-	if !routes[0].Options.EnableGzip {
-		t.Error("expected gzip enabled")
+	if routes[0].Upstream.Target != "http://127.0.0.1:3001" {
+		t.Errorf("expected upstream 'http://127.0.0.1:3001', got %q", routes[0].Upstream.Target)
 	}
 
-	if routes[1].UpstreamURL != "http://127.0.0.1:3002" {
-		t.Errorf("expected upstream URL 'http://127.0.0.1:3002', got %q", routes[1].UpstreamURL)
+	if routes[1].Upstream.Target != "http://127.0.0.1:3002" {
+		t.Errorf("expected upstream 'http://127.0.0.1:3002', got %q", routes[1].Upstream.Target)
 	}
 }
 
-func TestRoutingTableToRouteConfigsEmpty(t *testing.T) {
-	routes := routingTableToRouteConfigs(nil)
+func TestRoutingTableToRouteSpecsEmpty(t *testing.T) {
+	routes := routingTableToRouteSpecs(nil)
 	if len(routes) != 0 {
 		t.Errorf("expected 0 routes for nil input, got %d", len(routes))
 	}
 
-	routes = routingTableToRouteConfigs([]RoutingTableEntry{})
+	routes = routingTableToRouteSpecs([]RoutingTableEntry{})
 	if len(routes) != 0 {
 		t.Errorf("expected 0 routes for empty input, got %d", len(routes))
 	}
 }
 
-func TestRoutingTableToRouteConfigsAllDisabled(t *testing.T) {
+func TestRoutingTableToRouteSpecsAllDisabled(t *testing.T) {
 	entries := []RoutingTableEntry{
 		{Domain: "a.example.com", Status: "disabled", TargetLocalHost: "127.0.0.1", TargetLocalPort: 3001},
 		{Domain: "b.example.com", Status: "missing_endpoint", TargetLocalHost: "127.0.0.1", TargetLocalPort: 3002},
 		{Domain: "c.example.com", Status: "unavailable", TargetLocalHost: "127.0.0.1", TargetLocalPort: 3003},
 	}
 
-	routes := routingTableToRouteConfigs(entries)
+	routes := routingTableToRouteSpecs(entries)
 	if len(routes) != 0 {
 		t.Errorf("expected 0 routes when all disabled, got %d", len(routes))
 	}

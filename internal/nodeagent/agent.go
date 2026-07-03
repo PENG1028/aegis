@@ -147,10 +147,6 @@ func (a *Agent) Run() error {
 	// Wire up components
 	a.client = noderuntime.NewClient(a.cfg.ControlPlaneURL, a.cfg.NodeID, a.cfg.NodeToken)
 	a.cache = noderuntime.NewCacheManager(a.cfg.CacheDir)
-	a.caddyApplier = noderuntime.NewCaddyApplier(a.proxyCfg)
-	a.reconciler = noderuntime.NewReconciler(a.cfg, a.client, a.cache)
-	a.reconciler.SetCaddyfileApplier(a.caddyApplier)
-
 	// Wire provider discovery → gateway status for heartbeat
 	// This populates the gateway inventory table on the control plane with
 	// all detected gateway programs (Caddy, HAProxy, etc.) and their status.
