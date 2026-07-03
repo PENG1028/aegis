@@ -17,6 +17,7 @@ import (
 
 	"aegis/internal/config"
 	"aegis/internal/noderuntime"
+	"aegis/internal/provider"
 )
 
 const joinTimeout = 30 * time.Second
@@ -29,6 +30,10 @@ type Agent struct {
 	reconciler   *noderuntime.Reconciler
 	cache        *noderuntime.CacheManager
 	caddyApplier noderuntime.CaddyfileApplier
+
+	// Provider registry — populated in Run() with built-in providers.
+	// Used by the gateway status provider to report installed gateway programs.
+	provReg *provider.Registry
 
 	stopCh chan struct{}
 	doneCh chan struct{}
@@ -145,6 +150,16 @@ func (a *Agent) Run() error {
 	a.caddyApplier = noderuntime.NewCaddyApplier(a.proxyCfg)
 	a.reconciler = noderuntime.NewReconciler(a.cfg, a.client, a.cache)
 	a.reconciler.SetCaddyfileApplier(a.caddyApplier)
+
+	// Wire provider discovery → gateway status for heartbeat
+	// This populates the gateway inventory table on the control plane with
+	// all detected gateway programs (Caddy, HAProxy, etc.) and their status.
+	a.provReg = provider.NewRegistry()
+	a.provReg.Register(provider.NewCaddyHTTPProvider(a.proxyCfg))
+	a.provReg.Register(provider.NewHAProxyEdgeMuxProvider("", a.proxyCfg.Proxy.BackupDir))
+	a.provReg.Register(provider.NewHAProxyTCPProvider(a.proxyCfg))
+	gwStatusProvider := noderuntime.NewProviderGatewayStatusProvider(a.provReg)
+	a.reconciler.SetGatewayStatusProvider(gwStatusProvider)
 
 	log.Printf("[agent] node %s starting — cp=%s heartbeat=%ds sync=%ds",
 		a.cfg.NodeID, a.cfg.ControlPlaneURL,

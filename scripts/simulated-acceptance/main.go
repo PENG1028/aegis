@@ -498,13 +498,19 @@ func main() {
 	fmt.Println("============================================================")
 	t10 := testCase{
 		Name:           "GatewayStatusProvider interface valid",
-		Request:        "gateway.LocalGatewayStatus()",
+		Request:        "gateway.LocalGatewayStatuses()",
 		ExpectedStatus: "valid",
 	}
 	{
-		lgs := gateway.LocalGatewayStatus()
-		t10.ActualBody = fmt.Sprintf("Name=%s, Type=%s, Provider=%s, Status=%s",
-			lgs.Name, lgs.Type, lgs.Provider, lgs.Status)
+		lgss := gateway.LocalGatewayStatuses()
+		var lgs *noderuntime.LocalGatewayInfo
+		if len(lgss) > 0 {
+			lgs = lgss[0]
+		}
+		if lgs != nil {
+			t10.ActualBody = fmt.Sprintf("Name=%s, Type=%s, Provider=%s, Status=%s",
+				lgs.Name, lgs.Type, lgs.Provider, lgs.Status)
+		}
 		if lgs != nil && lgs.Name == "local-gateway" {
 			t10.Result = "PASS"
 			t10.ActualStatus = 200

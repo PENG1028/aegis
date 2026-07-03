@@ -963,9 +963,13 @@ func TestLocalGatewayHeartbeatStatus(t *testing.T) {
     }
     defer gateway.Stop()
 
-    // LocalGatewayStatus() returns noderuntime.LocalGatewayInfo with Name/Type/Provider.
-    info := gateway.LocalGatewayStatus()
-    // Name/Type/Provider are hard-coded constants from LocalGatewayStatus().
+    // LocalGatewayStatuses() returns []*noderuntime.LocalGatewayInfo with Name/Type/Provider.
+    infos := gateway.LocalGatewayStatuses()
+    if len(infos) != 1 {
+        t.Fatalf("LocalGatewayStatuses() returned %d infos, want 1", len(infos))
+    }
+    info := infos[0]
+    // Name/Type/Provider are hard-coded constants from LocalGatewayStatuses().
     if info.Name != "local-gateway" {
         t.Errorf("Name = %q, want %q", info.Name, "local-gateway")
     }
