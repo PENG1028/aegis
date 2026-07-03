@@ -146,7 +146,7 @@ func TestFailureMatrixAllProviderCodes(t *testing.T) {
 				fp.ValidateErr = "syntax error at line 42"
 			},
 			verify: func(t *testing.T, fp *fake.FakeProvider) {
-				err := fp.Validate(fp.ConfigPath)
+				err := fp.Validate(fp.ConfigPath())
 				if err == nil {
 					t.Error("expected validate error")
 				}

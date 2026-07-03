@@ -17,6 +17,23 @@ import (
 
 // installPackage installs a Debian/Ubuntu package via apt-get and enables the
 // corresponding systemd service. Returns nil on success.
+// uninstallPackage removes a Debian/Ubuntu package via apt-get.
+// Stops the service first, then purges the package. Config files are preserved.
+func uninstallPackage(pkg, service string) error {
+	// Stop service
+	exec.Command("sudo", "systemctl", "stop", service).Run()
+
+	// Purge package (apt-get remove, not purge — leaves config files)
+	removeCmd := exec.Command("sudo", "apt-get", "remove", "-y", "-qq", pkg)
+	if out, err := removeCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("apt-get remove %s failed: %w\n%s", pkg, err, string(out))
+	}
+
+	return nil
+}
+
+// installPackage installs a Debian/Ubuntu package via apt-get and enables the
+// corresponding systemd service. Returns nil on success.
 func installPackage(pkg, service string) error {
 	// Update package lists
 	updateCmd := exec.Command("sudo", "apt-get", "update", "-qq")

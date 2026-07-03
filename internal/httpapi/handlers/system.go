@@ -79,6 +79,7 @@ type Handlers struct {
 		PolicySvc       *routingpolicy.Service       // v1.8C-3
 		RoutingTableSvc *routingtable.Service        // v1.8C-3
 	TransparentMgr  *transparent.Manager         // v1.8H
+	ProvReg         *provider.Registry           // v1.8L-19 — provider registry for install/uninstall/config handlers
 	Version         string // build-injected version
 	BuildTime       string // build-injected timestamp
 }

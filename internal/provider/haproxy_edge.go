@@ -13,10 +13,13 @@ import (
 )
 
 // HAProxyEdgeMuxProvider generates HAProxy config for TLS SNI passthrough on 443.
+// This is the PRIMARY owner of the haproxy binary — installation/uninstallation
+// of the haproxy package is managed here, not in HAProxyTCPProvider.
 type HAProxyEdgeMuxProvider struct {
-	configPath    string
-	backupDir     string
-	inspectDelay  string
+	configPath   string
+	backupDir    string
+	inspectDelay string
+	binaryPath   string // resolved absolute path to haproxy binary
 }
 
 // NewHAProxyEdgeMuxProvider creates an HAProxy EdgeMux provider.
@@ -27,16 +30,19 @@ func NewHAProxyEdgeMuxProvider(configPath, backupDir string) *HAProxyEdgeMuxProv
 	if backupDir == "" {
 		backupDir = "/var/lib/aegis/haproxy-backups"
 	}
+	bp := "haproxy"
+	if resolved, err := exec.LookPath("haproxy"); err == nil {
+		bp = resolved
+	}
 	return &HAProxyEdgeMuxProvider{
 		configPath:   configPath,
 		backupDir:    backupDir,
 		inspectDelay: "5s",
+		binaryPath:   bp,
 	}
 }
 
-// Name() moved to Provider interface block at end of file
-func (p *HAProxyEdgeMuxProvider) Kind() string      { return "edge_mux" }
-func (p *HAProxyEdgeMuxProvider) ConfigPath() string { return p.configPath }
+func (p *HAProxyEdgeMuxProvider) Kind() string { return "edge_mux" }
 
 // EdgeMuxEntry represents a single SNI routing entry.
 type EdgeMuxEntry struct {
@@ -268,7 +274,7 @@ func (p *HAProxyEdgeMuxProvider) Diagnose() ProviderDiagnostic {
 	return diag
 }
 
-// ─── Provider interface methods (added v1.8L-16) ───
+// ─── Layer 1: DETECTION ──────────────────────────────────────────────────
 
 func (p *HAProxyEdgeMuxProvider) Info() Info {
 	status := "ready"
@@ -284,14 +290,58 @@ func (p *HAProxyEdgeMuxProvider) Info() Info {
 	}
 }
 
-func (p *HAProxyEdgeMuxProvider) ID() string        { return "haproxy_edge_mux" }
-func (p *HAProxyEdgeMuxProvider) Name() string      { return "haproxy_edge_mux" }
-func (p *HAProxyEdgeMuxProvider) Type() GatewayType { return TypeSNIPass }
+// Diagnose() is defined earlier in this file (line ~202)
+
+// ─── Layer 2: LOCATION ────────────────────────────────────────────────────
+
+func (p *HAProxyEdgeMuxProvider) ID() string         { return "haproxy_edge_mux" }
+func (p *HAProxyEdgeMuxProvider) Name() string       { return "haproxy_edge_mux" }
+func (p *HAProxyEdgeMuxProvider) Type() GatewayType  { return TypeSNIPass }
+func (p *HAProxyEdgeMuxProvider) ConfigPath() string { return p.configPath }
+func (p *HAProxyEdgeMuxProvider) BinaryPath() string { return p.binaryPath }
+func (p *HAProxyEdgeMuxProvider) ServiceName() string { return "haproxy" }
+
+// ─── Layer 3: INSTALL / UNINSTALL ─────────────────────────────────────────
+// HAProxy EdgeMux is the PRIMARY owner of the haproxy binary.
+// HAProxyTCPProvider sets CanInstall=false/CanUninstall=false since it shares this binary.
+
+func (p *HAProxyEdgeMuxProvider) CanInstall() bool   { return true }
+func (p *HAProxyEdgeMuxProvider) Install() error     { return installPackage("haproxy", "haproxy") }
+func (p *HAProxyEdgeMuxProvider) CanUninstall() bool { return true }
+func (p *HAProxyEdgeMuxProvider) Uninstall() error   { return uninstallPackage("haproxy", "haproxy") }
+
+// ─── Layer 4: CONFIG ──────────────────────────────────────────────────────
+
+// WriteConfig validates, backs up, writes, and reloads the HAProxy config.
+func (p *HAProxyEdgeMuxProvider) WriteConfig(content []byte) error {
+	tmpFile := p.configPath + ".tmp"
+	if err := os.WriteFile(tmpFile, content, 0644); err != nil {
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	defer os.Remove(tmpFile)
+
+	if err := p.Validate(tmpFile); err != nil {
+		return fmt.Errorf("validate config: %w", err)
+	}
+
+	if existing, err := os.ReadFile(p.configPath); err == nil {
+		os.WriteFile(p.configPath+".bak", existing, 0644)
+	}
+
+	if err := os.Rename(tmpFile, p.configPath); err != nil {
+		data, _ := os.ReadFile(tmpFile)
+		if err := os.WriteFile(p.configPath, data, 0644); err != nil {
+			return fmt.Errorf("write config: %w", err)
+		}
+	}
+
+	return p.Reload()
+}
+
+// ─── Layer 5: UI ──────────────────────────────────────────────────────────
+
 func (p *HAProxyEdgeMuxProvider) Capabilities() ProviderCapabilities { return HAProxyEdgeCapabilities() }
 func (p *HAProxyEdgeMuxProvider) UIHints() ProviderUIHints         { return HAProxyEdgeUIHints() }
-func (p *HAProxyEdgeMuxProvider) CanInstall() bool  { return true }
-func (p *HAProxyEdgeMuxProvider) Install() error    { return installPackage("haproxy", "haproxy") }
 
-// Ensure HAProxyEdgeMuxProvider implements Provider and Diagnoser
+// Ensure HAProxyEdgeMuxProvider implements Provider
 var _ Provider = (*HAProxyEdgeMuxProvider)(nil)
-var _ Diagnoser = (*HAProxyEdgeMuxProvider)(nil)

@@ -17,15 +17,22 @@ import (
 
 // CaddyHTTPProvider wraps the Caddy adapter as an HTTP/HTTPS provider.
 type CaddyHTTPProvider struct {
-	cfg     *config.Config
-	adapter *caddy.Adapter
+	cfg        *config.Config
+	adapter    *caddy.Adapter
+	binaryPath string // resolved absolute path to caddy binary
 }
 
 // NewCaddyHTTPProvider creates a Caddy HTTP provider.
+// Resolves the caddy binary path at construction time.
 func NewCaddyHTTPProvider(cfg *config.Config) *CaddyHTTPProvider {
+	bp := cfg.Proxy.CaddyBinary
+	if resolved, err := exec.LookPath(bp); err == nil {
+		bp = resolved
+	}
 	return &CaddyHTTPProvider{
-		cfg:     cfg,
-		adapter: caddy.NewAdapter(cfg),
+		cfg:        cfg,
+		adapter:    caddy.NewAdapter(cfg),
+		binaryPath: bp,
 	}
 }
 
@@ -145,8 +152,26 @@ func (p *CaddyHTTPProvider) CommitTemp(tempPath string) error {
 	return nil
 }
 
-// Diagnose implements the Diagnoser interface for CaddyHTTPProvider.
-// Returns a structured ProviderDiagnostic covering all 7 diagnostic error codes.
+// runtimeVerify performs a quick smoke test against the Caddy gateway.
+func (p *CaddyHTTPProvider) runtimeVerify() bool {
+	// Try a simple TCP connection check on port 80 and 443
+	// Use curl or netcat if available; otherwise skip
+	if _, err := exec.LookPath("curl"); err == nil {
+		cmd := exec.Command("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+			"--connect-timeout", "3", "http://127.0.0.1:80")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return false
+		}
+		code := strings.TrimSpace(string(out))
+		return code == "200" || code == "308" || code == "301" || code == "302" || code == "404"
+	}
+	// No curl available — skip runtime verify
+	return true
+}
+
+// ─── Layer 1: DETECTION ──────────────────────────────────────────────────
+
 func (p *CaddyHTTPProvider) Diagnose() ProviderDiagnostic {
 	now := time.Now().Format(time.RFC3339)
 	diag := ProviderDiagnostic{
@@ -176,10 +201,9 @@ func (p *CaddyHTTPProvider) Diagnose() ProviderDiagnostic {
 		return diag
 	}
 	diag.Version = strings.TrimSpace(string(verOut))
-	// Caddy v2.x is supported; v1.x is not
 	diag.VersionSupported = strings.HasPrefix(diag.Version, "v2") || strings.Contains(diag.Version, "2.")
 
-	// 3. Check config file exists (CONFIG_FILE_MISSING)
+	// 3-7: remaining checks
 	if _, statErr := os.Stat(p.cfg.Proxy.CaddyfilePath); os.IsNotExist(statErr) {
 		diag.LastErrorCode = DiagCodeConfigFileMissing
 		diag.LastErrorMessage = fmt.Sprintf("config file not found: %s", p.cfg.Proxy.CaddyfilePath)
@@ -187,7 +211,6 @@ func (p *CaddyHTTPProvider) Diagnose() ProviderDiagnostic {
 	}
 	diag.ConfigExists = true
 
-	// 4. Validate config (CONFIG_VALIDATE_FAILED)
 	validOut, validErr := exec.Command(caddyPath, "validate", "--config", p.cfg.Proxy.CaddyfilePath).CombinedOutput()
 	valid := validErr == nil
 	diag.ConfigValid = &valid
@@ -198,7 +221,6 @@ func (p *CaddyHTTPProvider) Diagnose() ProviderDiagnostic {
 		return diag
 	}
 
-	// 5. Check service running (SERVICE_NOT_RUNNING)
 	_, svcErr := exec.Command("systemctl", "is-active", "--quiet", "caddy").CombinedOutput()
 	running := svcErr == nil
 	diag.ServiceRunning = &running
@@ -208,14 +230,7 @@ func (p *CaddyHTTPProvider) Diagnose() ProviderDiagnostic {
 		return diag
 	}
 
-	// 6. Check listener conflicts (LISTENER_CONFLICT)
-	// Check if any configured port is already bound by another process
-	diag.ListenerOK = true // defaults to true; set false if conflict detected
-	// Cross-reference with listener table if available — for now, no port scan
-	// because port scanning requires root/special permissions
-
-	// 7. Runtime verify (RUNTIME_VERIFY_FAILED)
-	// Quick smoke test against localhost:80/443
+	diag.ListenerOK = true
 	rtOK := p.runtimeVerify()
 	diag.RuntimeVerifyOK = &rtOK
 	if !rtOK {
@@ -226,41 +241,66 @@ func (p *CaddyHTTPProvider) Diagnose() ProviderDiagnostic {
 	return diag
 }
 
-// runtimeVerify performs a quick smoke test against the Caddy gateway.
-func (p *CaddyHTTPProvider) runtimeVerify() bool {
-	// Try a simple TCP connection check on port 80 and 443
-	// Use curl or netcat if available; otherwise skip
-	if _, err := exec.LookPath("curl"); err == nil {
-		cmd := exec.Command("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-			"--connect-timeout", "3", "http://127.0.0.1:80")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return false
-		}
-		code := strings.TrimSpace(string(out))
-		return code == "200" || code == "308" || code == "301" || code == "302" || code == "404"
-	}
-	// No curl available — skip runtime verify
-	return true
-}
-
-// ─── Provider interface methods (added v1.8L-16) ───
+// ─── Layer 2: LOCATION ────────────────────────────────────────────────────
 
 func (p *CaddyHTTPProvider) ID() string           { return "caddy" }
 func (p *CaddyHTTPProvider) Name() string         { return "caddy_http" }
 func (p *CaddyHTTPProvider) Type() GatewayType    { return TypeHTTPTerm }
+func (p *CaddyHTTPProvider) ConfigPath() string   { return p.cfg.Proxy.CaddyfilePath }
+func (p *CaddyHTTPProvider) BinaryPath() string   { return p.binaryPath }
+func (p *CaddyHTTPProvider) ServiceName() string  { return "caddy" }
+
+// ─── Layer 3: INSTALL / UNINSTALL ─────────────────────────────────────────
+
+func (p *CaddyHTTPProvider) CanInstall() bool   { return true }
+func (p *CaddyHTTPProvider) Install() error     { return installPackage("caddy", "caddy") }
+func (p *CaddyHTTPProvider) CanUninstall() bool { return true }
+func (p *CaddyHTTPProvider) Uninstall() error   { return uninstallPackage("caddy", "caddy") }
+
+// ─── Layer 5: UI ──────────────────────────────────────────────────────────
+
 func (p *CaddyHTTPProvider) Capabilities() ProviderCapabilities { return CaddyCapabilities() }
 func (p *CaddyHTTPProvider) UIHints() ProviderUIHints         { return CaddyUIHints() }
-func (p *CaddyHTTPProvider) CanInstall() bool     { return true }
-func (p *CaddyHTTPProvider) Install() error {
-	// Install via apt-get on Debian/Ubuntu.
-	// See provider_install.go for the installation logic shared with the HTTP handler.
-	return installPackage("caddy", "caddy")
+
+// ─── Layer 4: CONFIG ──────────────────────────────────────────────────────
+
+// WriteConfig validates, backs up, writes, and reloads the Caddyfile.
+// This is the canonical write path — the HTTP Save Config handler delegates here.
+func (p *CaddyHTTPProvider) WriteConfig(content []byte) error {
+	configPath := p.cfg.Proxy.CaddyfilePath
+
+	// 1. Write to temp file and validate
+	tmpFile := configPath + ".tmp"
+	if err := writeCaddyConfig(tmpFile, content); err != nil {
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	defer os.Remove(tmpFile)
+
+	if err := p.Validate(tmpFile); err != nil {
+		return fmt.Errorf("validate config: %w", err)
+	}
+
+	// 2. Backup existing config
+	if existing, err := os.ReadFile(configPath); err == nil {
+		backupPath := configPath + ".bak"
+		os.WriteFile(backupPath, existing, 0600)
+	}
+
+	// 3. Atomic replace
+	if err := os.Rename(tmpFile, configPath); err != nil {
+		// Fallback: read+write if rename fails (cross-filesystem)
+		data, _ := os.ReadFile(tmpFile)
+		if err := writeCaddyConfig(configPath, data); err != nil {
+			return fmt.Errorf("write config: %w", err)
+		}
+	}
+
+	// 4. Reload
+	return p.Reload()
 }
 
-// Ensure CaddyHTTPProvider implements Provider and Diagnoser
+// Ensure CaddyHTTPProvider implements Provider
 var _ Provider = (*CaddyHTTPProvider)(nil)
-var _ Diagnoser = (*CaddyHTTPProvider)(nil)
 
 // NOTE: Caddyfile rendering functions (renderCaddyfile, sanitizeCaddyValue,
 // caddySiteAddr) live in internal/proxy/caddy/render.go — that is the canonical
