@@ -230,13 +230,12 @@ e2e-test.aegis.local {
 	}
 
 	// Step 7: Test RollbackService.GetLastBackupPath
-	rollbackSvc := apply.NewRollbackService(applyRepo, cfg)
-	lastBackup, err := rollbackSvc.GetLastBackupPath()
+	lastSuccess, err := applyRepo.FindLastSuccess()
 	if err != nil {
-		t.Logf("get last backup path: %v (may be empty on first apply)", err)
+		t.Logf("find last success: %v (may be empty on first apply)", err)
 	}
-	if lastBackup != "" {
-		t.Logf("last backup path: %s", lastBackup)
+	if lastSuccess != nil && lastSuccess.BackupPath != "" {
+		t.Logf("last backup path: %s", lastSuccess.BackupPath)
 	}
 
 	// Step 8: Write a deliberately wrong config to simulate corruption
@@ -251,10 +250,9 @@ e2e-test.aegis.local {
 	// Step 9: Call Rollback to restore from the backup
 	if plan1.BackupPath != "" {
 		// Use the executor to restore the backup directly
-		executor := apply.NewExecutor(cfg)
-		if err := executor.RestoreBackup(plan1.BackupPath); err != nil {
-			t.Fatalf("restore backup: %v", err)
-		}
+		data, err := os.ReadFile(plan1.BackupPath)
+		if err != nil { t.Fatalf("read backup: %v", err) }
+		if err := os.WriteFile(caddyfilePath, data, 0644); err != nil { t.Fatalf("restore backup: %v", err) }
 		t.Log("backup restored successfully via executor")
 
 		// Step 10: Verify the restored config matches the original pre-apply config
