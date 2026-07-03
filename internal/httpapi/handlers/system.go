@@ -53,6 +53,7 @@ type Handlers struct {
 	ManagedDomain *manageddomain.AppService
 	Exposure      *exposure.AppService
 	Apply         *apply.AppService
+	Workflow      *apply.Workflow // v1.8L: new orchestrator
 	Health        *health.AppService
 	Logs          logs.Logger
 	Action        *action.ActionService

@@ -19,6 +19,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		ManagedDomain: svcs.ManagedDomain,
 		Exposure:      svcs.Exposure,
 		Apply:         svcs.Apply,
+			Workflow:      svcs.Workflow, // v1.8L
 		Health:        svcs.Health,
 		Logs:          svcs.Logs,
 		Action:        svcs.Action,

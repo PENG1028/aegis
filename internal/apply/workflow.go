@@ -96,6 +96,24 @@ func (w *Workflow) Preview(ctx context.Context, email string) (*PreviewResult, e
 // Write operations
 // ============================================================================
 
+// TryApplyCtx acquires the lock and executes Apply using the stored config email.
+// Matches the old AppService.TryApply(ctx) signature for drop-in replacement.
+func (w *Workflow) TryApplyCtx(ctx context.Context) (*ApplyResult, error) {
+	return w.TryApply(ctx, w.cfg.Proxy.Email)
+}
+
+// GetCurrentConfig returns the current Caddyfile content.
+func (w *Workflow) GetCurrentConfig() (string, error) {
+	caddy := w.registry.Get("caddy")
+	if caddy == nil {
+		return "", fmt.Errorf("caddy provider not found")
+	}
+	if reader, ok := caddy.(provider.ConfigReader); ok {
+		return reader.GetCurrentConfig()
+	}
+	return "", fmt.Errorf("caddy provider does not support config reading")
+}
+
 // TryApply acquires the apply lock and executes Apply.
 func (w *Workflow) TryApply(ctx context.Context, email string) (*ApplyResult, error) {
 	if !w.mu.TryLock() {
