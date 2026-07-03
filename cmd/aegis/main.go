@@ -178,9 +178,8 @@ func main() {
 	healthSvc := health.NewAppService(healthRepo, serviceRepo, endpointRepo, logSvc)
 	endpointResolver := endpoint.NewResolver(endpointRepo)
 	provRegistry := provider.NewRegistry()
-	provRegistry.Register(provider.NewCaddyHTTPProvider(cfg))
-	provRegistry.Register(provider.NewHAProxyEdgeMuxProvider("", cfg.Proxy.BackupDir))
-	provRegistry.Register(provider.NewHAProxyTCPProvider(cfg))
+	provRegistry.Register(provider.NewCaddyProvider(cfg))
+	provRegistry.Register(provider.NewHAProxyProvider("", "", cfg.Proxy.BackupDir))
 	exposureSvc := exposure.NewAppService(exposureRepo, logSvc, provRegistry, listenerSvc)
 
 	// Wire TCP/UDP proxy managers to exposure activation.

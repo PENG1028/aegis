@@ -1225,6 +1225,9 @@ export const providerApi = {
 
   uninstall: (provider: string): Promise<any> =>
     del(`/api/admin/v1/providers/${provider}`),
+
+  portPolicy: (): Promise<any> =>
+    get('/api/system/port-policy'),
 };
 
 // ─── Exposure API (TCP/UDP port exposure) ───

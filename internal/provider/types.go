@@ -1,60 +1,54 @@
-// Package provider implements the Provider abstraction layer for Aegis.
+// Package provider — dimension 1 of the 3-dimension gateway architecture.
 //
-// # ARCHITECTURE INDEX — Read this first
+// This file defines the fixed type system: 5 GatewayTypes, port binding, and
+// dependency edges. These types answer "what kind of gateway is this?" — they
+// do NOT describe what a gateway CAN do (that's Capability in capability.go)
+// or what it IS doing right now (that's ProviderState in state.go).
 //
-// This file defines the type system that underpins all gateway/provider logic.
-// When adding a new provider or gateway type, start here.
+// ## File map (dimension 1 = provider package):
 //
-// ## Concept hierarchy (top to bottom):
+//   capability.go — 26 Capability constants (L3-L7), Layer(), IsIngress()
+//   state.go      — ProviderState, Plan, ListenerSpec, RouteSpec, MatchSpec,
+//                    UpstreamSpec, ConfigFile, ForwardTarget
+//   types.go      — GatewayType (5 fixed types), PortPolicy, PortBinding,
+//                    DependencyEdge (this file)
+//   provider.go   — Provider interface (State / Diagnose / Render / Apply)
+//   registry.go   — Provider registry (Register / Get / List)
+//   discovery.go  — Runtime detection (DiscoverProviders / CurrentPortPolicyMode)
+//   diagnostic.go — ProviderDiagnostic struct + diagnostic error codes
+//   caddy.go      — CaddyProvider implementation
+//   haproxy.go    — HAProxyProvider implementation (merged edge + tcp)
+//   install.go    — apt-get install/uninstall helpers (used by dimension 3)
 //
-//   Layer 1 — GatewayType (5 fixed types, protocol-determined, closed set)
-//     http_terminate | sni_passthrough | tcp_forward | udp_forward | transparent
-//     Defined in: GatewayType, GatewayTypeDef
+// ## The 3 dimensions (for orientation):
 //
-//   Layer 2 — Protocol (open set, what protocol the forwarded traffic uses)
-//     http/1.1 | http/2 | http/3 | websocket | grpc | sse | tcp | udp | unix
-//     Defined in: Protocol, ProtocolDef
+//   Dimension 1 (this package) — Provider adapter: wrap each middleware as a
+//   unified interface. One middleware = one Provider.
 //
-//   Layer 3 — Provider (tool that implements gateway functionality)
-//     caddy | haproxy_edge_mux | haproxy_tcp | aegis_tcp | aegis_udp
-//     Interface defined in: provider.go → Provider
-//     Registry defined in: registry.go
+//   Dimension 2 (internal/topology/) — Topology planner: turn user intent into
+//   provider assignments. Chooses which providers handle which routes.
 //
-//   Layer 4 — ProviderCapabilities (what a specific provider CAN do)
-//     Computed from: GatewayType × Protocol support × installed tools
-//     Defined in: ProviderCapabilities
-//
-//   Layer 5 — UIHints (how the frontend SHOULD render this provider)
-//     Custom panels, metrics, operations per provider
-//     Defined in: ProviderUIHints
-//
-// ## Key relationships:
-//
-//   Provider  →  implements GatewayType  (a Caddy instance IS an http_terminate gateway)
-//   Provider  →  supports Protocol set   (Caddy supports http, h2, ws, grpc; HAProxy SNI supports tcp only)
-//   Gateway   →  has one GatewayType     (stored in gateways.type column)
-//   Route     →  declares one Protocol   (stored in route options)
-//   Listener  →  binds one port          (exclusive, one port = one owner)
+//   Dimension 3 (internal/lifecycle/) — Lifecycle manager: install, start, stop,
+//   uninstall middleware. Writes ProviderState; dimensions 1 & 2 read it.
 //
 // ## Port allocation:
 //
 //   Legacy mode (no HAProxy):  Caddy owns 80 + 443
 //   EdgeMux mode (HAProxy):    Caddy owns 80 + 8443, HAProxy owns 443
-//   See: port_policy.go for the dynamic allocation logic.
+//   See: discovery.go CurrentPortPolicyMode() for the dynamic detection logic.
 //
 // ## Adding a new provider (e.g. Nginx):
 //
-//   1. Add a new Provider implementation in internal/provider/nginx/
-//   2. Register in registry.go init()
-//   3. Add frontend adapter in ui/src/adapters/nginx/
-//   4. No other code changes needed — GatewayType and Protocol are fixed.
+//   1. Implement the Provider interface (see caddy.go for reference)
+//   2. Register in registry.go
+//   3. Add topology templates that include it (internal/topology/templates/)
+//   4. Add lifecycle operations (internal/lifecycle/)
+//   5. Add frontend adapters in ui/
 
 package provider
 
-import "time"
-
 // ============================================================================
-// Layer 1: GatewayType — 5 fixed types, closed set
+// GatewayType — 5 fixed types, closed set
 // ============================================================================
 
 // GatewayType identifies the network-layer entry paradigm of a gateway.
@@ -184,92 +178,11 @@ var GatewayTypeDefs = map[GatewayType]GatewayTypeDef{
 	},
 }
 
-// ============================================================================
-// Layer 2: Protocol — the application protocol the traffic speaks
-// ============================================================================
-
-// Protocol identifies the application-layer protocol used between the gateway
-// and the upstream endpoint. This is separate from GatewayType — the same
-// HTTP-termination gateway (Caddy) can forward HTTP/1.1, WebSocket, gRPC, etc.
-type Protocol string
-
-const (
-	ProtoHTTP1     Protocol = "http/1.1"
-	ProtoHTTP2     Protocol = "http/2"      // h2, h2c
-	ProtoHTTP3     Protocol = "http/3"      // QUIC (UDP transport)
-	ProtoWebSocket Protocol = "websocket"    // HTTP Upgrade → bidirectional TCP pipe
-	ProtoSSE       Protocol = "sse"         // Server-Sent Events (text/event-stream)
-	ProtoGRPC      Protocol = "grpc"        // HTTP/2 + protobuf + trailers
-	ProtoTCP       Protocol = "tcp"         // raw TCP stream
-	ProtoUDP       Protocol = "udp"         // raw UDP datagram
-	ProtoUnix      Protocol = "unix"        // Unix domain socket
-)
-
-// ProtocolDef describes how a protocol behaves at the transport level.
-// This tells the gateway what special handling (if any) is needed.
-type ProtocolDef struct {
-	ID       Protocol
-	Label    string
-	Transport string // underlying transport: "tcp" | "udp" | "unix"
-
-	// NeedsUpgrade is true for protocols that start as HTTP and then upgrade
-	// to a different transport mode (WebSocket: Upgrade: websocket).
-	NeedsUpgrade bool
-
-	// Persistent is true for long-lived connections (WebSocket, gRPC, TCP streams).
-	// Gateways should not apply short HTTP timeouts to persistent connections.
-	Persistent bool
-
-	// CustomHeaders are headers the gateway must set for this protocol to work.
-	// e.g. WebSocket needs Upgrade + Connection headers.
-	CustomHeaders map[string]string
-
-	// IdleTimeout is how long an idle connection stays open.
-	// 0 means no timeout (WebSocket).
-	IdleTimeout time.Duration
-}
-
-// ProtocolDefs maps each Protocol to its behavior definition.
-// This is the single source of truth for protocol handling.
-var ProtocolDefs = map[Protocol]ProtocolDef{
-	ProtoHTTP1: {
-		ID: ProtoHTTP1, Label: "HTTP/1.1",
-		Transport: "tcp", Persistent: false, IdleTimeout: 30 * time.Second,
-	},
-	ProtoHTTP2: {
-		ID: ProtoHTTP2, Label: "HTTP/2",
-		Transport: "tcp", Persistent: true, IdleTimeout: 60 * time.Second,
-	},
-	ProtoHTTP3: {
-		ID: ProtoHTTP3, Label: "HTTP/3 (QUIC)",
-		Transport: "udp", Persistent: true, IdleTimeout: 60 * time.Second,
-	},
-	ProtoWebSocket: {
-		ID: ProtoWebSocket, Label: "WebSocket",
-		Transport: "tcp", NeedsUpgrade: true, Persistent: true, IdleTimeout: 0,
-		CustomHeaders: map[string]string{"Upgrade": "websocket", "Connection": "Upgrade"},
-	},
-	ProtoSSE: {
-		ID: ProtoSSE, Label: "SSE",
-		Transport: "tcp", Persistent: true, IdleTimeout: 0,
-	},
-	ProtoGRPC: {
-		ID: ProtoGRPC, Label: "gRPC",
-		Transport: "tcp", Persistent: true, IdleTimeout: 60 * time.Second,
-	},
-	ProtoTCP: {
-		ID: ProtoTCP, Label: "TCP 流",
-		Transport: "tcp", Persistent: true, IdleTimeout: 0,
-	},
-	ProtoUDP: {
-		ID: ProtoUDP, Label: "UDP 报",
-		Transport: "udp", Persistent: false, IdleTimeout: 60 * time.Second,
-	},
-	ProtoUnix: {
-		ID: ProtoUnix, Label: "Unix Socket",
-		Transport: "unix", Persistent: true, IdleTimeout: 0,
-	},
-}
+// The old Protocol enum and ProviderCapabilities struct have been replaced by:
+//   - capability.go: 26 fine-grained Capability constants (L3-L7)
+//   - state.go: RouteSpec (5-dimension intent model: transport × tlsMode ×
+//     appProtocol × match × upstream)
+//   - state.go: ProviderState.Capabilities []Capability (per-instance declaration)
 
 // ============================================================================
 // Layer 3: Dependency model (hard vs soft)
@@ -306,204 +219,10 @@ type DependencyEdge struct {
 	Affects  []string    `json:"affects,omitempty"`  // which traffic types are affected
 }
 
-// ============================================================================
-// Layer 4-5: Provider capabilities & UI hints (for discovery → UI rendering)
-// ============================================================================
-
-// ProviderCapabilities declares what a specific provider implementation CAN do.
-// This is used by the capability matrix to answer "can this node do X?"
-// Every Provider must implement a Capabilities() method returning this.
-type ProviderCapabilities struct {
-	// Identity
-	ProviderID   string      `json:"provider_id"`   // "caddy", "haproxy_edge_mux", etc.
-	ProviderName string      `json:"provider_name"`  // human-readable
-	GatewayType  GatewayType `json:"gateway_type"`   // which of the 5 types
-
-	// Match capabilities — what keys can this provider match on?
-	MatchKeys []MatchKey `json:"match_keys"`
-
-	// Protocol support — what protocols can this provider forward?
-	Protocols []Protocol `json:"protocols"`
-
-	// Feature flags
-	AutoTLS          bool `json:"auto_tls"`           // automatic HTTPS (Let's Encrypt)
-	LoadBalance      bool `json:"load_balance"`       // can distribute across multiple backends
-	HealthCheck      bool `json:"health_check"`       // can actively health-check backends
-	RateLimit        bool `json:"rate_limit"`         // can rate-limit requests
-	ConfigImport     bool `json:"config_import"`      // can parse existing config into Aegis routes
-	SNIPassthrough   bool `json:"sni_passthrough"`    // can route based on TLS SNI
-	CanInstall       bool `json:"can_install"`        // can be installed via package manager
-}
-
-// ProviderUIHints tells the frontend how to render this provider.
-// Each provider type gets different panels, metrics, and operations.
-// The frontend adapter registry uses these hints to dynamically load components.
-type ProviderUIHints struct {
-	// ConfigSyntax is the syntax of the generated config file,
-	// used by the frontend for syntax highlighting.
-	// Values: "caddyfile" | "haproxy" | "nginx" | "json" | "yaml" | "plain"
-	ConfigSyntax string `json:"config_syntax"`
-
-	// ConfigMimeType for code highlighting.
-	ConfigMimeType string `json:"config_mime_type"`
-
-	// CustomPanels are provider-specific UI panels shown in the gateway detail page.
-	// Each panel maps to a frontend component registered in the adapter registry.
-	CustomPanels []PanelDef `json:"custom_panels,omitempty"`
-
-	// DashboardMetrics are provider-specific metrics shown in the overview.
-	DashboardMetrics []MetricDef `json:"dashboard_metrics,omitempty"`
-
-	// CustomOperations are provider-specific actions (beyond the standard reload/validate).
-	CustomOperations []OperationDef `json:"custom_operations,omitempty"`
-}
-
-// PanelDef describes a provider-specific detail panel for the UI.
-type PanelDef struct {
-	ID        string `json:"id"`        // frontend component name, e.g. "sni_routing_table"
-	Label     string `json:"label"`     // display label, e.g. "SNI 路由表"
-	Priority  int    `json:"priority"`  // sort order; lower = first
-	MinWidth  int    `json:"min_width"` // minimum width in pixels
-}
-
-// MetricDef describes a provider-specific metric for the dashboard.
-type MetricDef struct {
-	Key    string `json:"key"`    // unique metric identifier
-	Label  string `json:"label"`  // human-readable label
-	Unit   string `json:"unit"`   // "conns", "req/s", "ms", "%", "certs"
-	Source string `json:"source"` // how to get the value: "systemctl_status" | "admin_api" | "log_parse"
-}
-
-// OperationDef describes a provider-specific action.
-type OperationDef struct {
-	ID    string `json:"id"`    // operation identifier
-	Label string `json:"label"` // display label
-	Risk  string `json:"risk"`  // "low" | "medium" | "high" — for the risk evaluator
-}
-
-// ============================================================================
-// Capability defaults for built-in providers
-// ============================================================================
-
-// CaddyCapabilities returns the capability declaration for the Caddy HTTP provider.
-func CaddyCapabilities() ProviderCapabilities {
-	return ProviderCapabilities{
-		ProviderID: "caddy", ProviderName: "Caddy", GatewayType: TypeHTTPTerm,
-		MatchKeys:  []MatchKey{MatchHostPath},
-		Protocols:  []Protocol{ProtoHTTP1, ProtoHTTP2, ProtoHTTP3, ProtoWebSocket, ProtoGRPC, ProtoSSE},
-		AutoTLS:    true, LoadBalance: true, RateLimit: true, ConfigImport: true,
-		CanInstall: true,
-	}
-}
-
-// CaddyUIHints returns the UI hints for the Caddy HTTP provider.
-func CaddyUIHints() ProviderUIHints {
-	return ProviderUIHints{
-		ConfigSyntax:   "caddyfile",
-		ConfigMimeType: "text/x-caddyfile",
-		CustomPanels: []PanelDef{
-			{ID: "caddyfile_viewer", Label: "Caddyfile", Priority: 10, MinWidth: 400},
-			{ID: "http_routes", Label: "HTTP 路由", Priority: 5, MinWidth: 300},
-		},
-		DashboardMetrics: []MetricDef{
-			{Key: "auto_tls_certs", Label: "证书数量", Unit: "certs", Source: "admin_api"},
-			{Key: "config_reloads", Label: "重载次数", Unit: "reloads", Source: "systemctl_status"},
-		},
-		CustomOperations: []OperationDef{
-			{ID: "import_caddyfile", Label: "从 Caddyfile 导入", Risk: "low"},
-		},
-	}
-}
-
-// HAProxyEdgeCapabilities returns the capability declaration for HAProxy EdgeMux.
-func HAProxyEdgeCapabilities() ProviderCapabilities {
-	return ProviderCapabilities{
-		ProviderID: "haproxy_edge_mux", ProviderName: "HAProxy EdgeMux", GatewayType: TypeSNIPass,
-		MatchKeys:      []MatchKey{MatchSNI},
-		Protocols:      []Protocol{ProtoTCP}, // SNI passthrough only forwards TCP streams
-		SNIPassthrough: true, LoadBalance: false, HealthCheck: true,
-		CanInstall: true,
-	}
-}
-
-// HAProxyEdgeUIHints returns the UI hints for HAProxy EdgeMux.
-func HAProxyEdgeUIHints() ProviderUIHints {
-	return ProviderUIHints{
-		ConfigSyntax:   "haproxy",
-		ConfigMimeType: "text/x-haproxy",
-		CustomPanels: []PanelDef{
-			{ID: "sni_routing_table", Label: "SNI 路由表", Priority: 5, MinWidth: 400},
-			{ID: "backend_pools", Label: "后端池", Priority: 10, MinWidth: 300},
-			{ID: "haproxy_config", Label: "haproxy.cfg", Priority: 15, MinWidth: 400},
-		},
-		DashboardMetrics: []MetricDef{
-			{Key: "active_sessions", Label: "活跃会话", Unit: "sessions", Source: "admin_api"},
-			{Key: "backend_health", Label: "后端健康", Unit: "%", Source: "admin_api"},
-		},
-		CustomOperations: []OperationDef{
-			{ID: "view_stats", Label: "查看统计 (stats)", Risk: "low"},
-			{ID: "sni_probe", Label: "SNI 探活", Risk: "low"},
-		},
-	}
-}
-
-// HAProxyTCPCapabilities returns the capability declaration for HAProxy TCP.
-func HAProxyTCPCapabilities() ProviderCapabilities {
-	return ProviderCapabilities{
-		ProviderID: "haproxy_tcp", ProviderName: "HAProxy TCP", GatewayType: TypeTCPForward,
-		MatchKeys:  []MatchKey{MatchPort},
-		Protocols:  []Protocol{ProtoTCP},
-		LoadBalance: false, HealthCheck: true,
-		CanInstall: false, // HAProxy TCP shares the same binary as EdgeMux
-	}
-}
-
-// HAProxyTCPUIHints returns the UI hints for HAProxy TCP.
-func HAProxyTCPUIHints() ProviderUIHints {
-	return ProviderUIHints{
-		ConfigSyntax:   "haproxy",
-		ConfigMimeType: "text/x-haproxy",
-		CustomPanels: []PanelDef{
-			{ID: "tcp_forward_rules", Label: "TCP 转发规则", Priority: 5, MinWidth: 400},
-		},
-		DashboardMetrics: []MetricDef{
-			{Key: "tcp_connections", Label: "TCP 连接数", Unit: "conns", Source: "admin_api"},
-		},
-	}
-}
-
-// AegisTCPCapabilities returns the capability declaration for Aegis TCP Manager.
-func AegisTCPCapabilities() ProviderCapabilities {
-	return ProviderCapabilities{
-		ProviderID: "aegis_tcp", ProviderName: "Aegis TCP Manager", GatewayType: TypeTCPForward,
-		MatchKeys:  []MatchKey{MatchPort},
-		Protocols:  []Protocol{ProtoTCP, ProtoUnix},
-		LoadBalance: false, HealthCheck: false,
-		CanInstall: false, // built-in, no external binary needed
-	}
-}
-
-// AegisUDPCapabilities returns the capability declaration for Aegis UDP Manager.
-func AegisUDPCapabilities() ProviderCapabilities {
-	return ProviderCapabilities{
-		ProviderID: "aegis_udp", ProviderName: "Aegis UDP Manager", GatewayType: TypeUDPForward,
-		MatchKeys:  []MatchKey{MatchPort},
-		Protocols:  []Protocol{ProtoUDP, ProtoUnix},
-		LoadBalance: false, HealthCheck: false,
-		CanInstall: false, // built-in
-	}
-}
-
-// AegisTransparentCapabilities returns the capability declaration for transparent proxy.
-func AegisTransparentCapabilities() ProviderCapabilities {
-	return ProviderCapabilities{
-		ProviderID: "aegis_transparent", ProviderName: "Aegis 透明代理", GatewayType: TypeTransparent,
-		MatchKeys:  []MatchKey{MatchDestAddr},
-		Protocols:  []Protocol{ProtoTCP},
-		LoadBalance: false, HealthCheck: false,
-		CanInstall: false, // built-in, but requires iptables + Linux
-	}
-}
+// NOTE: ProviderCapabilities, ProviderUIHints and static functions like
+// CaddyCapabilities() / HAProxyEdgeCapabilities() have been removed.
+// Each Provider now returns a []Capability slice (from capability.go) and
+// ProviderState (from state.go) carries the Capabilities + Diagnostic.
 
 // ============================================================================
 // Port binding model — the physical constraint that drives capability computation

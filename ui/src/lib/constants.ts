@@ -24,12 +24,12 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
     { path: '/exposure/connect', label: '快速接入' },
   ],
   fabric: [
+    { path: '/fabric/providers', label: 'Provider' },
     { path: '/fabric', label: '网关' },
     { path: '/fabric/listeners', label: '监听器' },
     { path: '/fabric/links', label: '网关链路' },
     { path: '/fabric/topology', label: '拓扑' },
     { path: '/fabric/routing', label: '路由表' },
-    { path: '/fabric/providers', label: 'Provider' },
   ],
   runtime: [
     { path: '/runtime', label: '节点' },

@@ -17,6 +17,12 @@ type Manager struct {
 
 	currentNodeID string // set via SetCurrentNodeID, used to decide local vs cross-node
 
+	// ForwardTarget is the host:port where cross-node intercepted traffic
+	// is forwarded. Set by the topology Planner based on available providers.
+	// Defaults to 127.0.0.1:80 (Caddy) if not explicitly set.
+	forwardHost string
+	forwardPort int
+
 	portStart int
 	portEnd   int
 	nextPort  int
@@ -37,11 +43,25 @@ func NewManager() *Manager {
 
 // SetCurrentNodeID sets the local node identifier. Used to determine whether
 // a redirect target is local (forward directly to backend) or remote
-// (forward via Caddy :80 with gateway link routing).
+// (forward via the configured ForwardTarget with gateway link routing).
 func (m *Manager) SetCurrentNodeID(nodeID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.currentNodeID = nodeID
+}
+
+// SetForwardTarget sets where cross-node intercepted traffic should be forwarded.
+// This is called by the topology Planner (dimension 2) based on available
+// providers. Any provider with [route_host, upstream_tcp] capability can serve
+// as the forward target — typically Caddy :80, but could be Nginx :8080 or
+// Caddy behind HAProxy on :8443.
+//
+// If never called, defaults to 127.0.0.1:80.
+func (m *Manager) SetForwardTarget(host string, port int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.forwardHost = host
+	m.forwardPort = port
 }
 
 // StartRedirect begins transparent interception for the given rule:
@@ -50,8 +70,8 @@ func (m *Manager) SetCurrentNodeID(nodeID string) {
 //  3. Installs an iptables DNAT rule: original_ip:port → 127.0.0.1:local_port
 //
 // For same-node targets: proxy forwards directly to 127.0.0.1:original_port
-// For cross-node targets: proxy forwards to 127.0.0.1:80 (Caddy), which
-// routes via the matching domain-based route + gateway link.
+// For cross-node targets: proxy forwards to the configured ForwardTarget
+// (set by Planner), which routes via domain-based matching + gateway link.
 func (m *Manager) StartRedirect(rule RedirectRule) error {
 	if err := rule.Validate(); err != nil {
 		return fmt.Errorf("invalid rule: %w", err)
@@ -75,17 +95,23 @@ func (m *Manager) StartRedirect(rule RedirectRule) error {
 
 	// Determine target based on whether the service is local or remote.
 	// Same node: forward directly to 127.0.0.1:backend_port.
-	// Cross node: forward to 127.0.0.1:80 (Caddy routes by domain via gateway link).
+	// Cross node: forward to the ForwardTarget set by the Planner (dimension 2).
+	// Default: 127.0.0.1:80 (Caddy), but adapts to whatever HTTP router is available.
 	targetHost := "127.0.0.1"
 	targetPort := rule.OriginalPort // default: same port, local machine
 	isCrossNode := m.currentNodeID != "" && rule.TargetNodeID != "" &&
 		m.currentNodeID != rule.TargetNodeID
 
 	if isCrossNode {
-		// Cross-node: forward to Caddy on :80. Caddy must have a route
-		// matching a domain that resolves to this service.
-		targetPort = 80
-		log.Printf("[transparent] %s: cross-node → forwarding via Caddy :80", rule.ID)
+		targetHost = m.forwardHost
+		targetPort = m.forwardPort
+		if targetHost == "" {
+			targetHost = "127.0.0.1"
+		}
+		if targetPort == 0 {
+			targetPort = 80 // default: Caddy HTTP
+		}
+		log.Printf("[transparent] %s: cross-node → forwarding via %s:%d", rule.ID, targetHost, targetPort)
 	}
 
 	proxy := NewProxy(ProxyConfig{

@@ -155,9 +155,8 @@ func (a *Agent) Run() error {
 	// This populates the gateway inventory table on the control plane with
 	// all detected gateway programs (Caddy, HAProxy, etc.) and their status.
 	a.provReg = provider.NewRegistry()
-	a.provReg.Register(provider.NewCaddyHTTPProvider(a.proxyCfg))
-	a.provReg.Register(provider.NewHAProxyEdgeMuxProvider("", a.proxyCfg.Proxy.BackupDir))
-	a.provReg.Register(provider.NewHAProxyTCPProvider(a.proxyCfg))
+	a.provReg.Register(provider.NewCaddyProvider(a.proxyCfg))
+	a.provReg.Register(provider.NewHAProxyProvider("", "", a.proxyCfg.Proxy.BackupDir))
 	gwStatusProvider := noderuntime.NewProviderGatewayStatusProvider(a.provReg)
 	a.reconciler.SetGatewayStatusProvider(gwStatusProvider)
 
