@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,8 +53,9 @@ func (p *CaddyHTTPProvider) Info() Info {
 		msg = fmt.Sprintf("caddy binary not found: %v", err)
 	}
 	return Info{
+		ID:         "caddy",
 		Name:       "caddy_http",
-		Protocol:   "http",
+		Type:       TypeHTTPTerm,
 		Status:     status,
 		Message:    msg,
 		ConfigPath: p.cfg.Proxy.CaddyfilePath,
@@ -243,50 +243,25 @@ func (p *CaddyHTTPProvider) runtimeVerify() bool {
 	return true
 }
 
-// Ensure CaddyHTTPProvider implements Diagnoser
+// ─── Provider interface methods (added v1.8L-16) ───
+
+func (p *CaddyHTTPProvider) ID() string           { return "caddy" }
+func (p *CaddyHTTPProvider) Name() string         { return "caddy_http" }
+func (p *CaddyHTTPProvider) Type() GatewayType    { return TypeHTTPTerm }
+func (p *CaddyHTTPProvider) Capabilities() ProviderCapabilities { return CaddyCapabilities() }
+func (p *CaddyHTTPProvider) UIHints() ProviderUIHints         { return CaddyUIHints() }
+func (p *CaddyHTTPProvider) CanInstall() bool     { return true }
+func (p *CaddyHTTPProvider) Install() error {
+	// Install via apt-get on Debian/Ubuntu.
+	// See provider_install.go for the installation logic shared with the HTTP handler.
+	return installPackage("caddy", "caddy")
+}
+
+// Ensure CaddyHTTPProvider implements Provider and Diagnoser
+var _ Provider = (*CaddyHTTPProvider)(nil)
 var _ Diagnoser = (*CaddyHTTPProvider)(nil)
 
-// sanitizeCaddyValue strips characters that could be used to inject Caddy directives.
-func sanitizeCaddyValue(s string) string {
-	s = strings.ReplaceAll(s, "\n", "")
-	s = strings.ReplaceAll(s, "\r", "")
-	s = strings.ReplaceAll(s, "{", "")
-	s = strings.ReplaceAll(s, "}", "")
-	return s
-}
-
-// renderCaddyfile is the shared Caddy renderer (from proxy/caddy package).
-func renderCaddyfile(gwCfg proxy.GatewayConfig, email string) string {
-	var buf bytes.Buffer
-	if email != "" {
-		buf.WriteString("{\n    email " + sanitizeCaddyValue(email) + "\n}\n\n")
-	}
-	for _, r := range gwCfg.Routes {
-		// Internal domains use http:// prefix to prevent Caddy from trying
-		// to obtain public TLS certificates (which will never succeed).
-		siteAddr := caddySiteAddr(r.Domain)
-		if r.MaintenanceEnabled {
-			msg := r.MaintenanceMessage
-			if msg == "" {
-				msg = "Service temporarily unavailable"
-			}
-			msg = strings.ReplaceAll(msg, `"`, `\"`)
-			msg = sanitizeCaddyValue(msg)
-			buf.WriteString(fmt.Sprintf("%s {\n    respond \"%s\" 503\n}\n", sanitizeCaddyValue(siteAddr), msg))
-		} else {
-			buf.WriteString(fmt.Sprintf("%s {\n    encode gzip\n    reverse_proxy %s\n}\n", sanitizeCaddyValue(siteAddr), sanitizeCaddyValue(r.UpstreamURL)))
-		}
-	}
-	return buf.String()
-}
-
-// caddySiteAddr returns the Caddy site address for a domain.
-// Internal domains get an http:// prefix to skip public TLS.
-func caddySiteAddr(domain string) string {
-	if strings.HasSuffix(domain, ".internal") ||
-		strings.HasSuffix(domain, ".local") ||
-		strings.HasSuffix(domain, ".localhost") {
-		return "http://" + domain
-	}
-	return domain
-}
+// NOTE: Caddyfile rendering functions (renderCaddyfile, sanitizeCaddyValue,
+// caddySiteAddr) live in internal/proxy/caddy/render.go — that is the canonical
+// implementation. Do NOT duplicate them here. This file only contains the
+// Provider interface methods and diagnostic logic.

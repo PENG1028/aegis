@@ -44,11 +44,12 @@ func CheckHAProxyStatus(configPath string) ProviderStatus {
 		status.Message = "haproxy -vv failed: " + err.Error()
 		return status
 	}
-	status.Version = parseHAProxyVersion(string(verOut))
-	status.VersionMajor = parseMajorVersion(status.Version)
+	status.Version = strings.TrimSpace(string(verOut))
+	major, minor := ParseHAProxyVersion(status.Version) // canonical parser in discovery.go
+	status.VersionMajor = major
 
 	// 3. Check SNI passthrough support (HAProxy >= 1.8)
-	if status.VersionMajor >= 2 || (status.VersionMajor == 1 && parseMinorVersion(status.Version) >= 8) {
+	if status.VersionMajor >= 2 || (status.VersionMajor == 1 && minor >= 8) {
 		status.SNIPassthroughReady = true
 	}
 
@@ -103,7 +104,7 @@ func CheckCaddyStatus(configPath string) ProviderStatus {
 		return status
 	}
 	status.Version = strings.TrimSpace(string(verOut))
-	status.VersionMajor = parseMajorVersion(status.Version)
+	status.VersionMajor = parseCaddyMajorVersion(status.Version)
 
 	if configPath != "" {
 		validOut, validErr := exec.Command(caddyPath, "validate", "--config", configPath).CombinedOutput()
@@ -130,34 +131,17 @@ func CheckCaddyStatus(configPath string) ProviderStatus {
 	return status
 }
 
-func parseHAProxyVersion(output string) string {
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "HAProxy") && strings.Contains(line, "version") {
-			fields := strings.Fields(line)
-			for i, f := range fields {
-				if f == "version" && i+1 < len(fields) {
-					return strings.TrimRight(fields[i+1], ",")
-				}
-			}
-		}
-	}
-	return "unknown"
-}
+// NOTE: HAProxy version parsing has been consolidated into discovery.go.
+// Use provider.ParseHAProxyVersion() — the single canonical implementation.
+// The old parseHAProxyVersion / parseMajorVersion / parseMinorVersion have been removed.
 
-func parseMajorVersion(version string) int {
-	parts := strings.Split(version, ".")
+// parseCaddyMajorVersion extracts the major version number from a Caddy version string.
+// Caddy version format: "v2.8.4" → returns 2.
+func parseCaddyMajorVersion(version string) int {
+	s := strings.TrimPrefix(version, "v")
+	parts := strings.Split(s, ".")
 	if len(parts) > 0 {
 		v, _ := strconv.Atoi(parts[0])
-		return v
-	}
-	return 0
-}
-
-func parseMinorVersion(version string) int {
-	parts := strings.Split(version, ".")
-	if len(parts) > 1 {
-		v, _ := strconv.Atoi(strings.TrimRight(parts[1], "-0123456789"))
 		return v
 	}
 	return 0
@@ -191,8 +175,7 @@ func DiagnoseHAProxy() ProviderDiagnostic {
 		return diag
 	}
 	diag.Version = strings.TrimSpace(string(verOut))
-	major := parseMajorVersion(diag.Version)
-	minor := parseMinorVersion(diag.Version)
+	major, minor := ParseHAProxyVersion(diag.Version) // canonical parser in discovery.go
 	diag.VersionSupported = major >= 2 || (major == 1 && minor >= 8)
 
 	if _, statErr := exec.Command("test", "-f", diag.ConfigPath).CombinedOutput(); statErr != nil {
