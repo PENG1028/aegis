@@ -191,7 +191,17 @@ e2e-test.aegis.local {
 	}
 	t.Logf("applied configuration length: %d bytes", len(appliedContent))
 
-	// Step 4: Now set adapter to fail validation (simulating invalid config)
+	// Step 4: Add a second route so the config changes (hash comparison won't skip apply),
+	// then set the provider to fail validation (simulating invalid config).
+	_, err = routeSvc.CreateRoute(ctx, route.CreateRouteInput{
+		Domain:      "second.e2e-test.aegis.local",
+		PathPrefix:  "/",
+		StripPrefix: false,
+		ServiceID:   svc.ID,
+	})
+	if err != nil {
+		t.Fatalf("create second route: %v", err)
+	}
 	fakeProv.FailValidate = true
 	pendingState.MarkPending("route modified — may produce invalid config")
 
