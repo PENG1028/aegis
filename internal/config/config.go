@@ -182,6 +182,10 @@ func Load(path string) (*Config, error) {
 	if cfg.Server.Addr == "" {
 		cfg.Server.Addr = "127.0.0.1:7380"
 	}
+	// Dev mode default: allow localhost CORS when not explicitly configured
+	if len(cfg.Server.AllowedOrigins) == 0 {
+		cfg.Server.AllowedOrigins = []string{"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"}
+	}
 
 	return cfg, nil
 }

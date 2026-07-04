@@ -74,10 +74,25 @@ func (m *Middleware) CORS(next http.Handler) http.Handler {
 
 // isOriginAllowed checks if the origin is in the configured allowed list.
 // Empty list (production embedded UI) rejects all cross-origin requests.
+// In dev mode (non-empty list), also allows any localhost/127.0.0.1 origin
+// so the frontend dev server works on any port without reconfiguration.
 func (m *Middleware) isOriginAllowed(origin string) bool {
 	for _, o := range m.allowedOrigins {
 		if o == origin {
 			return true
+		}
+	}
+	// Dev mode: allow any localhost or 127.0.0.1 origin regardless of port.
+	// The configured list is non-empty only in dev; prod uses an empty list.
+	if len(m.allowedOrigins) > 0 {
+		if u, err := url.Parse(origin); err == nil {
+			host := u.Host
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+				return true
+			}
 		}
 	}
 	return false

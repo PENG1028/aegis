@@ -63,7 +63,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 
 	// System
 	mux.HandleFunc("GET /api/system/status", h.SystemStatus)
-	mux.HandleFunc("GET /api/system/port-policy", h.PortPolicy) // v1.8L-18
+	mux.HandleFunc("GET /api/system/runtime-mode", h.RuntimeMode)   // v1.8L-20
+	mux.HandleFunc("GET /api/system/compositions", h.Compositions)  // v1.8L-22 — canonical composition registry
 
 	// v1.8F Cluster health aggregation
 	mux.HandleFunc("GET /api/admin/v1/cluster/health", h.ClusterHealth)

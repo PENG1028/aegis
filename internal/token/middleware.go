@@ -81,12 +81,12 @@ func isPublicPath(path, method string) bool {
 	if path == "/api/system/status" && method == "GET" {
 		return true
 	}
-	// Port policy — used by the Provider capability matrix page (public system info)
-	if path == "/api/system/port-policy" && method == "GET" {
-		return true
-	}
 	// Runtime mode — used by the binding matrix page (public system info, v1.8L-20)
 	if path == "/api/system/runtime-mode" && method == "GET" {
+		return true
+	}
+	// Composition registry — canonical binding capability list (public, v1.8L-22)
+	if path == "/api/system/compositions" && method == "GET" {
 		return true
 	}
 	// Embedded UI — must be public so the login form loads
