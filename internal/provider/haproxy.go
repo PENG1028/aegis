@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -144,11 +145,15 @@ func (p *HAProxyProvider) Apply(configs []ConfigFile) error {
 		// Rollback all configs from backup on reload failure
 		for _, cf := range configs {
 			backupPath := cf.Path + ".bak"
-			if backupData, backupErr := os.ReadFile(backupPath); backupErr == nil {
-				_ = os.WriteFile(cf.Path, backupData, 0644)
+			if backupData, backupErr := os.ReadFile(backupPath); backupErr != nil {
+				log.Printf("[haproxy] rollback: read backup %s: %v", backupPath, backupErr)
+			} else if err := os.WriteFile(cf.Path, backupData, 0644); err != nil {
+				log.Printf("[haproxy] rollback: write config %s: %v", cf.Path, err)
 			}
 		}
-		_ = p.reload() // best-effort: restore service with known-good configs
+		if reloadErr := p.reload(); reloadErr != nil {
+			log.Printf("[haproxy] rollback: reload after restore: %v", reloadErr)
+		}
 		return fmt.Errorf("reload failed (all configs restored from backup): %w", err)
 	}
 

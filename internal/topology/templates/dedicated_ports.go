@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"slices"
 
 	"aegis/internal/provider"
 	"aegis/internal/topology"
@@ -72,7 +73,7 @@ func (t *DedicatedPorts) BuildPlan(intents []topology.RouteIntent, available []p
 		plans[tcpProvider.ID] = topology.BuildPlan(tcpListeners, tcpRoutes, nil)
 		if tcpProvider.ID != (httpProvider.ID) { // avoid duplicate
 			providers = append(providers, tcpProvider.ID)
-		} else if !contains(providers, tcpProvider.ID) {
+		} else if !slices.Contains(providers, tcpProvider.ID) {
 			providers = append(providers, tcpProvider.ID)
 		}
 	}
@@ -95,11 +96,3 @@ func (t *DedicatedPorts) BuildPlan(intents []topology.RouteIntent, available []p
 	}, nil
 }
 
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
