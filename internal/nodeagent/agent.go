@@ -153,6 +153,8 @@ func (a *Agent) Run() error {
 	a.provReg = provider.NewRegistry()
 	a.provReg.Register(provider.NewCaddyProvider(a.proxyCfg))
 	a.provReg.Register(provider.NewHAProxyProvider("", "", a.proxyCfg.Proxy.BackupDir))
+	a.reconciler = noderuntime.NewReconciler(a.cfg, a.client, a.cache)
+	a.caddyApplier = noderuntime.NewCaddyApplier(a.provReg)
 	gwStatusProvider := noderuntime.NewProviderGatewayStatusProvider(a.provReg)
 	a.reconciler.SetGatewayStatusProvider(gwStatusProvider)
 

@@ -278,7 +278,17 @@ func (p *CaddyProvider) applyOne(cf ConfigFile) error {
 	}
 
 	// 5. Reload
-	return p.reload()
+	if err := p.reload(); err != nil {
+		// 6. Rollback to backup on failure — restore known-good config and retry reload
+		backupPath := configPath + ".bak"
+		if backupData, backupErr := os.ReadFile(backupPath); backupErr == nil {
+			if writeErr := writeCaddyConfig(configPath, backupData); writeErr == nil {
+				_ = p.reload() // best-effort: restore service with known-good config
+			}
+		}
+		return fmt.Errorf("reload failed (config restored from backup): %w", err)
+	}
+	return nil
 }
 
 func (p *CaddyProvider) validateConfig(configPath string) error {

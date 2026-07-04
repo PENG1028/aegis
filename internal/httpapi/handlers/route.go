@@ -109,7 +109,10 @@ func (h *Handlers) RouteMaintenanceOn(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Message string `json:"message"`
 	}
-	decodeJSON(r, &input)
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := h.Route.SetMaintenance(r.Context(), id, true, input.Message); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

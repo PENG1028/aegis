@@ -116,7 +116,15 @@ func (h *Handlers) UploadBinary(w http.ResponseWriter, r *http.Request) {
 
 // ServeBinary handles GET /api/node/v1/binary
 // Nodes download the latest binary from the control plane.
+// Requires node credential auth (Bearer token) — same as other node endpoints.
 func (h *Handlers) ServeBinary(w http.ResponseWriter, r *http.Request) {
+	if h.NodeAuthSvc == nil {
+		writeError(w, http.StatusInternalServerError, "node auth service not configured")
+		return
+	}
+	if h.authenticateNodeRequest(w, r) == "" {
+		return
+	}
 	if _, err := os.Stat(updateBinary); os.IsNotExist(err) {
 		writeError(w, http.StatusNotFound, "no update binary available")
 		return
