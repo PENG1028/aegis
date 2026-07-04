@@ -12,7 +12,7 @@ import (
 	"aegis/internal/listener"
 	"aegis/internal/node"
 	"aegis/internal/route"
-	"aegis/internal/snapshot"
+	"aegis/internal/deployment"
 
 	"github.com/spf13/cobra"
 )
@@ -32,7 +32,7 @@ func newSnapshotCommand(
 		Long:  "Exports current listeners, edge rules, routes, provider status, config hashes, and port ownership to a JSON snapshot file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			snap := snapshot.NewSnapshot()
+			snap := deployment.NewSnapshot()
 			snap.StateVersion = stateVer.Current()
 
 			// Leader ID
@@ -43,7 +43,7 @@ func newSnapshotCommand(
 			// Listeners
 			listeners, _ := listenerSvc.ListAll()
 			for _, l := range listeners {
-				snap.Listeners = append(snap.Listeners, snapshot.ListenerState{
+				snap.Listeners = append(snap.Listeners, deployment.ListenerState{
 					ID: l.ID, Provider: l.Provider, Protocol: l.Protocol,
 					BindIP: l.BindIP, Port: l.Port, Status: l.Status,
 				})
@@ -52,7 +52,7 @@ func newSnapshotCommand(
 			// Edge rules
 			rules, _ := edgeSvc.ListRules(ctx)
 			for _, r := range rules {
-				snap.EdgeRules = append(snap.EdgeRules, snapshot.EdgeRuleState{
+				snap.EdgeRules = append(snap.EdgeRules, deployment.EdgeRuleState{
 					ID: r.ID, SNIHost: r.SNIHost,
 					Target: fmt.Sprintf("%s:%d", r.TargetHost, r.TargetPort),
 					Status: r.Status, ManagedBy: r.ManagedBy,
@@ -62,7 +62,7 @@ func newSnapshotCommand(
 			// Routes
 			routes, _ := routeSvc.ListRoutes(ctx)
 			for _, r := range routes {
-				snap.Routes = append(snap.Routes, snapshot.RouteState{
+				snap.Routes = append(snap.Routes, deployment.RouteState{
 					ID: r.ID, Domain: r.Domain, Path: r.PathPrefix, Status: r.Status,
 				})
 			}
@@ -70,7 +70,7 @@ func newSnapshotCommand(
 			// Config hashes
 			plan, err := applySvc.DryRun(ctx)
 			if err == nil {
-				snap.ConfigHash.CaddyConfigHash = snapshot.Hash(plan.RenderedConfig)
+				snap.ConfigHash.CaddyConfigHash = deployment.Hash(plan.RenderedConfig)
 			}
 
 			// Export
@@ -97,9 +97,9 @@ func newRestoreCommand(
 	listenerSvc *listener.Service,
 ) *cobra.Command {
 	return &cobra.Command{
-		Use:   "restore --from <snapshot.json>",
+		Use:   "restore --from <deployment.json>",
 		Short: "Restore system state from a snapshot",
-		Long:  "Restores listeners, edge rules, routes, and applies configs from a snapshot. Does NOT overwrite data that already matches.",
+		Long:  "Restores listeners, edge rules, routes, and applies configs from a deployment. Does NOT overwrite data that already matches.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			from, _ := cmd.Flags().GetString("from")
 			if from == "" {
@@ -109,7 +109,7 @@ func newRestoreCommand(
 				return fmt.Errorf("snapshot file not found: %s", from)
 			}
 
-			snap, err := snapshot.Load(from)
+			snap, err := deployment.Load(from)
 			if err != nil {
 				return fmt.Errorf("load snapshot: %w", err)
 			}
