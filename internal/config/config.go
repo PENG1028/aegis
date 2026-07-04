@@ -95,7 +95,7 @@ func DefaultConfig() *Config {
 			Addr:           "127.0.0.1:7380",
 			AdminToken:     generateAdminToken(),
 			SessionSecure:  false, // dev: no TLS by default
-			AllowedOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+			AllowedOrigins: []string{"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"},
 		},
 		DNS: DNSConfig{
 			Enabled:    false,
