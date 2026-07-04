@@ -252,10 +252,15 @@ func TestIsOriginAllowed_ExactMatch(t *testing.T) {
 	if !mw.isOriginAllowed("http://localhost:5173") {
 		t.Error("exact match should be allowed")
 	}
-	if mw.isOriginAllowed("http://localhost:5174") {
-		t.Error("non-matching port should be rejected")
+	// v1.8L-20: dev mode allows any localhost/127.0.0.1 origin regardless of port
+	if !mw.isOriginAllowed("http://localhost:5174") {
+		t.Error("dev mode should allow any localhost port")
 	}
-	if mw.isOriginAllowed("https://localhost:5173") {
-		t.Error("non-matching scheme should be rejected")
+	if !mw.isOriginAllowed("http://127.0.0.1:3000") {
+		t.Error("dev mode should allow 127.0.0.1")
+	}
+	// Non-localhost origins should still be rejected
+	if mw.isOriginAllowed("http://example.com:5173") {
+		t.Error("non-localhost origin should be rejected")
 	}
 }
