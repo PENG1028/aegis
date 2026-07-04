@@ -1,11 +1,10 @@
-package relay
+package gateway
 
 import (
 	"testing"
 	"time"
 
 	"aegis/internal/endpoint"
-	gatewaylink "aegis/internal/gateway_link"
 	"aegis/internal/listener"
 	"aegis/internal/node"
 	"aegis/internal/route"

@@ -1,7 +1,7 @@
 package adminauth
 
 import (
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 	"fmt"
 	"sync"
@@ -251,7 +251,7 @@ func logAuditEvent(actorType, actorID, eventType, ip, userAgent, targetType, tar
 }
 
 // generateToken creates a cryptographically random hex token.
-// Delegates to id.GenerateRandomHex — the project's canonical random-hex generator.
+// Delegates to core.GenerateRandomHex — the project's canonical random-hex generator.
 func generateToken(bytes int) string {
-	return id.GenerateRandomHex(bytes)
+	return core.GenerateRandomHex(bytes)
 }

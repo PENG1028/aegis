@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 )
 
@@ -45,7 +45,7 @@ func (s *AppService) CreateRule(ctx context.Context, input CreateRuleInput) (*Ru
 
 	now := time.Now()
 	rule := &Rule{
-		ID:           id.New("edge"),
+		ID:           core.NewID("edge"),
 		SNIHost:      input.SNIHost,
 		DeclaredKind: input.DeclaredKind,
 		TargetHost:   input.TargetHost,
@@ -95,7 +95,7 @@ func (s *AppService) EnsureRuleForHTTPRoute(ctx context.Context, domain, routeID
 
 	now := time.Now()
 	rule := &Rule{
-		ID:           id.New("edge"),
+		ID:           core.NewID("edge"),
 		SNIHost:      domain,
 		DeclaredKind: KindHTTPSApp,
 		TargetHost:   "127.0.0.1",

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 )
 
@@ -45,7 +45,7 @@ func (s *AppService) CreateEndpoint(ctx context.Context, input CreateEndpointInp
 
 	now := time.Now()
 	ep := &Endpoint{
-		ID:        id.New("ep"),
+		ID:        core.NewID("ep"),
 		ServiceID: input.ServiceID,
 		Type:      input.Type,
 		Address:   input.Address,

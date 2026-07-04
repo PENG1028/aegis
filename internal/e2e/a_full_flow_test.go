@@ -29,7 +29,7 @@ import (
 	"aegis/internal/service"
 	"aegis/internal/store"
 
-	gatewaylink "aegis/internal/gateway_link"
+	gatewaylink "aegis/internal/gateway"
 )
 
 // setupTempDB creates a temporary SQLite database file, initializes the schema,
@@ -170,7 +170,7 @@ func TestFullFlow_SingleNode(t *testing.T) {
 	mdRepo := manageddomain.NewRepository(st.DB)
 	endpointResolver := endpoint.NewResolver(endpointRepo)
 	applyRepo := apply.NewRepository(st.DB)
-	gwLinkRepo := gatewaylink.NewRepository(st.DB)
+	gwLinkRepo := gateway.NewLinkRepository(st.DB)
 
 	safetyDeps := safety.Dependencies{
 		RouteRepo:    routeRepo,

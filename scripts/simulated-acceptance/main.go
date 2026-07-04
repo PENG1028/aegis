@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"aegis/internal/localgateway"
+	"aegis/internal/gateway"
 	"aegis/internal/noderuntime"
 )
 
@@ -28,16 +28,16 @@ const (
 
 var nodeBToken = "this-is-the-real-gateway-link-secret-for-test"
 
-// simpleResolver implements localgateway.DomainResolver with a static mapping.
+// simpleResolver implements gateway.DomainResolver with a static mapping.
 type simpleResolver struct {
-	decisions map[string]*localgateway.RoutingDecision
+	decisions map[string]*gateway.RoutingDecision
 }
 
-func (r *simpleResolver) Resolve(domain string) *localgateway.RoutingDecision {
+func (r *simpleResolver) Resolve(domain string) *gateway.RoutingDecision {
 	if d, ok := r.decisions[domain]; ok {
 		return d
 	}
-	return &localgateway.RoutingDecision{
+	return &gateway.RoutingDecision{
 		Domain:  domain,
 		Status:  "unavailable",
 	}
@@ -143,12 +143,12 @@ func main() {
 	// 4. Routing table resolver
 	fmt.Print("[4] Creating routing table resolver ... ")
 	resolver := &simpleResolver{
-		decisions: map[string]*localgateway.RoutingDecision{
+		decisions: map[string]*gateway.RoutingDecision{
 			Domain: {
 				Domain:  Domain,
 				Status:  "available",
 				RouteID: RouteID,
-				SelectedCandidate: &localgateway.CandidateEntry{
+				SelectedCandidate: &gateway.CandidateEntry{
 					Mode:          "private_gateway",
 					GatewayURL:    relaySvc.URL,
 					GatewayLinkID: GWLinkID,
@@ -161,10 +161,10 @@ func main() {
 
 	// 5. Local gateway
 	fmt.Print("[5] Starting local HTTP gateway ... ")
-	cfg := localgateway.DefaultConfig()
+	cfg := gateway.DefaultConfig()
 	cfg.Port = 18280
 	cfg.NodeID = NodeID
-	gateway := localgateway.NewGateway(cfg, resolver, secretProvider)
+	gateway := gateway.NewGateway(cfg, resolver, secretProvider)
 	if err := gateway.Start(); err != nil {
 		panic(err)
 	}
@@ -341,12 +341,12 @@ func main() {
 		defer badTokenRelay.Close()
 
 		badTokenResolver := &simpleResolver{
-			decisions: map[string]*localgateway.RoutingDecision{
+			decisions: map[string]*gateway.RoutingDecision{
 				"bad.example.com": {
 					Domain:  "bad.example.com",
 					Status:  "available",
 					RouteID: "route-bad",
-					SelectedCandidate: &localgateway.CandidateEntry{
+					SelectedCandidate: &gateway.CandidateEntry{
 						Mode:          "private_gateway",
 						GatewayURL:    badTokenRelay.URL,
 						GatewayLinkID: "link-bad",
@@ -356,10 +356,10 @@ func main() {
 		}
 		badTokenProvider := noderuntime.NewInMemorySecretProvider()
 		badTokenProvider.AddSecret("link-bad", "wrong-token")
-		btCfg := localgateway.DefaultConfig()
+		btCfg := gateway.DefaultConfig()
 		btCfg.Port = 18281
 		btCfg.NodeID = NodeID
-		btGw := localgateway.NewGateway(btCfg, badTokenResolver, badTokenProvider)
+		btGw := gateway.NewGateway(btCfg, badTokenResolver, badTokenProvider)
 		btGw.Start()
 		defer btGw.Stop()
 		time.Sleep(50 * time.Millisecond)
@@ -393,12 +393,12 @@ func main() {
 		defer loopRelay.Close()
 
 		loopResolver := &simpleResolver{
-			decisions: map[string]*localgateway.RoutingDecision{
+			decisions: map[string]*gateway.RoutingDecision{
 				"loop.example.com": {
 					Domain:  "loop.example.com",
 					Status:  "available",
 					RouteID: "route-loop",
-					SelectedCandidate: &localgateway.CandidateEntry{
+					SelectedCandidate: &gateway.CandidateEntry{
 						Mode:          "private_gateway",
 						GatewayURL:    loopRelay.URL,
 						GatewayLinkID: "link-loop",
@@ -408,10 +408,10 @@ func main() {
 		}
 		loopProvider := noderuntime.NewInMemorySecretProvider()
 		loopProvider.AddSecret("link-loop", "loop-token")
-		lcCfg := localgateway.DefaultConfig()
+		lcCfg := gateway.DefaultConfig()
 		lcCfg.Port = 18282
 		lcCfg.NodeID = NodeID
-		lcGw := localgateway.NewGateway(lcCfg, loopResolver, loopProvider)
+		lcGw := gateway.NewGateway(lcCfg, loopResolver, loopProvider)
 		lcGw.Start()
 		defer lcGw.Stop()
 		time.Sleep(50 * time.Millisecond)
@@ -540,12 +540,12 @@ func main() {
 		defer noTokenRelay.Close()
 
 		noTokenResolver := &simpleResolver{
-			decisions: map[string]*localgateway.RoutingDecision{
+			decisions: map[string]*gateway.RoutingDecision{
 				"notoken.example.com": {
 					Domain:  "notoken.example.com",
 					Status:  "available",
 					RouteID: "route-notoken",
-					SelectedCandidate: &localgateway.CandidateEntry{
+					SelectedCandidate: &gateway.CandidateEntry{
 						Mode:          "private_gateway",
 						GatewayURL:    noTokenRelay.URL,
 						GatewayLinkID: "link-notoken",
@@ -555,10 +555,10 @@ func main() {
 		}
 		// Intentionally do NOT add the secret to the provider
 		noTokenProvider := noderuntime.NewInMemorySecretProvider()
-		ntCfg := localgateway.DefaultConfig()
+		ntCfg := gateway.DefaultConfig()
 		ntCfg.Port = 18283
 		ntCfg.NodeID = NodeID
-		ntGw := localgateway.NewGateway(ntCfg, noTokenResolver, noTokenProvider)
+		ntGw := gateway.NewGateway(ntCfg, noTokenResolver, noTokenProvider)
 		ntGw.Start()
 		defer ntGw.Stop()
 		time.Sleep(50 * time.Millisecond)

@@ -18,7 +18,7 @@ import (
 	"aegis/internal/route"
 	"aegis/internal/service"
 	"aegis/internal/safety"
-"aegis/internal/relay"
+"aegis/internal/gateway"
 	"aegis/internal/smoke"
 	"aegis/internal/space"
 	"aegis/internal/trace"
@@ -53,7 +53,7 @@ type Services struct {
 	PendingState  *cluster.PendingState
 	TraceSvc      *trace.Service
 	SafetySvc     *safety.Service
-RelaySvc       *relay.Resolver        // v1.8B
+RelaySvc       *gateway.Resolver        // v1.8B
 TransparentMgr *transparent.Manager   // v1.8H
 	Version        string                // build-injected version
 	BuildTime      string                // build-injected timestamp

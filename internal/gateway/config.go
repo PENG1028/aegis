@@ -1,4 +1,4 @@
-package localgateway
+package gateway
 
 // Config for the local HTTP gateway.
 type Config struct {

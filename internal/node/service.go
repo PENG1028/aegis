@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 // Service manages node identity registration.
@@ -73,7 +73,7 @@ func (s *Service) RegisterCurrent() (*NodeRecord, error) {
 
 	// Create new node record
 	n := &NodeRecord{
-		ID:           id.New("node"),
+		ID:           core.NewID("node"),
 		NodeID:       nodeID,
 		Name:         hostname,
 		Role:         RoleWorker,
@@ -119,10 +119,10 @@ func (s *Service) GetNode(nodeID string) (*NodeRecord, error) {
 // CreateNode creates a new node record with the given parameters (v1.8C).
 func (s *Service) CreateNode(name, role, hostname, publicIP, privateIP, osName, arch, agentVersion string) (*NodeRecord, error) {
 	now := time.Now()
-	nodeID := fmt.Sprintf("nd_%s", id.GenerateRandomHex(4))
+	nodeID := fmt.Sprintf("nd_%s", core.GenerateRandomHex(4))
 
 	n := &NodeRecord{
-		ID:           id.New("node"),
+		ID:           core.NewID("node"),
 		NodeID:       nodeID,
 		Name:         name,
 		Role:         role,

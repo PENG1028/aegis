@@ -1,4 +1,4 @@
-package localgateway
+package gateway
 
 // DomainResolver resolves domains to routing decisions for the local gateway.
 type DomainResolver interface {

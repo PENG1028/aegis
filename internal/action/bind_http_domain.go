@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"aegis/internal/endpoint"
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/route"
 	"aegis/internal/service"
 )
@@ -59,7 +59,7 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 	// 4. Create service
 	svcName := fmt.Sprintf("http-%s", input.Domain)
 	svc := &service.Service{
-		ID:               id.New("svc"),
+		ID:               core.NewID("svc"),
 		ProjectID:        "",
 		Name:             svcName,
 		Kind:             "http",
@@ -90,7 +90,7 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 
 	// 6. Create route
 	rt := &route.Route{
-		ID:                 id.New("rt"),
+		ID:                 core.NewID("rt"),
 		Domain:             input.Domain,
 		PathPrefix:         "",
 		StripPrefix:        false,

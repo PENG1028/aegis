@@ -8,7 +8,7 @@ import (
 	"net"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/node"
 )
 
@@ -47,12 +47,12 @@ func (s *Service) CreateJoinToken(input CreateJoinTokenInput) (*JoinToken, strin
 		input.AllowedRoles = []string{}
 	}
 
-	rawToken := id.GenerateRandomHex(TokenByteLength)
+	rawToken := core.GenerateRandomHex(TokenByteLength)
 	tokenHash := hashToken(rawToken)
 
 	now := time.Now()
 	t := &JoinToken{
-		ID:                id.New("jt"),
+		ID:                core.NewID("jt"),
 		TokenHash:         tokenHash,
 		Name:              input.Name,
 		AllowedRoles:      input.AllowedRoles,
@@ -191,11 +191,11 @@ func (s *Service) RegisterNode(req JoinRequest, sourceIP string) (*JoinResponse,
 	}
 
 	// Generate node credential
-	rawNodeToken := id.GenerateRandomHex(TokenByteLength)
+	rawNodeToken := core.GenerateRandomHex(TokenByteLength)
 	nodeTokenHash := hashToken(rawNodeToken)
 
 	cred := &NodeCredential{
-		ID:        id.New("nc"),
+		ID:        core.NewID("nc"),
 		NodeID:    n.NodeID,
 		TokenHash: nodeTokenHash,
 		CreatedAt: time.Now(),

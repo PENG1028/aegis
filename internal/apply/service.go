@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"aegis/internal/config"
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 	"aegis/internal/topology"
 )
@@ -108,7 +108,7 @@ func (s *AppService) SetPendingState(ps PendingStateClearer) {
 // Apply executes the full staged apply flow.
 func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	version := fmt.Sprintf("v%s", time.Now().Format("20060102_150405"))
-	opID := id.New("apply")
+	opID := core.NewID("apply")
 	stateVersion := uint64(time.Now().Unix())
 
 	stepLog := newApplyStepLog()
@@ -172,7 +172,7 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	// 5. Record apply version
 	backupPath := filepath.Join(s.cfg.Proxy.BackupDir, fmt.Sprintf("Caddyfile.%s.bak", time.Now().Format("20060102_150405")))
 	av := &ApplyVersion{
-		ID:             id.New("apply"),
+		ID:             core.NewID("apply"),
 		Version:        version,
 		ConfigPath:     s.cfg.Proxy.CaddyfilePath,
 		BackupPath:     backupPath,
@@ -243,7 +243,7 @@ func (s *AppService) Rollback(ctx context.Context, targetVersion string) error {
 
 		now := time.Now()
 		s.applyRepo.Create(&ApplyVersion{
-			ID: id.New("apply"), Version: fmt.Sprintf("rollback-%s", now.Format("20060102_150405")),
+			ID: core.NewID("apply"), Version: fmt.Sprintf("rollback-%s", now.Format("20060102_150405")),
 			ConfigPath: s.cfg.Proxy.CaddyfilePath, BackupPath: backupPath,
 			Status: "rolled_back", Message: fmt.Sprintf("rolled back to %s", versionLabel), CreatedAt: now,
 		})
@@ -273,7 +273,7 @@ func (s *AppService) writeApplyLog(opID string, stateVersion uint64, provider, s
 		return
 	}
 	applyLog := &logs.ApplyLog{
-		ID:                  id.New("applylog"),
+		ID:                  core.NewID("applylog"),
 		OperationID:         opID,
 		StateVersion:        stateVersion,
 		Provider:            provider,

@@ -1,9 +1,10 @@
 // Package relay provides Managed Egress Relay — forcing Aegis managed domains
 // through gateway listeners instead of allowing direct access to remote target ports.
-package relay
+package gateway
 
 import (
-	"aegis/internal/safety"
+	"net"
+	"strconv"
 )
 
 // RelayMode enumerates the possible relay path modes.
@@ -58,7 +59,12 @@ func (r *RelayResult) AddRisk(code, severity, message string) {
 // Delegates to safety.SplitHostPort — the project's canonical host:port splitter.
 // Do NOT rewrite this function; use safety.SplitHostPort or endpoint.HostPort() instead.
 func ParseHostPort(addr string) (string, int) {
-	return safety.SplitHostPort(addr)
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr, 0
+	}
+	port, _ := strconv.Atoi(portStr)
+	return host, port
 }
 
 // riskCodes used in relay decisions.

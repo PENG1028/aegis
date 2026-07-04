@@ -6,7 +6,7 @@ import (
 	"time"
 
 	aerrors "aegis/internal/core"
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 )
 
@@ -51,11 +51,11 @@ func (s *AppService) CreateManagedDomain(ctx context.Context, input CreateManage
 	}
 
 	now := time.Now()
-	verifyValue := fmt.Sprintf("aegis-verify-%s", id.New(""))
+	verifyValue := fmt.Sprintf("aegis-verify-%s", core.NewID(""))
 	verifyName := fmt.Sprintf("_aegis.%s", input.Domain)
 
 	md := &ManagedDomain{
-		ID:                id.New("md"),
+		ID:                core.NewID("md"),
 		Domain:            input.Domain,
 		ServiceID:         input.ServiceID,
 		OwnerRef:          input.OwnerRef,

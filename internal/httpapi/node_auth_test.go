@@ -13,7 +13,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"aegis/internal/gateway"
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/node"
 	"aegis/internal/nodeauth"
 	"aegis/internal/nodestate"
@@ -469,7 +469,7 @@ func TestHeartbeatResponseNoTokenLeak(t *testing.T) {
 	}
 
 	// Error response
-	wrongToken := id.GenerateRandomHex(16)
+	wrongToken := core.GenerateRandomHex(16)
 	req2 := httptest.NewRequest("POST", "/api/node/v1/heartbeat", strings.NewReader(hbBody))
 	req2.Header.Set("Content-Type", "application/json")
 	req2.Header.Set("Authorization", "Bearer "+wrongToken)

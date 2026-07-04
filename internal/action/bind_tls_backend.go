@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"aegis/internal/edgemux"
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 // BindTLSBackendInput is the input for binding a TLS backend.
@@ -68,7 +68,7 @@ func (s *ActionService) BindTLSBackend(ctx context.Context, input BindTLSBackend
 	// 5. Create edge mux rule (managed_by=manual)
 	now := time.Now()
 	rule := &edgemux.Rule{
-		ID:               id.New("edge"),
+		ID:               core.NewID("edge"),
 		SNIHost:          input.SNIHost,
 		DeclaredKind:     kind,
 		TargetHost:       input.TargetHost,

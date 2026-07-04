@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	gatewaylink "aegis/internal/gateway_link"
+	gatewaylink "aegis/internal/gateway"
 )
 
 // CreateGatewayLink handles POST /api/admin/v1/gateway-links

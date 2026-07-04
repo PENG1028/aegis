@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 // Service manages node desired and actual state.
@@ -56,7 +56,7 @@ func (s *Service) CreateDesiredState(input CreateDesiredStateInput) (*DesiredSta
 
 	now := time.Now()
 	ds := &DesiredState{
-		ID:        id.New("ds"),
+		ID:        core.NewID("ds"),
 		NodeID:    input.NodeID,
 		Revision:  nextRev,
 		StateHash: hash,
@@ -103,7 +103,7 @@ func (s *Service) ReportActualState(nodeID string, appliedRevision int, stateHas
 	now := time.Now()
 
 	as := &ActualState{
-		ID:               id.New("as"),
+		ID:               core.NewID("as"),
 		NodeID:           nodeID,
 		AppliedRevision:  appliedRevision,
 		StateHash:        stateHash,

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 // Repository provides database access for topology edges.
@@ -21,7 +21,7 @@ func NewRepository(db *sql.DB) *Repository {
 // CreateOrUpdateEdge creates or updates a topology edge.
 func (r *Repository) CreateOrUpdateEdge(e *TopologyEdge) error {
 	if e.ID == "" {
-		e.ID = id.New("te")
+		e.ID = core.NewID("te")
 	}
 	e.UpdatedAt = time.Now()
 

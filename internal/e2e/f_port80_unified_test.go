@@ -26,7 +26,7 @@ import (
 	"aegis/internal/secrets"
 	"aegis/internal/service"
 
-	gatewaylink "aegis/internal/gateway_link"
+	gatewaylink "aegis/internal/gateway"
 )
 
 func startTCPListener(t *testing.T) (net.Listener, string) {
@@ -38,7 +38,7 @@ func startTCPListener(t *testing.T) (net.Listener, string) {
 	return l, l.Addr().String()
 }
 
-func setupApplySvc(t *testing.T, db *sql.DB, cfg *config.Config, gwLinkRepo *gatewaylink.Repository, masterKey *secrets.MasterKey) *apply.AppService {
+func setupApplySvc(t *testing.T, db *sql.DB, cfg *config.Config, gwLinkRepo *gateway.LinkRepository, masterKey *secrets.MasterKey) *apply.AppService {
 	t.Helper()
 	logRepo := logs.NewRepository(db)
 	logSvc := logs.NewAppService(logRepo)
@@ -149,12 +149,12 @@ func TestPort80Unified_CrossMachineViaGatewayLink(t *testing.T) {
 	endpointRepo := endpoint.NewRepository(st.DB)
 	endpointSvc := endpoint.NewAppService(endpointRepo, logSvc)
 
-	gwLinkRepo := gatewaylink.NewRepository(st.DB)
+	gwLinkRepo := gateway.NewLinkRepository(st.DB)
 	masterKey, _ := secrets.LoadMasterKey(true)
 
-	remoteGW, rawSecret, err := gatewaylink.NewService(gwLinkRepo, "gw_src", "source", masterKey).Register(
+	remoteGW, rawSecret, err := gateway.NewLinkService(gwLinkRepo, "gw_src", "source", masterKey).Register(
 		"machine-b", "<SERVER_B_IP>", "10.0.0.2", 80,
-		gatewaylink.TypeUpstream, true,
+		gateway.TypeUpstream, true,
 	)
 	if err != nil {
 		t.Fatalf("register gateway: %v", err)

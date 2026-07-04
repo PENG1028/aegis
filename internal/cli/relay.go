@@ -3,18 +3,18 @@ package cli
 import (
 	"fmt"
 
-	"aegis/internal/relay"
+	"aegis/internal/gateway"
 
 	"github.com/spf13/cobra"
 )
 
 // relayDeps holds dependencies for relay CLI commands.
 type relayDeps struct {
-	relaySvc *relay.Resolver
+	relaySvc *gateway.Resolver
 }
 
 // newRelayCommand creates the relay CLI subcommand tree.
-func newRelayCommand(relaySvc *relay.Resolver) *cobra.Command {
+func newRelayCommand(relaySvc *gateway.Resolver) *cobra.Command {
 	deps := &relayDeps{relaySvc: relaySvc}
 
 	cmd := &cobra.Command{
@@ -53,7 +53,7 @@ func newRelayResolveCmd(deps *relayDeps) *cobra.Command {
 	return cmd
 }
 
-func printRelayResult(r *relay.RelayResult) error {
+func printRelayResult(r *gateway.RelayResult) error {
 	fmt.Printf("Relay Resolve: %s\n", r.Domain)
 	fmt.Printf("  Managed:            %v\n", r.Managed)
 	fmt.Printf("  Mode:               %s\n", r.Mode)

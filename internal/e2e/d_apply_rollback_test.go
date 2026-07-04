@@ -28,7 +28,7 @@ import (
 	"aegis/internal/service"
 	"aegis/internal/store"
 
-	gatewaylink "aegis/internal/gateway_link"
+	gatewaylink "aegis/internal/gateway"
 )
 
 // TestApplyRollback verifies the apply failure detection and rollback recovery path.
@@ -86,7 +86,7 @@ e2e-test.aegis.local {
 	routeRepo := route.NewRepository(st.DB)
 	mdRepo := manageddomain.NewRepository(st.DB)
 	applyRepo := apply.NewRepository(st.DB)
-	gwLinkRepo := gatewaylink.NewRepository(st.DB)
+	gwLinkRepo := gateway.NewLinkRepository(st.DB)
 
 	safetyDeps := safety.Dependencies{
 		RouteRepo:    routeRepo,

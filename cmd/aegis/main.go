@@ -17,10 +17,9 @@ import (
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
-	"aegis/internal/gateway_link"
 	"aegis/internal/health"
 	"aegis/internal/httpapi"
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
@@ -29,7 +28,6 @@ import (
 	"aegis/internal/nodestate"
 	"aegis/internal/project"
 	"aegis/internal/provider"
-	"aegis/internal/relay"
 	"aegis/internal/route"
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
@@ -188,7 +186,7 @@ func main() {
 	defer udpMgr.Shutdown()
 
 	// --- Gateway Link (v1.7AB) ---
-	gwLinkRepo := gatewaylink.NewRepository(db)
+	gwLinkRepo := gateway.NewLinkRepository(db)
 	masterKey, err := secrets.LoadMasterKey(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: master key not available — gateway link secrets will use legacy HMAC storage: %v\n", err)
@@ -205,7 +203,7 @@ func main() {
 		GWLinkRepo:   gwLinkRepo,
 		ListenerRepo: listenerRepo,
 	})
-	relaySvc := relay.NewResolver(relay.Dependencies{
+	relaySvc := gateway.NewResolver(gateway.Dependencies{
 		RouteRepo:    routeRepo,
 		ServiceRepo:  serviceRepo,
 		EndpointRepo: endpointRepo,
@@ -248,8 +246,8 @@ func main() {
 	gatewayInvSvc := gateway.NewInventoryService(gatewayInvRepo)
 	topologyRepo := topology.NewRepository(db)
 	topologySvc := topology.NewService(topologyRepo)
-	gwSelfID := "gw_" + id.GenerateRandomHex(8)
-	gwLinkSvc := gatewaylink.NewService(gwLinkRepo, gwSelfID, "main-gateway", masterKey)
+	gwSelfID := "gw_" + core.GenerateRandomHex(8)
+	gwLinkSvc := gateway.NewLinkService(gwLinkRepo, gwSelfID, "main-gateway", masterKey)
 	spaceRepo := space.NewRepository(db)
 	spaceSvc := space.NewAppService(spaceRepo, logSvc)
 	endpointSvc := endpoint.NewAppService(endpointRepo, logSvc)
@@ -292,7 +290,7 @@ func main() {
 		Secrets:     serviceauthaegis.NewSecretStoreAdapter(masterKey, "./data/sa_secret.enc", "./data/sa_secret.nonce"),
 		NodeChecker: serviceauthaegis.NewNodeCheckerAdapter(nodeRepo),
 		LogWriter:   serviceauthaegis.NewLogWriterAdapter(logSvc),
-		IDGen:       func() string { return id.New("sa") },
+		IDGen:       func() string { return core.NewID("sa") },
 		MasterKey:   masterKey.Bytes(),
 	})
 	if err != nil {
@@ -364,7 +362,7 @@ func main() {
 		GatewayLinkSvc:   gwLinkSvc,
 		SafetySvc:        safetySvc,
 		RelaySvc:         relaySvc,
-		RelayHTTPHandler: relay.RelayHandlerForMux(relay.NewRelayHandler(relay.HandlerDeps{
+		RelayHTTPHandler: gateway.RelayHandlerForMux(gateway.NewRelayHandler(gateway.HandlerDeps{
 			RouteRepo:    routeRepo,
 			EndpointRepo: endpointRepo,
 			NodeRepo:     nodeRepo,
@@ -550,5 +548,5 @@ func (h *desiredStateHook) syncTransparentRules() {
 }
 
 func generateRandomHex(n int) string {
-	return id.GenerateRandomHex(n)
+	return core.GenerateRandomHex(n)
 }

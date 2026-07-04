@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 // DeploymentLogger is an optional logging interface for the deployment service.
@@ -41,7 +41,7 @@ func (s *Service) CreateDeployment(ctx context.Context, version, serviceID strin
 	}
 	now := time.Now()
 	d := &Deployment{
-		ID:              id.New("dep"),
+		ID:              core.NewID("dep"),
 		Version:         version,
 		ServiceID:       serviceID,
 		TargetNodes:     targetNodes,
@@ -56,7 +56,7 @@ func (s *Service) CreateDeployment(ctx context.Context, version, serviceID strin
 	// Create per-node instances
 	for _, nodeID := range targetNodes {
 		inst := &DeploymentInstance{
-			ID:           id.New("depi"),
+			ID:           core.NewID("depi"),
 			DeploymentID: d.ID,
 			NodeID:       nodeID,
 			Status:       StatusPending,

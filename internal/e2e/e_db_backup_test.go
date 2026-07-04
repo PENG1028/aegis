@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/store"
 )
 
@@ -42,7 +42,7 @@ func TestDBBackup_Recovery(t *testing.T) {
 	// Create service records
 	serviceCount := 5
 	for i := 0; i < serviceCount; i++ {
-		svcID := id.New("svc")
+		svcID := core.NewID("svc")
 		_, err := st.DB.Exec(
 			`INSERT INTO services (id, project_id, name, kind, env, status, owner_type, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
@@ -55,7 +55,7 @@ func TestDBBackup_Recovery(t *testing.T) {
 
 	// Create route records
 	for i := 0; i < 3; i++ {
-		rtID := id.New("rt")
+		rtID := core.NewID("rt")
 		_, err := st.DB.Exec(
 			`INSERT INTO routes (id, domain, path_prefix, service_id, status, owner_type, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
@@ -68,7 +68,7 @@ func TestDBBackup_Recovery(t *testing.T) {
 
 	// Create endpoint records
 	for i := 0; i < 4; i++ {
-		epID := id.New("ep")
+		epID := core.NewID("ep")
 		_, err := st.DB.Exec(
 			`INSERT INTO endpoints (id, service_id, type, address, enabled, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,

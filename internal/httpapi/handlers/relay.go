@@ -3,12 +3,12 @@ package handlers
 import (
 	"net/http"
 
-	"aegis/internal/relay"
+	"aegis/internal/gateway"
 )
 
 // RelayResolver exposes the relay resolver for the admin API.
 type RelayResolver struct {
-	Resolver *relay.Resolver
+	Resolver *gateway.Resolver
 }
 
 // ResolveRelay handles GET /api/admin/v1/relay/resolve?domain=<domain>&from_node=<node_id>

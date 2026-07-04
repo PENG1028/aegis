@@ -1,4 +1,4 @@
-package gatewaylink
+package gateway
 
 import (
 	"database/sql"
