@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"os/user"
@@ -160,12 +161,14 @@ func (p *CaddyProvider) applyOne(cf ConfigFile) error {
 
 	// 5. Reload
 	if err := p.reload(); err != nil {
-		// 6. Rollback to backup on failure — restore known-good config and retry reload
+		// 6. Rollback — restore known-good config and retry reload
 		backupPath := configPath + ".bak"
-		if backupData, backupErr := os.ReadFile(backupPath); backupErr == nil {
-			if writeErr := writeCaddyConfig(configPath, backupData); writeErr == nil {
-				_ = p.reload() // best-effort: restore service with known-good config
-			}
+		if backupData, backupErr := os.ReadFile(backupPath); backupErr != nil {
+			log.Printf("[caddy] rollback: read backup %s: %v", backupPath, backupErr)
+		} else if writeErr := writeCaddyConfig(configPath, backupData); writeErr != nil {
+			log.Printf("[caddy] rollback: write config %s: %v", configPath, writeErr)
+		} else if reloadErr := p.reload(); reloadErr != nil {
+			log.Printf("[caddy] rollback: reload after restore: %v", reloadErr)
 		}
 		return fmt.Errorf("reload failed (config restored from backup): %w", err)
 	}

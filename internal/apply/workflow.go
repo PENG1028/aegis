@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -146,7 +147,7 @@ func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error
 	currentProviders := currentMode.ProviderIDs()
 
 	for _, cp := range currentProviders {
-		if !containsStr(targetProviders, cp) {
+		if !slices.Contains(targetProviders, cp) {
 			p := w.registry.Get(cp)
 			if p == nil {
 				continue
@@ -354,12 +355,3 @@ func planProviderIDs(plan *topology.TopologyPlan) []string {
 	return ids
 }
 
-// containsStr returns true if the slice contains the string.
-func containsStr(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
