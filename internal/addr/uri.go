@@ -7,7 +7,7 @@
 //   - mongodb
 //   - ws, wss (WebSocket)
 //   - credential (Aegis internal alias)
-package uri
+package addr
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ var defaultPorts = map[string]int{
 //	mysql://user:pass@host:3306/db
 //	redis://:pass@host:6379/0
 //	ws://host:8080/chat
-func Parse(raw string) (*ConnInfo, error) {
+func ParseConnString(raw string) (*ConnInfo, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, fmt.Errorf("empty connection URI")

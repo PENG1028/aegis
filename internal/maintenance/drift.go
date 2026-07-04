@@ -1,4 +1,4 @@
-package consistency
+package maintenance
 
 import (
 	"aegis/internal/node"

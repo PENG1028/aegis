@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"aegis/internal/cluster"
-	"aegis/internal/consistency"
+	"aegis/internal/maintenance"
 	"aegis/internal/node"
 	sloglog "aegis/internal/core"
 )
@@ -127,7 +127,7 @@ func (rl *ReconcileLoop) reconcile() {
 	sloglog.Info("reconcile: syncing", "local", localVersion, "leader", leaderVersion)
 
 	// Check for drift
-	report := consistency.CheckDrift(rl.nodeRepo, localVersion, leaderVersion)
+	report := maintenance.CheckDrift(rl.nodeRepo, localVersion, leaderVersion)
 	if report.HasDrift {
 		sloglog.Warn("reconcile: drift detected", "severity", report.Severity)
 	}
