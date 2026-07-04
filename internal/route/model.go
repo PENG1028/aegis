@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"aegis/internal/provider"
 )
 
 // Route represents a routing rule that maps a domain to a backend service.
@@ -13,7 +15,8 @@ type Route struct {
 	PathPrefix         string    `json:"path_prefix"`
 	StripPrefix        bool      `json:"strip_prefix"`
 	ServiceID          string    `json:"service_id"`
-	TLSEnabled          bool      `json:"tls_enabled"`
+	TLSEnabled          bool      `json:"tls_enabled"`           // deprecated — derived from Composition
+	Composition        string    `json:"composition,omitempty"`  // v1.8L-22 → CompKey string, e.g. "https_route"
 	Status             string    `json:"status"` // active | disabled
 	MaintenanceEnabled bool      `json:"maintenance_enabled"`
 	MaintenanceMessage string    `json:"maintenance_message"`
@@ -26,12 +29,25 @@ type Route struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 }
 
+// CompDef returns the composition definition for this route, or nil.
+func (r *Route) CompDef() *provider.CompDef {
+	if r.Composition != "" {
+		return provider.LookupComp(provider.CompKey(r.Composition))
+	}
+	// Backward-compat: derive from TLSEnabled for routes created before v1.8L-22
+	if r.TLSEnabled {
+		return provider.LookupComp(provider.CompHTTPSRoute)
+	}
+	return provider.LookupComp(provider.CompHTTPRoute)
+}
+
 // CreateRouteInput is the input for creating a route.
 type CreateRouteInput struct {
 	Domain      string
 	PathPrefix  string
 	StripPrefix bool
 	ServiceID   string
+	Composition string `json:"composition,omitempty"` // v1.8L-22 — CompKey
 }
 
 // SwitchRouteInput is the input for switching a route's service.

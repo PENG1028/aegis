@@ -52,16 +52,6 @@ func NewAppService(cfg *config.Config, workflow *Workflow, applyRepo *Repository
 	}
 }
 
-// Plan generates a plan without rendering.
-func (s *AppService) Plan(ctx context.Context) (*ApplyPlan, error) {
-	_, err := s.workflow.Plan(ctx, s.cfg.Proxy.Email)
-	if err != nil {
-		return nil, fmt.Errorf("plan: %w", err)
-	}
-	// Return a simplified ApplyPlan for backward compat
-	return &ApplyPlan{ConfigPath: s.cfg.Proxy.CaddyfilePath}, nil
-}
-
 // DryRun generates and renders the configuration without applying.
 func (s *AppService) DryRun(ctx context.Context) (*ApplyPlan, error) {
 	result, err := s.workflow.Preview(ctx, s.cfg.Proxy.Email)

@@ -56,12 +56,6 @@ func NewWorkflow(
 // Read operations
 // ============================================================================
 
-// Plan generates a topology plan without applying.
-func (w *Workflow) Plan(ctx context.Context, email string) (*topology.TopologyPlan, error) {
-	states := w.registry.List()
-	return w.planner.PlanWithProviders(email, states)
-}
-
 // Preview renders configuration for all providers without applying.
 func (w *Workflow) Preview(ctx context.Context, email string) (*PreviewResult, error) {
 	states := w.registry.List()
@@ -145,6 +139,38 @@ func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error
 	}
 	result.Warnings = plan.Warnings
 
+	// 1.5 Mode switch detection: if the plan involves different providers than
+	// what's currently running, deactivate stale providers before applying.
+	currentMode := provider.DetectRuntimeMode(states)
+	targetProviders := planProviderIDs(plan)
+	currentProviders := currentMode.ProviderIDs()
+
+	for _, cp := range currentProviders {
+		if !containsStr(targetProviders, cp) {
+			p := w.registry.Get(cp)
+			if p == nil {
+				continue
+			}
+			// Stop the provider's system service if it's no longer in the plan
+			if sc, ok := p.(provider.ServiceController); ok {
+				if err := sc.Stop(); err != nil {
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("mode_switch: failed to stop %s: %v", cp, err))
+				} else {
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("mode_switch: stopped %s (no longer in target plan)", cp))
+				}
+			}
+			// Clean up stale config files
+			if cc, ok := p.(provider.ConfigCleaner); ok {
+				if err := cc.CleanConfig(); err != nil {
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("mode_switch: failed to clean %s config: %v", cp, err))
+				}
+			}
+		}
+	}
+
 	// 2. Render + Apply each provider
 	for provID, pPlan := range plan.Plans {
 		p := w.registry.Get(provID)
@@ -198,6 +224,7 @@ func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error
 // ============================================================================
 
 // Rollback restores the most recent successful apply backup.
+// v1.8L-20: supports multi-provider rollback via BackupsPaths.
 func (w *Workflow) Rollback(ctx context.Context) error {
 	if !w.mu.TryLock() {
 		return fmt.Errorf("APPLY_LOCKED")
@@ -209,14 +236,42 @@ func (w *Workflow) Rollback(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("find last success: %w", err)
 	}
-	if last == nil || last.BackupPath == "" {
+	if last == nil {
+		return fmt.Errorf("no successful apply to rollback to")
+	}
+
+	// Multi-provider rollback (v1.8L-20)
+	if len(last.BackupPaths) > 0 {
+		for provID, backupPath := range last.BackupPaths {
+			if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+				return fmt.Errorf("backup file not found for %s: %s", provID, backupPath)
+			}
+			data, err := os.ReadFile(backupPath)
+			if err != nil {
+				return fmt.Errorf("read backup for %s: %w", provID, err)
+			}
+			p := w.registry.Get(provID)
+			if p == nil {
+				continue
+			}
+			// Restore config via Apply with the backed-up data
+			cf := provider.ConfigFile{Path: backupPath, Content: data}
+			if err := p.Apply([]provider.ConfigFile{cf}); err != nil {
+				return fmt.Errorf("restore config for %s: %w", provID, err)
+			}
+		}
+		w.logApply(ctx, "all", "rollback", fmt.Sprintf("restored %d providers", len(last.BackupPaths)))
+		return nil
+	}
+
+	// Legacy single-provider rollback
+	if last.BackupPath == "" {
 		return fmt.Errorf("no successful apply to rollback to")
 	}
 	if _, err := os.Stat(last.BackupPath); os.IsNotExist(err) {
 		return fmt.Errorf("backup file not found: %s", last.BackupPath)
 	}
 
-	// Restore backup to Caddyfile path and reload
 	data, err := os.ReadFile(last.BackupPath)
 	if err != nil {
 		return fmt.Errorf("read backup: %w", err)
@@ -280,4 +335,31 @@ type ApplyResult struct {
 type PreviewResult struct {
 	Plan     *topology.TopologyPlan `json:"plan"`
 	Rendered map[string]string      `json:"rendered"`
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+// planProviderIDs extracts unique provider IDs from a topology plan.
+func planProviderIDs(plan *topology.TopologyPlan) []string {
+	seen := make(map[string]bool)
+	for provID := range plan.Plans {
+		seen[provID] = true
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// containsStr returns true if the slice contains the string.
+func containsStr(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }
