@@ -1225,10 +1225,85 @@ export const providerApi = {
 
   uninstall: (provider: string): Promise<any> =>
     del(`/api/admin/v1/providers/${provider}`),
-
-  portPolicy: (): Promise<any> =>
-    get('/api/system/port-policy'),
 };
+
+// ─── Runtime Mode API (v1.8L-20) ───
+export const runtimeModeApi = {
+  get: (): Promise<{
+    current: RuntimeModeDef;
+    available_modes: RuntimeModeDef[];
+  }> =>
+    get('/api/system/runtime-mode'),
+};
+
+// ─── Composition Registry API (v1.8L-22) ───
+export const compositionApi = {
+  list: (): Promise<{ compositions: CompDef[] }> =>
+    get('/api/system/compositions'),
+};
+
+// ─── Runtime Mode Types (v1.8L-21: atom-first model) ───
+
+/** One indivisible atom in the binding matrix — a single capability a Provider can have. */
+export interface RuntimeAtom {
+  key: string;   // "tcp", "udp", "tls", "sni", "quic", "http", "grpc", "ws", "connect"
+  layer: string; // "L4", "L5", "L7"
+  label: string; // "TCP Entry", "UDP Entry", ...
+}
+
+/** One concrete port binding or protocol route for a specific atom. */
+export interface AtomSlot {
+  port: number;
+  protocol?: string;
+  listening_at?: string;
+  action: string;    // "listen", "decrypt", "preread", "terminate", "route", "upgrade", "tunnel"
+  target: string;
+  required: boolean;
+  note?: string;
+  purpose?: string;
+}
+
+/** One row in the binding matrix — a provider's atom bindings. */
+export interface ProviderAtoms {
+  provider_id: string;
+  bindings: Record<string, AtomSlot[] | undefined>;
+}
+
+/** A named chain of atoms forming a complete traffic pipeline. */
+export interface Composition {
+  name: string;   // "HTTPS Route"
+  atoms: string[]; // ["tcp", "tls", "http"]
+  chain: string;  // "L4 → L5 → L7"
+}
+
+/** Canonical composition definition from the registry. */
+export interface CompDef {
+  key: string;         // "https_route"
+  name: string;        // "HTTPS Route"
+  description: string; // one-line explanation
+  atoms: string[];     // ["tcp", "tls", "http"]
+  chain: string;       // "L4 → L5 → L7"
+  transport: string;   // "tcp" | "udp"
+  port: number;        // 80 | 443
+  tls_mode: string;    // "none" | "terminate" | "passthrough"
+  app_protocol: string;// "http" | "raw"
+}
+
+export interface RuntimeModeDef {
+  id: string;
+  label: string;
+  description: string;
+  implemented: boolean;
+  atoms: RuntimeAtom[];
+  compositions: Composition[];
+  providers: ProviderAtoms[];
+}
+
+// Legacy aliases for backward compatibility (removed after all consumers migrate)
+/** @deprecated Use ProviderAtoms instead */
+export type RuntimeModeRole = ProviderAtoms;
+/** @deprecated Use AtomSlot instead */
+export type RuntimeModeBinding = AtomSlot;
 
 // ─── Exposure API (TCP/UDP port exposure) ───
 export const exposureApi = {

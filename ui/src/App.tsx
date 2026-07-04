@@ -21,12 +21,6 @@ import ServiceDetail from '@/pages/exposure/ServiceDetail';
 import QuickConnect from '@/pages/exposure/QuickConnect';
 
 // ── Fabric ──
-import Gateways from '@/pages/fabric/Gateways';
-import GatewayDetail from '@/pages/fabric/GatewayDetail';
-import Listeners from '@/pages/fabric/Listeners';
-import GatewayLinks from '@/pages/fabric/GatewayLinks';
-import Topology from '@/pages/fabric/Topology';
-import RoutingTable from '@/pages/fabric/RoutingTable';
 import Providers from '@/pages/fabric/Providers';
 
 // ── Runtime ──
@@ -82,7 +76,7 @@ function LegacyRedirect() {
     return <Navigate to={location.pathname.replace('/nodes/', '/runtime/node/')} replace />;
   }
   if (location.pathname.startsWith('/gateways/')) {
-    return <Navigate to={location.pathname.replace('/gateways/', '/fabric/gateway/')} replace />;
+    return <Navigate to="/fabric" replace />;
   }
   if (location.pathname.startsWith('/routes/')) {
     return <Navigate to={location.pathname.replace('/routes/', '/exposure/entry/')} replace />;
@@ -91,7 +85,7 @@ function LegacyRedirect() {
     return <Navigate to={location.pathname.replace('/services/', '/exposure/service/')} replace />;
   }
   if (location.pathname.startsWith('/gateway-links')) {
-    return <Navigate to="/fabric/links" replace />;
+    return <Navigate to="/fabric" replace />;
   }
   if (location.pathname.startsWith('/topology/path')) {
     return <Navigate to="/fabric/topology" replace />;
@@ -131,14 +125,7 @@ export default function App() {
 
                 {/* ── Workspace 3: Fabric / 网关网络 ── */}
                 <Route path="/fabric" element={<OutletLayout />}>
-                  <Route index element={<Gateways />} />
-                  <Route path="gateway/:gatewayId" element={<GatewayDetail />} />
-                  <Route path="listeners" element={<Listeners />} />
-                  <Route path="links" element={<GatewayLinks />} />
-                  <Route path="topology" element={<Topology />} />
-                  <Route path="routing" element={<RoutingTable />} />
-                  <Route path="providers" element={<Providers />} />
-                  <Route path="providers/:providerId" element={<Providers />} />
+                  <Route index element={<Providers />} />
                 </Route>
 
                 {/* ── Workspace 4: Runtime / 节点运行时 ── */}
