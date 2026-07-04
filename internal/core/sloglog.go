@@ -1,6 +1,6 @@
 // Package sloglog provides a structured logger based on log/slog.
 // It replaces ad-hoc log.Printf/fmt.Printf usage with leveled, structured logging.
-package sloglog
+package core
 
 import (
 	"log/slog"

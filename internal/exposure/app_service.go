@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"aegis/internal/credential"
-	aerrors "aegis/internal/errors"
+	aerrors "aegis/internal/core"
 	"aegis/internal/id"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
