@@ -14,6 +14,20 @@
 package provider
 
 // ============================================================================
+// PortBinding — display-only port allocation for a provider
+// ============================================================================
+
+// PortBinding represents a port allocation on a node. This is display-only —
+// the authoritative source of port assignments is RuntimeMode.
+type PortBinding struct {
+	Port     int    `json:"port"`
+	Owner    string `json:"owner"`    // provider ID
+	Protocol string `json:"protocol"` // "tcp" | "udp"
+	Purpose  string `json:"purpose"`  // "http" | "https" | "tls_sni_mux" | "internal_https" | "tcp_exposure" | "udp_exposure"
+	Status   string `json:"status"`   // "active" | "planned" | "conflict"
+}
+
+// ============================================================================
 // ProviderState — the single shared runtime snapshot across all 3 dimensions
 // ============================================================================
 
