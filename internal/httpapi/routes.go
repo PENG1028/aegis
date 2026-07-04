@@ -188,13 +188,9 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/capabilities", h.GetNodeCapabilities)
 	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/refresh-capabilities", h.RefreshNodeCapabilities)
 
-	// v1.7 Gateway Abstraction
-	mux.HandleFunc("POST /api/admin/v1/gateway/domains", h.CreateGatewayDomain)
+	// v1.7 Gateway Abstraction (read-only consolidated views)
 	mux.HandleFunc("GET /api/admin/v1/gateway/domains", h.ListGatewayDomains)
-	mux.HandleFunc("POST /api/admin/v1/gateway/routes", h.AttachGatewayRoute)
-	mux.HandleFunc("DELETE /api/admin/v1/gateway/routes/{id}", h.DetachGatewayRoute)
 	mux.HandleFunc("GET /api/admin/v1/gateway/listeners", h.ListGatewayListeners)
-	mux.HandleFunc("PUT /api/admin/v1/gateway/domains/{id}/tls", h.UpdateTLSPolicy)
 
 	// v1.7 Deployment Versioning
 	mux.HandleFunc("POST /api/admin/v1/deployments", h.CreateDeployment)
