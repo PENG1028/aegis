@@ -11,15 +11,16 @@ import { LEGACY_REDIRECTS } from '@/lib/constants';
 // ── Command Center ──
 import CommandCenter from '@/pages/command-center/CommandCenter';
 
+// ── Shared layout for workspaces without custom chrome ──
+import OutletLayout from '@/components/layout/OutletLayout';
+
 // ── Exposure ──
-import ExposureLayout from '@/pages/exposure/ExposureLayout';
 import EntryPoints from '@/pages/exposure/EntryPoints';
 import EntryPointDetail from '@/pages/exposure/EntryPointDetail';
 import ServiceDetail from '@/pages/exposure/ServiceDetail';
 import QuickConnect from '@/pages/exposure/QuickConnect';
 
 // ── Fabric ──
-import FabricLayout from '@/pages/fabric/FabricLayout';
 import Gateways from '@/pages/fabric/Gateways';
 import GatewayDetail from '@/pages/fabric/GatewayDetail';
 import Listeners from '@/pages/fabric/Listeners';
@@ -29,7 +30,6 @@ import RoutingTable from '@/pages/fabric/RoutingTable';
 import Providers from '@/pages/fabric/Providers';
 
 // ── Runtime ──
-import RuntimeLayout from '@/pages/runtime/RuntimeLayout';
 import Nodes from '@/pages/runtime/Nodes';
 import NodeDetail from '@/pages/runtime/NodeDetail';
 import DeployNode from '@/pages/runtime/DeployNode';
@@ -38,7 +38,6 @@ import SyncStatus from '@/pages/runtime/SyncStatus';
 import Binaries from '@/pages/runtime/Binaries';
 
 // ── Release ──
-import ReleaseLayout from '@/pages/release/ReleaseLayout';
 import Changes from '@/pages/release/Changes';
 import DiffView from '@/pages/release/DiffView';
 import DryRun from '@/pages/release/DryRun';
@@ -47,7 +46,6 @@ import History from '@/pages/release/History';
 import Rollback from '@/pages/release/Rollback';
 
 // ── Observe ──
-import ObserveLayout from '@/pages/observe/ObserveLayout';
 import Trace from '@/pages/observe/Trace';
 import Health from '@/pages/observe/Health';
 import Safety from '@/pages/observe/Safety';
@@ -56,7 +54,6 @@ import Doctor from '@/pages/observe/Doctor';
 import Acceptance from '@/pages/observe/Acceptance';
 
 // ── Access ──
-import AccessLayout from '@/pages/access/AccessLayout';
 import Scopes from '@/pages/access/Scopes';
 import ApiKeys from '@/pages/access/ApiKeys';
 import Credentials from '@/pages/access/Credentials';
@@ -64,7 +61,6 @@ import JoinTokens from '@/pages/access/JoinTokens';
 import AdminAccount from '@/pages/access/AdminAccount';
 
 // ── Settings ──
-import SettingsLayout from '@/pages/settings/SettingsLayout';
 import PanelSettings from '@/pages/settings/Panel';
 import DnsSettings from '@/pages/settings/DnsSettings';
 import TlsSettings from '@/pages/settings/TlsSettings';
@@ -125,7 +121,7 @@ export default function App() {
                 <Route path="/" element={<CommandCenter />} />
 
                 {/* ── Workspace 2: Exposure / 服务暴露 ── */}
-                <Route path="/exposure" element={<ExposureLayout />}>
+                <Route path="/exposure" element={<OutletLayout />}>
                   <Route index element={<EntryPoints />} />
                   <Route path="entry/:entryId" element={<EntryPointDetail />} />
                   <Route path="service/:serviceId" element={<ServiceDetail />} />
@@ -134,7 +130,7 @@ export default function App() {
                 </Route>
 
                 {/* ── Workspace 3: Fabric / 网关网络 ── */}
-                <Route path="/fabric" element={<FabricLayout />}>
+                <Route path="/fabric" element={<OutletLayout />}>
                   <Route index element={<Gateways />} />
                   <Route path="gateway/:gatewayId" element={<GatewayDetail />} />
                   <Route path="listeners" element={<Listeners />} />
@@ -146,7 +142,7 @@ export default function App() {
                 </Route>
 
                 {/* ── Workspace 4: Runtime / 节点运行时 ── */}
-                <Route path="/runtime" element={<RuntimeLayout />}>
+                <Route path="/runtime" element={<OutletLayout />}>
                   <Route index element={<Nodes />} />
                   <Route path="node/:nodeId" element={<NodeDetail />} />
                   <Route path="deploy" element={<DeployNode />} />
@@ -156,7 +152,7 @@ export default function App() {
                 </Route>
 
                 {/* ── Workspace 5: Release / 配置发布 ── */}
-                <Route path="/release" element={<ReleaseLayout />}>
+                <Route path="/release" element={<OutletLayout />}>
                   <Route index element={<Changes />} />
                   <Route path="diff" element={<DiffView />} />
                   <Route path="dry-run" element={<DryRun />} />
@@ -166,7 +162,7 @@ export default function App() {
                 </Route>
 
                 {/* ── Workspace 6: Observe / 观测诊断 ── */}
-                <Route path="/observe" element={<ObserveLayout />}>
+                <Route path="/observe" element={<OutletLayout />}>
                   <Route index element={<Trace />} />
                   <Route path="health" element={<Health />} />
                   <Route path="safety" element={<Safety />} />
@@ -177,7 +173,7 @@ export default function App() {
                 </Route>
 
                 {/* ── Workspace 7: Access / 访问控制 ── */}
-                <Route path="/access" element={<AccessLayout />}>
+                <Route path="/access" element={<OutletLayout />}>
                   <Route index element={<Scopes />} />
                   <Route path="keys" element={<ApiKeys />} />
                   <Route path="credentials" element={<Credentials />} />
@@ -186,7 +182,7 @@ export default function App() {
                 </Route>
 
                 {/* ── Workspace 8: Settings / 系统设置 ── */}
-                <Route path="/settings" element={<SettingsLayout />}>
+                <Route path="/settings" element={<OutletLayout />}>
                   <Route index element={<PanelSettings />} />
                   <Route path="dns" element={<DnsSettings />} />
                   <Route path="tls" element={<TlsSettings />} />
