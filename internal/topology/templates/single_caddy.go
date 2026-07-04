@@ -26,7 +26,7 @@ func (t *SingleCaddy) RequiredCapabilities() []provider.Capability {
 	}
 }
 
-func (t *SingleCaddy) BuildPlan(intents []topology.RouteIntent, available []provider.ProviderState) (*topology.TopologyPlan, error) {
+func (t *SingleCaddy) BuildPlan(intents []topology.RouteIntent, available []provider.ProviderState, mode provider.RuntimeMode) (*topology.TopologyPlan, error) {
 	caddy := findProvider(available, provider.CapListenTCP, provider.CapTLSTerminate, provider.CapRouteHost)
 	if caddy == nil {
 		return nil, fmt.Errorf("single_caddy: no provider with HTTP termination capability")
@@ -43,11 +43,8 @@ func (t *SingleCaddy) BuildPlan(intents []topology.RouteIntent, available []prov
 		routes = append(routes, rs)
 	}
 
-	// Caddy listens on 80 and 443
-	listeners := []provider.ListenerSpec{
-		{Port: 80, Protocol: "tcp", Purpose: "http"},
-		{Port: 443, Protocol: "tcp", Purpose: "https"},
-	}
+	// Caddy listeners come from RuntimeMode — no more hardcoded ports
+	listeners := mode.ListenerSpecsFor("caddy")
 
 	plan := topology.BuildPlan(listeners, routes, nil)
 	return &topology.TopologyPlan{

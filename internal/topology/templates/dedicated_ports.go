@@ -26,7 +26,7 @@ func (t *DedicatedPorts) RequiredCapabilities() []provider.Capability {
 	}
 }
 
-func (t *DedicatedPorts) BuildPlan(intents []topology.RouteIntent, available []provider.ProviderState) (*topology.TopologyPlan, error) {
+func (t *DedicatedPorts) BuildPlan(intents []topology.RouteIntent, available []provider.ProviderState, mode provider.RuntimeMode) (*topology.TopologyPlan, error) {
 	// Use Caddy for HTTP if available, otherwise use HAProxy for raw TCP
 	httpProvider := findProvider(available, provider.CapTLSTerminate, provider.CapRouteHost)
 	tcpProvider := findProvider(available, provider.CapListenTCP, provider.CapRawTCP)
@@ -60,12 +60,9 @@ func (t *DedicatedPorts) BuildPlan(intents []topology.RouteIntent, available []p
 		}
 	}
 
-	// HTTP routes share :80
+	// HTTP routes — listeners come from RuntimeMode
 	if len(httpRoutes) > 0 && httpProvider != nil {
-		httpListeners = append(httpListeners,
-			provider.ListenerSpec{Port: 80, Protocol: "tcp", Purpose: "http"},
-			provider.ListenerSpec{Port: 443, Protocol: "tcp", Purpose: "https"},
-		)
+		httpListeners = append(httpListeners, mode.ListenerSpecsFor(httpProvider.ID)...)
 		plans[httpProvider.ID] = topology.BuildPlan(httpListeners, httpRoutes, nil)
 		providers = append(providers, httpProvider.ID)
 	}
