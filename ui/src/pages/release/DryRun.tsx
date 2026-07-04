@@ -2,8 +2,7 @@
 import { useState } from 'react';
 import { Card, PageHeader, Btn, StatusBadge, useToast } from '@/components/shared';
 import { adminApi } from '@/lib/api-bridge';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 
 export default function DryRun() {
   const toast = useToast();
@@ -13,19 +12,7 @@ export default function DryRun() {
   const handleDryRun = async () => {
     setLoading(true);
     try {
-      if (API_CONFIG.useMock) {
-        await new Promise(r => setTimeout(r, 800));
-        const pending = getScenario().entryPoints.filter(ep => ep.release_state === 'pending' || ep.release_state === 'drifted');
-        setResult({
-          status: 'ok',
-          routes_affected: pending.length || 1,
-          warnings: pending.length > 0 ? 0 : 0,
-          config_preview: `# Preview — Caddyfile\napi.proofnote.dev {\n  reverse_proxy node-a:3000 node-b:3001\n}\nauth.proofnote.dev {\n  reverse_proxy node-a:4000 node-b:4001\n}\n${pending.length > 0 ? 'docs.proofnote.dev {\n  reverse_proxy node-c:8080\n}\n' : ''}`,
-          message: pending.length > 0 ? `${pending.length} 条新路由将生效` : '配置无变化',
-        });
-      } else {
-        setResult(await adminApi.dryRun());
-      }
+      setResult(await adminApi.dryRun());
     } catch (e) {
       toast((e as Error).message, 'error');
     } finally {

@@ -3,8 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { fetchGateways, fetchRoutes } from '@/lib/api-bridge';
 import { PageHeader, HealthDot, StatusBadge } from '@/components/shared';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 import { cn } from '@/lib/utils';
 
 export default function Gateways() {
@@ -13,7 +12,7 @@ export default function Gateways() {
   const { data: routesData } = useQuery({ queryKey: ['routes'], queryFn: fetchRoutes });
   const gws = Array.isArray(data) ? data : [];
   const routes = Array.isArray(routesData) ? routesData : (routesData as any)?.routes || [];
-  const scenario = API_CONFIG.useMock ? getScenario() : null;
+  
 
   return (
     <div className="p-6 space-y-6">
@@ -22,9 +21,7 @@ export default function Gateways() {
       <div className="space-y-2">
         {gws.map((g: any) => {
           // Find routes using this gateway
-          const gwRoutes = API_CONFIG.useMock
-            ? scenario!.routes.filter(r => r.gateway_policy?.primary_gateway_id === g.gateway_id)
-            : routes.filter((r: any) => r.gateway_policy?.primary_gateway_id === g.gateway_id);
+          const gwRoutes = routes.filter((r: any) => r.gateway_policy?.primary_gateway_id === g.gateway_id);
 
           const hasError = g.status === 'error';
 

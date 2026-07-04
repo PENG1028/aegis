@@ -14,9 +14,7 @@ import Input from '@/components/ui/Input';
 import { PathRibbon } from '@/components/workspace/PathRibbon';
 import { useChain } from '@/hooks/useChain';
 import { traceApi, providerApi } from '@/lib/api-bridge';
-import { resolveChain } from '@/mocks/generators/chain-factory';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 import { cn } from '@/lib/utils';
 
 // ─── Port policy indicator ───
@@ -78,125 +76,7 @@ function PipelineSummary({ mode, domain }: { mode: string | null; domain: string
   );
 }
 
-// ─── Enhanced mock trace with SNI + Unix socket recognition ───
-
-function mockTrace(domain: string) {
-  const route = getScenario().routes.find(r => r.domain === domain);
-  if (!route) return { error: `未找到域名 ${domain} 对应的路由` };
-
-  const chain = resolveChain('route', route.route_id);
-  const anomalies = getScenario().anomalies.filter(a =>
-    a.affectedObjects.some(o => o.id === route.route_id || o.id === route.service_id)
-  );
-
-  // Determine port policy mode (mock: check if haproxy scenario is active)
-  const scenario = getScenario();
-  const isEdgeMux = scenario.anomalies?.some(a => a.id === 'gateway-link-failure') || false;
-
-  const steps = [
-    {
-      name: 'DNS 解析',
-      phase: 'match',
-      status: 'ok',
-      description: `${domain} → ${chain.nodes[0]?.public_ip || '<SERVER_A_IP>'}`,
-      detail: 'A 记录解析到 Server A 公网 IP',
-    },
-    ...(isEdgeMux ? [{
-      name: 'SNI 直通 (HAProxy :443)',
-      phase: 'gateway',
-      status: 'ok' as const,
-      description: `TLS ClientHello SNI: ${domain}`,
-      detail: 'HAProxy 读取 SNI 字段，不解密 TLS，按 SNI 分流到 Caddy :8443',
-      sni: domain,
-      passthrough: true,
-    }] : []),
-    {
-      name: isEdgeMux ? 'TLS 终止 (Caddy :8443)' : 'TLS 终止 (Caddy :443)',
-      phase: 'gateway',
-      status: 'ok' as const,
-      description: route.tls_mode !== 'http_only'
-        ? `Caddy 本地终止 TLS，证书自动管理`
-        : 'HTTP 明文（无 TLS）',
-      detail: route.tls_mode === 'terminate_local'
-        ? 'Let\'s Encrypt 自动签发 + 续期'
-        : route.tls_mode === 'passthrough_deferred'
-          ? 'TLS 直通到上游，Caddy 不终止'
-          : 'HTTP 模式，80 端口直接转发',
-      tls_mode: route.tls_mode,
-    },
-    {
-      name: '路由匹配',
-      phase: 'match',
-      status: 'ok' as const,
-      description: `匹配路由 ${route.route_id}`,
-      detail: `Host: ${domain} → ${route.service_name || 'upstream'}`,
-    },
-    {
-      name: '网关转发',
-      phase: 'forwarding',
-      status: chain.gateway?.status === 'active' ? 'ok' as const : 'failed' as const,
-      description: chain.gateway
-        ? `${chain.gateway.name} (${chain.gateway.provider}) → ${chain.gateway.bind_addr}:${chain.gateway.port}`
-        : '无网关配置',
-      detail: chain.gateway?.status === 'active' ? '反向代理转发到上游服务' : '网关未激活',
-      error: chain.gateway?.status !== 'active' ? chain.gateway?.last_error : undefined,
-    },
-    {
-      name: '服务解析',
-      phase: 'target',
-      status: chain.service?.health_status === 'healthy' ? 'ok' as const
-        : chain.service?.health_status === 'unhealthy' ? 'failed' as const
-        : 'ok' as const,
-      description: chain.service?.name || '—',
-      detail: chain.service?.health_status === 'healthy'
-        ? `健康检查通过 · 延迟 ${chain.service?.latency_ms || '—'}ms`
-        : '服务健康检查失败',
-      error: chain.service?.health_status === 'unhealthy' ? '服务健康检查失败' : undefined,
-    },
-    ...chain.endpoints.map(ep => {
-      // Detect Unix socket endpoint
-      const isUnixSocket = ep.protocol === 'unix'
-        || ep.target_local_host?.startsWith('unix://')
-        || ep.target_local_host?.startsWith('/');
-      const isSNI = ep.protocol === 'tcp' && ep.address_type === 'remote';
-
-      return {
-        name: `端点: ${ep.node_name || ep.node_id}`,
-        phase: 'target',
-        status: ep.health_status === 'healthy' ? 'ok' as const
-          : ep.health_status === 'unhealthy' ? 'failed' as const
-          : 'ok' as const,
-        description: isUnixSocket
-          ? `unix://${ep.target_local_host}`
-          : `${ep.target_local_host}:${ep.target_local_port}`,
-        detail: isUnixSocket
-          ? `Unix Socket 本地通信 · ${ep.address_type} · TCP 健康检查自动跳过`
-          : `${ep.protocol} · ${ep.address_type} · ${ep.relay_eligible ? '支持中继' : '直达'}`,
-        error: ep.health_status !== 'healthy' ? '端点不可达' : undefined,
-        isUnixSocket,
-      };
-    }),
-  ];
-
-  const failedStep = steps.find(s => s.status === 'failed');
-  return {
-    input: domain,
-    input_type: 'domain',
-    trace_status: failedStep ? 'degraded' : 'ok',
-    route_id: route.route_id,
-    port_policy_mode: isEdgeMux ? 'edge_mux' : 'legacy',
-    steps,
-    summary: failedStep ? `失败于: ${failedStep.name}` : '全链路正常',
-    anomalies: anomalies.map(a => a.title),
-    hasSNIPassthrough: isEdgeMux,
-    unixSocketEndpoints: chain.endpoints.filter(ep =>
-      ep.protocol === 'unix' || ep.target_local_host?.startsWith('unix://') || ep.target_local_host?.startsWith('/')
-    ).length,
-  };
-}
-
 // ─── Step renderer ───
-
 function getStepColor(status: string) {
   switch (status) {
     case 'ok': return { dot: 'bg-[#4cd964] border-[#4cd964]', bg: 'bg-[#4cd964]/3 border-[#4cd964]/10', line: 'bg-[#4cd964]/30' };
@@ -226,18 +106,13 @@ export default function Trace() {
     refetchInterval: 120_000,
   });
 
-  const portPolicyMode = API_CONFIG.useMock
-    ? result?.port_policy_mode || 'legacy'
-    : portPolicy?.mode || null;
+  const portPolicyMode = portPolicy?.mode || null;
 
   const handleTrace = async () => {
     setLoading(true);
     setResult(null);
     try {
-      if (API_CONFIG.useMock) {
-        await new Promise(r => setTimeout(r, 400));
-        setResult(mockTrace(domain || 'api.proofnote.dev'));
-      } else if (inputType === 'domain') {
+      if (inputType === 'domain') {
         setResult(await traceApi.byDomain(domain));
       } else if (inputType === 'route') {
         setResult(await traceApi.byRoute(routeId));
@@ -297,20 +172,16 @@ export default function Trace() {
           )}
           <Btn primary onClick={handleTrace} disabled={loading}>{loading ? '追踪中...' : '开始追踪'}</Btn>
         </div>
-        {API_CONFIG.useMock && (
-          <div className="flex gap-1.5 mt-2">
-            <span className="text-[10px] text-a-muted">快捷:</span>
-            {['api.proofnote.dev', 'auth.proofnote.dev', 'docs.proofnote.dev'].map(d => (
-              <button key={d} onClick={() => { setDomain(d); setInputType('domain'); }}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-a-bg border border-a-border text-a-muted hover:text-a-fg cursor-pointer">{d}</button>
-            ))}
-          </div>
-        )}
-        {!API_CONFIG.useMock && (
-          <div className="text-[10px] text-a-muted mt-2">
-            输入域名、SNI 主机名或 Route ID 进行全链路追踪 · 自动识别端口策略和传输协议
-          </div>
-        )}
+        <div className="flex gap-1.5 mt-2">
+          <span className="text-[10px] text-a-muted">快捷:</span>
+          {['api.proofnote.dev', 'auth.proofnote.dev', 'docs.proofnote.dev'].map(d => (
+            <button key={d} onClick={() => { setDomain(d); setInputType('domain'); }}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-a-bg border border-a-border text-a-muted hover:text-a-fg cursor-pointer">{d}</button>
+          ))}
+        </div>
+        <div className="text-[10px] text-a-muted mt-2">
+          输入域名、SNI 主机名或 Route ID 进行全链路追踪 · 自动识别端口策略和传输协议
+        </div>
       </Card>
 
       {/* Error */}

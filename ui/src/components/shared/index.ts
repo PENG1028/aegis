@@ -10,7 +10,6 @@ export { StatCard } from './StatCard';
 export { PageHeader } from './PageHeader';
 export { Card } from './Card';
 export { MetaRow } from './MetaRow';
-export { MockBadge } from './MockBadge';
 export { Alert } from './Alert';
 
 // New v2-style components

@@ -6,14 +6,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Card, PageHeader, StatusBadge, Btn } from '@/components/shared';
 import { adminApi } from '@/lib/api-bridge';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
-import { resolveChain } from '@/mocks/generators/chain-factory';
+
+
 import { cn } from '@/lib/utils';
 
 export default function Changes() {
   const nav = useNavigate();
-  const scenario = API_CONFIG.useMock ? getScenario() : null;
+  
 
   // Pending diff — tells us if there are un-applied changes
   const { data: diffData } = useQuery({
@@ -31,10 +30,7 @@ export default function Changes() {
 
   // ── Pending changes ──
   const pendingFromDiff = (() => {
-    if (API_CONFIG.useMock) {
-      return (scenario?.entryPoints || []).filter(ep => ep.release_state === 'pending' || ep.release_state === 'drifted');
-    }
-    // Real: configDiff returns a diff summary; non-empty = pending changes exist
+    // configDiff returns a diff summary; non-empty = pending changes exist
     if (diffData && typeof diffData === 'object') {
       const d = diffData as any;
       const routes = d.route_diffs || d.routes || d.changes || [];
@@ -58,12 +54,6 @@ export default function Changes() {
 
   // ── Recent history ──
   const recentHistory = (() => {
-    if (API_CONFIG.useMock) {
-      return [
-        { version: 'v43', domain: 'api.proofnote.dev', action: '修改端点健康检查间隔', time: '2026-07-02T10:30:00Z', status: 'success' },
-        { version: 'v42', domain: 'auth.proofnote.dev', action: '添加端点 endpoint-auth-b', time: '2026-07-01T08:15:00Z', status: 'success' },
-      ];
-    }
     if (Array.isArray(historyData)) {
       return historyData.slice(0, 10).map((h: any) => ({
         version: `v${h.revision || h.version || '?'}`,
@@ -97,7 +87,7 @@ export default function Changes() {
         <Card title={`待发布 (${pendingFromDiff.length})`} subtitle="这些变更已创建但尚未推送到节点">
           <div className="space-y-2">
             {pendingFromDiff.map((ep: any) => {
-              const chain = API_CONFIG.useMock ? resolveChain('route', ep.route_id) : null;
+              const chain = null;
               return (
                 <div key={ep.route_id}
                   className={cn(
@@ -133,7 +123,7 @@ export default function Changes() {
       )}
 
       {/* Recent history */}
-      <Card title={API_CONFIG.useMock ? '最近发布' : '发布历史'}>
+      <Card title={'发布历史'}>
         {recentHistory.length === 0 ? (
           <div className="text-center py-8 text-xs text-a-muted">暂无发布记录</div>
         ) : (

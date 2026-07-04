@@ -7,8 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { fetchRoutes } from '@/lib/api-bridge';
 import { PageHeader, HealthDot, StatusBadge, Btn } from '@/components/shared';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 import { cn } from '@/lib/utils';
 import type { EntryPointSummary } from '@/types/workspace';
 import ImportDrawer from './ImportConfig';
@@ -95,9 +94,7 @@ export default function EntryPoints() {
     queryFn: fetchRoutes,
   });
 
-  const entryPoints: EntryPointSummary[] = API_CONFIG.useMock
-    ? getScenario().entryPoints
-    : (Array.isArray(routesData) ? routesData : (routesData as any)?.routes || []).map((r: any) => ({
+  const entryPoints: EntryPointSummary[] = (Array.isArray(routesData) ? routesData : (routesData as any)?.routes || []).map((r: any) => ({
         route_id: r.route_id, domain: r.domain,
         protocol: 'http', tls_mode: r.tls_mode,
         listener: null, gateway_id: null, gateway_name: null,

@@ -3,7 +3,6 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { ImpactScope } from '@/types/impact';
-import { API_CONFIG } from '@/lib/api-config';
 
 async function computeImpact(
   operation: string,
@@ -11,29 +10,6 @@ async function computeImpact(
   targetId: string,
   targetName: string,
 ): Promise<ImpactScope> {
-  if (API_CONFIG.useMock) {
-    await new Promise(r => setTimeout(r, 300));
-    // In mock mode, return a simulated impact based on operation type
-    const mockAffected = {
-      type: targetType,
-      id: targetId,
-      name: targetName,
-      status: 'healthy',
-      impact: 'direct' as const,
-      description: `此操作将直接影响 ${targetName}`,
-    };
-
-    return {
-      target: { type: targetType, id: targetId, name: targetName },
-      operation,
-      affectedEntries: targetType === 'route' || targetType === 'entry' ? [mockAffected] : [],
-      affectedServices: targetType === 'service' ? [mockAffected] : [],
-      affectedGateways: targetType === 'gateway' ? [mockAffected] : [],
-      affectedNodes: targetType === 'node' ? [mockAffected] : [],
-      totalAffected: 1,
-      hasDownstreamFailures: false,
-    };
-  }
 
   // Real mode: would call backend impact analysis API
   return {

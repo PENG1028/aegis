@@ -1,3 +1,4 @@
+import { API_CONFIG } from '@/lib/api-config';
 // ─── Import Config Drawer ───
 // Scan Caddyfile → preview routes → select → import.
 // Not a standalone page — opened from EntryPoints action bar.
@@ -6,7 +7,6 @@ import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Drawer, Btn, StatusBadge, HealthDot, useToast } from '@/components/shared';
 import { adminApi } from '@/lib/api-bridge';
-import { API_CONFIG } from '@/lib/api-config';
 import { cn } from '@/lib/utils';
 
 interface ImportedRoute {
@@ -213,7 +213,7 @@ export default function ImportDrawer({ open, onClose }: ImportDrawerProps) {
         )}
 
         {/* Manual note */}
-        {step === 'idle' && !API_CONFIG.useMock && (
+        {step === 'idle' && (
           <div className="text-[10px] text-a-muted border-t border-a-border/30 pt-3">
             仅支持运行 Caddy provider 的节点。如需从其他源导入，请使用"快速接入"手动录入路由。
           </div>

@@ -7,8 +7,7 @@ import { useChain } from '@/hooks/useChain';
 import { PathRibbon } from '@/components/workspace/PathRibbon';
 import { RelationshipMap } from '@/components/workspace/RelationshipMap';
 import { PageHeader, Card, StatusBadge, MetaRow, LoadingState, ErrorBanner, Btn } from '@/components/shared';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 
 export default function NodeDetail() {
   const { nodeId } = useParams<{ nodeId: string }>();
@@ -24,9 +23,7 @@ export default function NodeDetail() {
 
   const n = (node as any)?.node || node;
   // Get sync status from scenario in mock mode
-  const syncStatus = API_CONFIG.useMock
-    ? getScenario().syncStatuses.find(s => s.node_id === nodeId)
-    : n?.sync;
+  const syncStatus = n?.sync;
 
   const drifted = n?.desired_revision !== n?.applied_revision;
 
