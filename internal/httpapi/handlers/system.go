@@ -177,32 +177,36 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// PortPolicy returns the current port allocation strategy for this node.
-// GET /api/system/port-policy
+// RuntimeMode returns the current deployment mode and all available modes.
+// GET /api/system/runtime-mode
 //
-// Returns the active port policy mode (legacy or edge_mux) and the list of
-// port bindings that result from that mode. This is a public endpoint — no
-// authentication required (the data is non-sensitive node metadata).
+// This replaces /api/system/port-policy. Instead of returning a flat list of
+// port bindings, it returns the full RuntimeMode struct — the single source
+// of truth consumed by both the Planner (backend) and the binding matrix (frontend).
 //
-// Modes:
+// Response:
 //
-//	"legacy"   — Caddy owns :80 + :443 (no HAProxy detected)
-//	"edge_mux" — HAProxy owns :443, Caddy owns :80 + :8443
+//	{
+//	  "current": { RuntimeMode },
+//	  "available_modes": [ RuntimeMode, ... ]
+//	}
 //
-// The frontend uses this to show which gateway types are available and
-// whether TCP/UDP forwarding requires installing HAProxy first.
-func (h *Handlers) PortPolicy(w http.ResponseWriter, r *http.Request) {
-	mode := provider.CurrentPortPolicyMode()
-	var policy provider.PortPolicy
-	if mode == "edge_mux" {
-		policy = provider.DefaultEdgeMuxPortPolicy()
-	} else {
-		policy = provider.DefaultLegacyPortPolicy()
-	}
+// The frontend uses this to render the binding matrix without hand-coded data.
+func (h *Handlers) RuntimeMode(w http.ResponseWriter, r *http.Request) {
+	states := h.ProvReg.List()
+	current := provider.DetectRuntimeMode(states)
+	allModes := provider.AllRuntimeModes()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"mode":     policy.Mode,
-		"bindings": policy.Bindings,
+		"current":         current,
+		"available_modes": allModes,
 	})
 }
 
+// Compositions returns the canonical composition registry.
+// GET /api/system/compositions
+func (h *Handlers) Compositions(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"compositions": provider.AllCompositions(),
+	})
+}
