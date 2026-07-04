@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"aegis/internal/cluster"
-	"aegis/internal/consistency"
+	"aegis/internal/maintenance"
 )
 
 // ClusterHealth aggregates health across all nodes for 5-10 node diagnosability.
@@ -100,7 +100,7 @@ func (h *Handlers) ClusterHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Overall consistency
-	conflictReport := consistency.Check(h.NodeRepo, leaderSvc)
+	conflictReport := maintenance.Check(h.NodeRepo, leaderSvc)
 	if conflictReport.HasIssues() {
 		overallHealthy = false
 		resp.Issues = append(resp.Issues, conflictReport.Summary())

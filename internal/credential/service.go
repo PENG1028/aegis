@@ -8,7 +8,7 @@ import (
 	"aegis/internal/id"
 	"aegis/internal/logs"
 	"aegis/internal/secrets"
-	"aegis/internal/uri"
+	"aegis/internal/addr"
 )
 
 // Service manages encrypted connection string credentials.
@@ -49,7 +49,7 @@ func (s *Service) Create(ctx context.Context, alias, rawConnString, description 
 	}
 
 	// Parse the URI to detect scheme and generate masked version
-	info, err := uri.Parse(rawConnString)
+	info, err := addr.ParseConnString(rawConnString)
 	if err != nil {
 		return nil, fmt.Errorf("invalid connection URI: %w", err)
 	}
@@ -86,7 +86,7 @@ func (s *Service) Create(ctx context.Context, alias, rawConnString, description 
 
 // DecryptAndResolve decrypts a credential and returns the parsed connection info.
 // This is the runtime path — called when starting a TCP proxy, generating config, etc.
-func (s *Service) DecryptAndResolve(ctx context.Context, alias string) (*uri.ConnInfo, error) {
+func (s *Service) DecryptAndResolve(ctx context.Context, alias string) (*addr.ConnInfo, error) {
 	c, err := s.repo.FindByAlias(alias)
 	if err != nil {
 		return nil, fmt.Errorf("lookup credential %q: %w", alias, err)
@@ -100,7 +100,7 @@ func (s *Service) DecryptAndResolve(ctx context.Context, alias string) (*uri.Con
 		return nil, fmt.Errorf("decrypt credential %q: %w", alias, err)
 	}
 
-	info, err := uri.Parse(raw)
+	info, err := addr.ParseConnString(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parse decrypted connection string for %q: %w", alias, err)
 	}
@@ -153,7 +153,7 @@ func (s *Service) Rotate(ctx context.Context, idOrAlias string, newRawConnString
 	}
 
 	// Parse and validate new URI
-	info, err := uri.Parse(newRawConnString)
+	info, err := addr.ParseConnString(newRawConnString)
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid new connection URI: %w", err)
 	}
