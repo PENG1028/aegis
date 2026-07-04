@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"aegis/internal/addr"
-	"aegis/internal/recovery"
+	recovery "aegis/internal/core"
 )
 
 // Proxy represents a single TCP forwarding proxy.

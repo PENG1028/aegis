@@ -1,5 +1,5 @@
 // Package recovery provides panic recovery for background goroutines.
-package recovery
+package core
 
 import (
 	"fmt"

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	aerrors "aegis/internal/errors"
+	aerrors "aegis/internal/core"
 	"aegis/internal/id"
 	"aegis/internal/logs"
 )

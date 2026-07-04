@@ -6,7 +6,7 @@ import (
 	"aegis/internal/cluster"
 	"aegis/internal/consistency"
 	"aegis/internal/node"
-	"aegis/internal/sloglog"
+	sloglog "aegis/internal/core"
 )
 
 // ReconcileLoop periodically checks local state against the leader and repairs drift.
