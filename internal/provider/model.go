@@ -1,16 +1,33 @@
-// Package provider — pure data types for the 3-dimension architecture.
+// Package provider — data types for the 3-dimension gateway architecture.
 //
-// This file defines value objects that flow across dimension boundaries.
-// They carry NO behavior — only data and JSON tags.
+// This file defines all value objects that flow across dimension boundaries.
+// They carry NO behavior beyond simple field accessors — only data and JSON tags.
 //
-// Ownership rules:
-//   - ProviderState is WRITTEN by dimension 3 (lifecycle) and READ by dimensions 1 & 2.
-//   - Plan is PRODUCED by dimension 2 (topology planner) and CONSUMED by dimension 1 (Provider.Render).
-//   - ConfigFile is PRODUCED by dimension 1 (Provider.Render) and CONSUMED by dimension 1 (Provider.Apply).
-//   - ForwardTarget is PRODUCED by dimension 2 and CONSUMED by transparent.Manager.
+// ## Data types (in declaration order)
 //
-// Import rules: this file imports NOTHING outside the provider package.
-// It is safe to import from topology, lifecycle, transparent, and main.go.
+//   PortBinding        — display-only port allocation (authoritative source: RuntimeMode)
+//   ProviderState      — identity + health + capabilities snapshot (dim 3 writes, dim 1&2 read)
+//   Plan               — what a Provider should render (dim 2 produces, dim 1 consumes)
+//   ForwardTarget      — transparent proxy forwarding target
+//   ListenerSpec       — port binding request
+//   RouteSpec          — 5-dimension traffic routing rule
+//   MatchSpec          — traffic matching criteria
+//   UpstreamSpec       — backend target
+//   ConfigFile         — rendered configuration output
+//   GatewayType        — 5 fixed gateway types (HTTP/TLS-SNI/TCP/UDP/Transparent)
+//   GatewayTypeDef     — static properties of a gateway type
+//   MatchKey           — gateway traffic matching dimension
+//   ForwardKind        — forwarding transport type
+//   RoutingGranularity — route density per port
+//   DepStrength        — dependency edge classification (hard/soft)
+//   DepNode            — dependency graph node
+//   DependencyEdge     — directed dependency between two entities
+//
+// ## Import rules
+//
+// This file imports NOTHING outside the provider package. It is safe to import
+// from topology, lifecycle, transparent, and main.go.
+
 package provider
 
 // ============================================================================
@@ -53,7 +70,7 @@ type ProviderState struct {
 	// Capabilities — what this provider CAN do (static declaration)
 	Capabilities []Capability `json:"capabilities"`
 
-	// Port bindings — what ports this provider currently owns
+	// Port bindings — what ports this provider currently owns (display-only)
 	Ports []PortBinding `json:"ports"`
 
 	// Diagnostic — nil if provider not detected, else full diagnostic result
@@ -227,4 +244,170 @@ type ConfigFile struct {
 
 	// Content is the rendered configuration text.
 	Content []byte `json:"content"`
+}
+
+// ============================================================================
+// GatewayType — 5 fixed types, closed set
+// ============================================================================
+
+// GatewayType identifies the network-layer entry paradigm of a gateway.
+// This is a CLOSED SET — there are exactly 5 ways traffic can enter a gateway
+// on a TCP/IP network. Do not add new types without a protocol-level justification.
+type GatewayType string
+
+const (
+	// TypeHTTPTerm — L7 HTTP termination gateway.
+	// Terminates TLS, reads HTTP Host/Path headers, reverse-proxies to upstream.
+	// Match key: domain + path + headers.  One port can serve unlimited domains.
+	// Implemented by: Caddy, Nginx, Traefik, Envoy, Apache.
+	TypeHTTPTerm GatewayType = "http_terminate"
+
+	// TypeSNIPass — L5 TLS SNI passthrough gateway.
+	// Reads the SNI field from TLS ClientHello (does NOT decrypt), forwards raw TCP
+	// stream to a TLS-terminating backend. Match key: SNI hostname.
+	// Implemented by: HAProxy (mode tcp), Envoy, Traefik.
+	TypeSNIPass GatewayType = "sni_passthrough"
+
+	// TypeTCPForward — L4 TCP port forwarding gateway.
+	// Accepts TCP connections on a specific port and forwards the raw stream.
+	// Match key: port number.  One port = one service (no domain routing possible).
+	// Implemented by: Aegis TCP Manager, HAProxy (mode tcp), Nginx stream.
+	TypeTCPForward GatewayType = "tcp_forward"
+
+	// TypeUDPForward — L4 UDP datagram forwarding gateway.
+	// Accepts UDP datagrams on a specific port and forwards them.
+	// Match key: port number.  One port = one service. Session-managed.
+	// Implemented by: Aegis UDP Manager.
+	TypeUDPForward GatewayType = "udp_forward"
+
+	// TypeTransparent — L3 transparent interception gateway.
+	// Intercepts outbound TCP connections via iptables DNAT and redirects to a local
+	// proxy. Match key: destination IP:port. Linux-only (requires SO_ORIGINAL_DST).
+	// Implemented by: Aegis Transparent Manager (iptables).
+	TypeTransparent GatewayType = "transparent"
+)
+
+// GatewayTypeDef describes the fixed properties of a gateway type.
+// Each GatewayType has exactly one GatewayTypeDef — this is how the system knows
+// what a gateway of a given type can and cannot do.
+type GatewayTypeDef struct {
+	Type        GatewayType
+	Label       string // Human-readable label for UI
+
+	// MatchKey defines what the gateway uses to distinguish traffic.
+	MatchKey MatchKey // "host_path" | "sni" | "port" | "dest_addr"
+
+	// ForwardKind defines what the gateway forwards.
+	ForwardKind ForwardKind // "http_proxy" | "tcp_stream" | "udp_datagram"
+
+	// TerminatesTLS is true if the gateway decrypts TLS and can read HTTP content.
+	TerminatesTLS bool
+
+	// UnderstandsHTTP is true if the gateway can read HTTP headers (Host, Path, etc.).
+	// Only true for TypeHTTPTerm. SNI passthrough sees TLS, not HTTP.
+	UnderstandsHTTP bool
+
+	// Granularity describes how many routes can share one port.
+	// domain+path: unlimited (Caddy on :80)
+	// domain: one per SNI hostname (HAProxy on :443)
+	// port: one route per port (TCP/UDP exposure)
+	Granularity RoutingGranularity
+}
+
+// MatchKey is what the gateway uses to match incoming traffic to a route.
+type MatchKey string
+
+const (
+	MatchHostPath MatchKey = "host_path" // domain + path + headers (HTTP)
+	MatchSNI      MatchKey = "sni"       // TLS SNI hostname
+	MatchPort     MatchKey = "port"      // TCP/UDP port number
+	MatchDestAddr MatchKey = "dest_addr" // destination IP:port (transparent proxy)
+)
+
+// ForwardKind is what the gateway forwards to the target.
+type ForwardKind string
+
+const (
+	ForwardHTTPProxy   ForwardKind = "http_proxy"    // HTTP reverse proxy
+	ForwardTCPStream   ForwardKind = "tcp_stream"    // raw TCP stream
+	ForwardUDPDatagram ForwardKind = "udp_datagram"  // raw UDP datagrams
+)
+
+// RoutingGranularity describes route density per port.
+type RoutingGranularity string
+
+const (
+	RouteByDomainPath RoutingGranularity = "domain+path" // unlimited routes/port
+	RouteByDomain     RoutingGranularity = "domain"      // one per SNI hostname
+	RouteByPort       RoutingGranularity = "port"        // one route per port
+)
+
+// GatewayTypeDefs maps each GatewayType to its fixed definition.
+// This is the single source of truth for gateway type capabilities.
+var GatewayTypeDefs = map[GatewayType]GatewayTypeDef{
+	TypeHTTPTerm: {
+		Type: TypeHTTPTerm, Label: "HTTP 终结网关",
+		MatchKey: MatchHostPath, ForwardKind: ForwardHTTPProxy,
+		TerminatesTLS: true, UnderstandsHTTP: true,
+		Granularity: RouteByDomainPath,
+	},
+	TypeSNIPass: {
+		Type: TypeSNIPass, Label: "TLS SNI 直通网关",
+		MatchKey: MatchSNI, ForwardKind: ForwardTCPStream,
+		TerminatesTLS: false, UnderstandsHTTP: false,
+		Granularity: RouteByDomain,
+	},
+	TypeTCPForward: {
+		Type: TypeTCPForward, Label: "TCP 端口网关",
+		MatchKey: MatchPort, ForwardKind: ForwardTCPStream,
+		TerminatesTLS: false, UnderstandsHTTP: false,
+		Granularity: RouteByPort,
+	},
+	TypeUDPForward: {
+		Type: TypeUDPForward, Label: "UDP 端口网关",
+		MatchKey: MatchPort, ForwardKind: ForwardUDPDatagram,
+		TerminatesTLS: false, UnderstandsHTTP: false,
+		Granularity: RouteByPort,
+	},
+	TypeTransparent: {
+		Type: TypeTransparent, Label: "透明劫持网关",
+		MatchKey: MatchDestAddr, ForwardKind: ForwardTCPStream,
+		TerminatesTLS: false, UnderstandsHTTP: false,
+		Granularity: RouteByPort,
+	},
+}
+
+// ============================================================================
+// Layer 3: Dependency model (hard vs soft)
+// ============================================================================
+
+// DepStrength classifies a dependency edge.
+type DepStrength string
+
+const (
+	// DepHard — if this dependency fails, the dependent entity is UNAVAILABLE.
+	// e.g. Service → Endpoint: no endpoint means the service cannot serve traffic.
+	DepHard DepStrength = "hard"
+
+	// DepSoft — if this dependency fails, the dependent entity is DEGRADED but not dead.
+	// e.g. External HTTPS → HAProxy SNI: HAProxy down → external HTTPS broken,
+	// but HTTP on :80 and internal :8443 still work.
+	DepSoft DepStrength = "soft"
+)
+
+// DepNode identifies a node in the dependency graph.
+type DepNode struct {
+	Type string `json:"type"` // "node" | "gateway" | "listener" | "service" | "endpoint" | "route"
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// DependencyEdge represents a directed dependency between two entities.
+// From depends on To. If To fails, From is affected according to Strength.
+type DependencyEdge struct {
+	From     DepNode     `json:"from"`
+	To       DepNode     `json:"to"`
+	Strength DepStrength `json:"strength"`
+	Impact   string      `json:"impact"`             // human-readable: "HTTPS 外部入口不可用"
+	Affects  []string    `json:"affects,omitempty"`  // which traffic types are affected
 }
