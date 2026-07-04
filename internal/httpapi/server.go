@@ -33,6 +33,7 @@ import (
 	"aegis/internal/route"
 	"aegis/internal/safety"
 	"aegis/internal/service"
+	"aegis/internal/serviceauth"
 	"aegis/internal/space"
 	"aegis/internal/token"
 	"aegis/internal/trace"
@@ -81,6 +82,7 @@ type Services struct {
 	DNSMgmt         *dns.Manager            // v1.8E DNS resolver
 	TransparentMgr  *transparent.Manager    // v1.8H transparent IP:port proxy
 	CredentialSvc   *credential.Service     // v1.8K encrypted connection strings
+	ServiceAuthSvc  *serviceauth.Service    // v1.9A
 	ProvReg         *provider.Registry      // v1.8L-19 — provider registry for install/uninstall/config handlers
 	Version         string                  // build-injected version
 	BuildTime       string                  // build-injected timestamp

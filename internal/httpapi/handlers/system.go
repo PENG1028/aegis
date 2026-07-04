@@ -28,6 +28,7 @@ import (
 	"aegis/internal/route"
 	"aegis/internal/safety"
 	"aegis/internal/service"
+	"aegis/internal/serviceauth"
 	"aegis/internal/space"
 	"aegis/internal/store"
 	"aegis/internal/token"
@@ -70,6 +71,7 @@ type Handlers struct {
 	PendingState    *cluster.PendingState  // v1.7S
 	TraceSvc        *trace.Service         // v1.7T
 	GatewayLinkSvc  *gatewaylink.Service
+	ServiceAuthSvc  *serviceauth.Service   // v1.9A
 	SafetySvc       *safety.Service        // v1.7AB
 	RelayResolver   *RelayResolver         // v1.8B
 	NodeStateSvc    *nodestate.Service        // v1.8C-2
@@ -203,3 +205,4 @@ func (h *Handlers) PortPolicy(w http.ResponseWriter, r *http.Request) {
 		"bindings": policy.Bindings,
 	})
 }
+

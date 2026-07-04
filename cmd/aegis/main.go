@@ -36,6 +36,8 @@ import (
 	"aegis/internal/safety"
 	"aegis/internal/secrets"
 	"aegis/internal/service"
+	"aegis/internal/serviceauth"
+	serviceauthaegis "aegis/internal/serviceauth/aegis"
 	"aegis/internal/space"
 	"aegis/internal/store"
 	"aegis/internal/sync"
@@ -282,6 +284,22 @@ func main() {
 
 	token.SetAuditLogger(logSvc)
 	adminauth.SetAuditLogger(logSvc)
+
+	// --- Service Auth (v1.9A) ---
+	serviceAuthRepo := serviceauth.NewRepository(db)
+	serviceAuthSvc, err := serviceauth.NewService(serviceauth.Dependencies{
+		Repo:        serviceAuthRepo,
+		Secrets:     serviceauthaegis.NewSecretStoreAdapter(masterKey, "./data/sa_secret.enc", "./data/sa_secret.nonce"),
+		NodeChecker: serviceauthaegis.NewNodeCheckerAdapter(nodeRepo),
+		LogWriter:   serviceauthaegis.NewLogWriterAdapter(logSvc),
+		IDGen:       func() string { return id.New("sa") },
+		MasterKey:   masterKey.Bytes(),
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: service auth init failed: %v\n", err)
+	} else {
+		token.SetServiceAuthChecker(serviceAuthSvc) // bridge: Ticket → ActionContext
+	}
 	traceSvc := trace.NewService(trace.Dependencies{
 		RouteRepo:       routeRepo,
 		EdgeSvc:         edgeSvc,
@@ -357,6 +375,7 @@ func main() {
 		DNSMgmt:        dnsMgmt,
 		TransparentMgr: transparentMgr,
 		CredentialSvc:  credSvc,
+		ServiceAuthSvc: serviceAuthSvc,
 		ProvReg:        provRegistry,
 		Version:        Version,
 		BuildTime:      BuildTime,

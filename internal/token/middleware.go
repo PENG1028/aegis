@@ -27,6 +27,21 @@ func SetAuditLogger(l logs.AuditLogger) {
 	auditLog = l
 }
 
+// ServiceAuthChecker is an optional bridge that validates serviceauth tickets
+// and maps the caller service to an Aegis space for Action API access.
+// When set, requests without a Bearer token are checked for a valid
+// X-Service-Ticket header and granted space-scoped access automatically.
+type ServiceAuthChecker interface {
+	VerifyTicketAndGetSpace(ticketStr string) (serviceName string, err error)
+}
+
+var serviceAuthChecker ServiceAuthChecker
+
+// SetServiceAuthChecker injects a serviceauth bridge into the token middleware.
+func SetServiceAuthChecker(checker ServiceAuthChecker) {
+	serviceAuthChecker = checker
+}
+
 // AuthMiddleware provides Bearer token authentication with scope checking.
 type AuthMiddleware struct {
 	adminToken string
@@ -54,11 +69,24 @@ func isPublicPath(path, method string) bool {
 	if strings.HasPrefix(path, "/__aegis/") {
 		return true
 	}
+	// v1.9A: Service-Auth SDK endpoints — protected by isInCluster() IP check
+	// rather than Bearer token (the SDK has no token on first register).
+	if strings.HasPrefix(path, "/api/service-auth/v1/") {
+		return true
+	}
 	if path == "/api/healthz" || path == "/api/readyz" {
 		return true
 	}
 	// System status — used by the login page to detect server version/health
 	if path == "/api/system/status" && method == "GET" {
+		return true
+	}
+	// Port policy — used by the Provider capability matrix page (public system info)
+	if path == "/api/system/port-policy" && method == "GET" {
+		return true
+	}
+	// Runtime mode — used by the binding matrix page (public system info, v1.8L-20)
+	if path == "/api/system/runtime-mode" && method == "GET" {
 		return true
 	}
 	// Embedded UI — must be public so the login form loads
@@ -99,6 +127,25 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 
 		token := extractBearerToken(r)
 		if token == "" {
+			// v1.9A: Fallback — try serviceauth Ticket before rejecting.
+			if serviceAuthChecker != nil {
+				ticket := r.Header.Get("X-Service-Ticket")
+				if ticket != "" {
+					serviceName, err := serviceAuthChecker.VerifyTicketAndGetSpace(ticket)
+					if err == nil {
+						ac := &action.ActionContext{
+							SpaceID:   serviceName, // service name doubles as space
+							TokenType: "service",
+							TokenID:   serviceName,
+							Actor:     "service",
+						}
+						ctx := action.WithActionContext(r.Context(), ac)
+						next.ServeHTTP(w, r.WithContext(ctx))
+						return
+					}
+				}
+			}
+
 			logAuditEvent("service_key", "", "unauthorized_access", r, "", "missing_token", "failed", "UNAUTHORIZED")
 			writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing Authorization header")
 			return
