@@ -34,7 +34,7 @@ func (t *HAProxyCaddy) RequiredCapabilities() []provider.Capability {
 	}
 }
 
-func (t *HAProxyCaddy) BuildPlan(intents []topology.RouteIntent, available []provider.ProviderState) (*topology.TopologyPlan, error) {
+func (t *HAProxyCaddy) BuildPlan(intents []topology.RouteIntent, available []provider.ProviderState, mode provider.RuntimeMode) (*topology.TopologyPlan, error) {
 	haproxy := findProvider(available, provider.CapSNIPreread, provider.CapTLSPassthrough)
 	caddy := findProvider(available, provider.CapTLSTerminate, provider.CapRouteHost)
 
@@ -61,16 +61,9 @@ func (t *HAProxyCaddy) BuildPlan(intents []topology.RouteIntent, available []pro
 		}
 	}
 
-	// HAProxy: only needs the SNI frontend listener
-	haproxyListeners := []provider.ListenerSpec{
-		{Port: 443, Protocol: "tcp", Purpose: "tls_sni_mux"},
-	}
-
-	// Caddy: HTTP on 80, internal HTTPS on 8443 (behind HAProxy)
-	caddyListeners := []provider.ListenerSpec{
-		{Port: 80, Protocol: "tcp", Purpose: "http"},
-		{Port: 8443, Protocol: "tcp", Purpose: "internal_https"},
-	}
+	// Listener specs come from RuntimeMode — no hardcoded port numbers
+	haproxyListeners := mode.ListenerSpecsFor("haproxy")
+	caddyListeners := mode.ListenerSpecsFor("caddy")
 
 	plans := map[string]provider.Plan{
 		haproxy.ID: topology.BuildPlan(haproxyListeners, haproxyRoutes, nil),

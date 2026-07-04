@@ -47,22 +47,3 @@ func findProvider(available []provider.ProviderState, caps ...provider.Capabilit
 	return nil
 }
 
-// httpPort returns the HTTP port from a provider's port bindings, or a default.
-func httpPort(p provider.ProviderState) int {
-	for _, b := range p.Ports {
-		if b.Purpose == "http" {
-			return b.Port
-		}
-	}
-	return 80
-}
-
-// httpsPort returns the HTTPS port from a provider's port bindings, or a default.
-func httpsPort(p provider.ProviderState) int {
-	for _, b := range p.Ports {
-		if b.Purpose == "https" || b.Purpose == "tls_sni_mux" {
-			return b.Port
-		}
-	}
-	return 443
-}

@@ -21,7 +21,7 @@ type Template interface {
 	Name() string
 	Description() string
 	RequiredCapabilities() []provider.Capability
-	BuildPlan(intents []RouteIntent, available []provider.ProviderState) (*TopologyPlan, error)
+	BuildPlan(intents []RouteIntent, available []provider.ProviderState, mode provider.RuntimeMode) (*TopologyPlan, error)
 }
 
 // ============================================================================
@@ -63,74 +63,7 @@ func NewPlanner(templates []Template, deps Dependencies) *Planner {
 	return &Planner{templates: templates, deps: deps}
 }
 
-// Plan collects all active routes, resolves endpoints, matches a topology
-// template, and returns a complete TopologyPlan with per-provider Plans.
-func (p *Planner) Plan(email string) (*TopologyPlan, error) {
-	// Phase 1: Collect all active routes → RouteIntents
-	intents, warnings, err := p.collectIntents()
-	if err != nil {
-		return nil, fmt.Errorf("collect intents: %w", err)
-	}
-
-	// Phase 2: Resolve each intent — endpoint → upstream, gateway link → auth
-	resolved, resolveWarns := p.resolveIntents(intents)
-	warnings = append(warnings, resolveWarns...)
-
-	// Phase 3: Get available providers
-	provReg := p.deps.RouteRepo // FIXME: need provider registry access
-	_ = provReg
-
-	available := p.gatherProviderStates()
-
-	// Phase 4: Match topology templates
-	var best *TopologyPlan
-	var alternatives []Solution
-
-	for _, tmpl := range p.templates {
-		plan, err := tmpl.BuildPlan(resolved, available)
-		if err != nil {
-			level, explanation := EvaluateFallback(tmpl.RequiredCapabilities(), available)
-			alternatives = append(alternatives, Solution{
-				TemplateName: tmpl.Name(),
-				Level:        level,
-				Description:  tmpl.Description(),
-				Warnings:     []string{explanation},
-			})
-			continue
-		}
-
-		if best == nil {
-			best = plan
-		}
-
-		alternatives = append(alternatives, Solution{
-			TemplateName: tmpl.Name(),
-			Level:        0,
-			Description:  tmpl.Description(),
-			Providers:    plan.Primary.Providers,
-		})
-	}
-
-	if best == nil {
-		fallback := FallbackSolution(resolved, available)
-		if len(alternatives) > 0 {
-			fallback = alternatives[0]
-		}
-		return &TopologyPlan{
-			Primary:      fallback,
-			Alternatives: alternatives,
-			Warnings:     append(warnings, "no template fully satisfies requirements"),
-		}, fmt.Errorf("no template fully satisfies requirements: %s", fallback.Description)
-	}
-
-	best.Alternatives = alternatives
-	best.Warnings = append(best.Warnings, warnings...)
-	return best, nil
-}
-
-// ============================================================================
-// Phase 1: Collect RouteIntents from active routes
-// ============================================================================
+// PlanWithProviders is the full version that accepts pre-discovered provider states.
 
 func (p *Planner) collectIntents() ([]RouteIntent, []string, error) {
 	routes, err := p.deps.RouteRepo.FindActive()
@@ -168,13 +101,21 @@ func (p *Planner) collectIntents() ([]RouteIntent, []string, error) {
 			continue
 		}
 
+		// v1.8L-22: derive fields from composition registry
+		compDef := rt.CompDef()
+		if compDef == nil {
+			warnings = append(warnings, fmt.Sprintf("route %s: unknown composition %q, skipping", rt.Domain, rt.Composition))
+			continue
+		}
+
 		intents = append(intents, RouteIntent{
-			Domain:             rt.Domain,
-			Port:               443,
-			Transport:          "tcp",
-			TLSMode:            tlsModeFromRoute(rt),
-			Path:               rt.PathPrefix,
-			AppProtocol:        "http",
+			Domain:      rt.Domain,
+			Port:        compDef.Port,
+			Transport:   compDef.Transport,
+			TLSMode:     compDef.TLSMode,
+			Path:        rt.PathPrefix,
+			AppProtocol: compDef.AppProtocol,
+			Composition: rt.Composition,
 			StripPathPrefix:    rt.StripPrefix,
 			MaintenanceEnabled: rt.MaintenanceEnabled,
 			MaintenanceMessage: rt.MaintenanceMessage,
@@ -257,15 +198,6 @@ func (p *Planner) resolveIntents(intents []RouteIntent) ([]RouteIntent, []string
 // Provider state gathering (for capability matching)
 // ============================================================================
 
-// gatherProviderStates collects ProviderState from all registered providers.
-// This is a placeholder — in production, the caller passes available providers
-// through the Plan method's second argument, or we accept them separately.
-func (p *Planner) gatherProviderStates() []provider.ProviderState {
-	// Provider states are passed separately via PlanWithProviders
-	return nil
-}
-
-// PlanWithProviders is the full version that accepts pre-discovered provider states.
 func (p *Planner) PlanWithProviders(email string, available []provider.ProviderState) (*TopologyPlan, error) {
 	// Phase 1-2: Collect + resolve intents
 	intents, warnings, err := p.collectIntents()
@@ -277,12 +209,17 @@ func (p *Planner) PlanWithProviders(email string, available []provider.ProviderS
 
 	healthy := healthyProviders(available)
 
+	// Detect the active runtime mode from available providers.
+	// This replaces the old shell-based CurrentPortPolicyMode() — now the Planner
+	// and API use the same detection function, eliminating divergence.
+	mode := provider.DetectRuntimeMode(healthy)
+
 	// Phase 3: Match templates
 	var best *TopologyPlan
 	var alternatives []Solution
 
 	for _, tmpl := range p.templates {
-		plan, err := tmpl.BuildPlan(resolved, healthy)
+		plan, err := tmpl.BuildPlan(resolved, healthy, mode)
 		if err != nil {
 			level, explanation := EvaluateFallback(tmpl.RequiredCapabilities(), healthy)
 			alternatives = append(alternatives, Solution{
@@ -318,7 +255,7 @@ func (p *Planner) PlanWithProviders(email string, available []provider.ProviderS
 	for _, ri := range resolved {
 		if ri.Transport == "tcp" && ri.AppProtocol == "raw" {
 			// Cross-node transparent forwarding needed
-			best.ForwardTarget = findForwardTarget(healthy)
+			best.ForwardTarget = findForwardTarget(healthy, mode)
 			break
 		}
 	}
@@ -329,13 +266,6 @@ func (p *Planner) PlanWithProviders(email string, available []provider.ProviderS
 // ============================================================================
 // Helpers
 // ============================================================================
-
-func tlsModeFromRoute(rt route.Route) string {
-	if rt.TLSEnabled {
-		return "terminate"
-	}
-	return "none"
-}
 
 // healthyProviders filters to only running providers.
 func healthyProviders(all []provider.ProviderState) []provider.ProviderState {
@@ -367,14 +297,18 @@ func missingCapabilities(required []provider.Capability, available []provider.Pr
 }
 
 // findForwardTarget finds the HTTP router to forward transparent proxy traffic to.
-func findForwardTarget(available []provider.ProviderState) *provider.ForwardTarget {
+// v1.8L-22: uses RuntimeMode instead of ProviderState.Ports (old shell-based detection).
+func findForwardTarget(available []provider.ProviderState, mode provider.RuntimeMode) *provider.ForwardTarget {
 	for _, p := range available {
 		if p.HasCapability(provider.CapRouteHost) && p.HasCapability(provider.CapUpstreamTCP) {
-			for _, port := range p.Ports {
-				if port.Purpose == "http" || port.Purpose == "internal_https" {
-					return &provider.ForwardTarget{Host: "127.0.0.1", Port: port.Port}
+			// Get the HTTP port from RuntimeMode — the single source of truth
+			listeners := mode.ListenerSpecsFor(p.ID)
+			for _, l := range listeners {
+				if l.Purpose == "http" || l.Purpose == "internal_https" {
+					return &provider.ForwardTarget{Host: "127.0.0.1", Port: l.Port}
 				}
 			}
+			// Fallback: default HTTP port
 			return &provider.ForwardTarget{Host: "127.0.0.1", Port: 80}
 		}
 	}

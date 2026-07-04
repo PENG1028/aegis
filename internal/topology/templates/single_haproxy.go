@@ -29,7 +29,7 @@ func (t *SingleHAProxy) RequiredCapabilities() []provider.Capability {
 	}
 }
 
-func (t *SingleHAProxy) BuildPlan(intents []topology.RouteIntent, available []provider.ProviderState) (*topology.TopologyPlan, error) {
+func (t *SingleHAProxy) BuildPlan(intents []topology.RouteIntent, available []provider.ProviderState, mode provider.RuntimeMode) (*topology.TopologyPlan, error) {
 	haproxy := findProvider(available, provider.CapSNIPreread, provider.CapTLSPassthrough)
 	if haproxy == nil {
 		return nil, fmt.Errorf("single_haproxy: no HAProxy provider available")
@@ -46,9 +46,7 @@ func (t *SingleHAProxy) BuildPlan(intents []topology.RouteIntent, available []pr
 		routes = append(routes, rs)
 	}
 
-	listeners := []provider.ListenerSpec{
-		{Port: 443, Protocol: "tcp", Purpose: "tls_sni_mux"},
-	}
+	listeners := mode.ListenerSpecsFor("haproxy")
 
 	plan := topology.BuildPlan(listeners, routes, nil)
 	return &topology.TopologyPlan{

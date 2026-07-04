@@ -39,6 +39,10 @@ type RouteIntent struct {
 	// Domain is the primary routing key: "api.example.com"
 	Domain string `json:"domain"`
 
+	// Composition is the binding capability key: "https_route", "http_route", etc.
+	// v1.8L-22 — replaces the individual Transport/Port/TLSMode derivation.
+	Composition string `json:"composition"`
+
 	// Port the traffic arrives on. Typically 80 or 443.
 	Port int `json:"port"`
 
@@ -93,26 +97,28 @@ type RouteIntent struct {
 }
 
 // RequirementsOf extracts the Capabilities required to serve this intent.
-// This is the core translation: user intent → capability set.
+// v1.8L-22: reads from the composition registry instead of switch/case.
 func (ri RouteIntent) RequirementsOf() []provider.Capability {
-	var caps []provider.Capability
+	// Primary path: look up the composition definition
+	if ri.Composition != "" {
+		if def := provider.LookupComp(provider.CompKey(ri.Composition)); def != nil {
+			return def.Requirements()
+		}
+	}
 
-	// Always need TCP listen (for now — UDP support is a future extension)
+	// Fallback for routes without a composition set (backward compat)
+	var caps []provider.Capability
 	if ri.Transport == "udp" {
 		caps = append(caps, provider.CapListenUDP, provider.CapUpstreamUDP)
 	} else {
 		caps = append(caps, provider.CapListenTCP, provider.CapUpstreamTCP)
 	}
-
-	// TLS mode
 	switch ri.TLSMode {
 	case "terminate":
 		caps = append(caps, provider.CapTLSTerminate)
 	case "passthrough":
 		caps = append(caps, provider.CapTLSPassthrough, provider.CapSNIPreread)
 	}
-
-	// Application protocol
 	switch ri.AppProtocol {
 	case "http":
 		caps = append(caps, provider.CapHTTP1, provider.CapRouteHost)
@@ -129,10 +135,6 @@ func (ri RouteIntent) RequirementsOf() []provider.Capability {
 		caps = append(caps, provider.CapGRPC, provider.CapRouteHost)
 	case "websocket":
 		caps = append(caps, provider.CapWebSocket, provider.CapRouteHost)
-	case "raw", "sse":
-		// raw: no additional caps needed beyond listen_tcp/listen_udp
-		// sse: works over HTTP/1.1
 	}
-
 	return caps
 }
