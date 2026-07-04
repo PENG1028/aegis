@@ -41,6 +41,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		TraceSvc:        svcs.TraceSvc,
 		SafetySvc:       svcs.SafetySvc,
 		GatewayLinkSvc:  svcs.GatewayLinkSvc,
+		ServiceAuthSvc:  svcs.ServiceAuthSvc,
 		PolicySvc:       svcs.PolicySvc,
 		RoutingTableSvc: svcs.RoutingTableSvc,
 		RelayResolver:   &handlers.RelayResolver{Resolver: svcs.RelaySvc},
@@ -326,6 +327,21 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("DELETE /api/admin/v1/credentials/{id}", credH.DeleteCredential)
 		mux.HandleFunc("POST /api/admin/v1/credentials/{id}/rotate", credH.RotateCredential)
 		mux.HandleFunc("POST /api/admin/v1/credentials/{id}/reveal", credH.RevealCredential)
+	}
+
+	// v1.9A Service Auth — cluster-wide inter-service call authentication
+	if svcs.ServiceAuthSvc != nil {
+		mux.HandleFunc("POST /api/service-auth/v1/register", h.ServiceAuthRegister)
+		mux.HandleFunc("GET /api/service-auth/v1/sync", h.ServiceAuthSync)
+		mux.HandleFunc("POST /api/service-auth/v1/report", h.ServiceAuthReport)
+
+		mux.HandleFunc("GET /api/admin/v1/service-auth/services", h.AdminListServiceAuthServices)
+		mux.HandleFunc("GET /api/admin/v1/service-auth/services/{id}", h.AdminGetServiceAuthService)
+		mux.HandleFunc("POST /api/admin/v1/service-auth/services/{id}/block", h.AdminBlockServiceAuthService)
+		mux.HandleFunc("POST /api/admin/v1/service-auth/apis/{id}/block", h.AdminBlockServiceAuthAPI)
+		mux.HandleFunc("POST /api/admin/v1/service-auth/blocklist/{id}/unblock", h.AdminUnblockServiceAuth)
+		mux.HandleFunc("GET /api/admin/v1/service-auth/topology", h.AdminServiceAuthTopology)
+		mux.HandleFunc("GET /api/admin/v1/service-auth/call-logs", h.AdminServiceAuthCallLogs)
 	}
 
 	// v1.8J Embedded UI — catch-all for SPA routes not matching any API path.
