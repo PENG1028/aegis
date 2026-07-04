@@ -104,132 +104,99 @@ func CheckHAProxyStatus(configPath string) ProviderStatus {
 // ============================================================================
 
 // DiagnoseCaddy runs a quick Caddy diagnostic using default paths.
-// For use by trace and health services that don't have a full Provider instance.
 func DiagnoseCaddy() ProviderDiagnostic {
-	return quickDiagnoseCaddy("caddy", "/etc/caddy/Caddyfile")
+	return diagnoseExternal("caddy", "caddy", "/etc/caddy/Caddyfile",
+		"version", []string{"validate", "--config"},
+		func(ver string) bool { return strings.HasPrefix(ver, "v2") || strings.Contains(ver, "2.") },
+	)
 }
 
 // DiagnoseHAProxy runs a quick HAProxy diagnostic using default paths.
-// For use by trace and health services that don't have a full Provider instance.
 func DiagnoseHAProxy() ProviderDiagnostic {
-	return quickDiagnoseHAProxy("haproxy", "/etc/haproxy/haproxy.cfg")
+	return diagnoseExternal("haproxy", "haproxy", "/etc/haproxy/haproxy.cfg",
+		"-v", []string{"-c", "-f"},
+		func(ver string) bool {
+			major, minor := ParseHAProxyVersion(ver)
+			return major >= 2 || (major == 1 && minor >= 8)
+		},
+	)
 }
 
-// quickDiagnoseCaddy is the internal implementation shared with CaddyProvider.
+// diagnoseExternal runs the standard 6-step diagnostic pipeline for an external provider.
+func diagnoseExternal(providerID, serviceName, configPath, versionFlag string, validateArgs []string, versionOK func(string) bool) ProviderDiagnostic {
+	diag := ProviderDiagnostic{
+		Provider:   providerID,
+		ConfigPath: configPath,
+	}
+
+	binaryPath, err := exec.LookPath(providerID)
+	if err != nil {
+		diag.LastErrorCode = DiagCodeProviderMissing
+		diag.LastErrorMessage = fmt.Sprintf("%s binary not found in PATH", providerID)
+		return diag
+	}
+	diag.Installed = true
+	diag.BinaryPath = binaryPath
+
+	verOut, verErr := exec.Command(binaryPath, versionFlag).Output()
+	if verErr != nil {
+		diag.Version = "unknown"
+		diag.VersionSupported = false
+		diag.LastErrorCode = DiagCodeVersionUnsupported
+		diag.LastErrorMessage = fmt.Sprintf("%s version check failed: %v", providerID, verErr)
+		return diag
+	}
+	diag.Version = strings.TrimSpace(string(verOut))
+	diag.VersionSupported = versionOK(diag.Version)
+
+	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+		diag.LastErrorCode = DiagCodeConfigFileMissing
+		diag.LastErrorMessage = fmt.Sprintf("config file not found: %s", configPath)
+		return diag
+	}
+	diag.ConfigExists = true
+
+	validateFullArgs := append(validateArgs, configPath)
+	validOut, validErr := exec.Command(binaryPath, validateFullArgs...).Output()
+	valid := validErr == nil
+	diag.ConfigValid = &valid
+	if !valid {
+		diag.LastErrorCode = DiagCodeConfigValidateFailed
+		diag.LastErrorMessage = fmt.Sprintf("%s validate failed: %s", providerID, string(validOut))
+		return diag
+	}
+
+	_, svcErr := exec.Command("systemctl", "is-active", "--quiet", serviceName).Output()
+	running := svcErr == nil
+	diag.ServiceRunning = &running
+	if !running {
+		diag.LastErrorCode = DiagCodeServiceNotRunning
+		diag.LastErrorMessage = fmt.Sprintf("%s systemd service is not active", serviceName)
+		return diag
+	}
+
+	diag.ListenerOK = true
+	rtOK := true
+	diag.RuntimeVerifyOK = &rtOK
+
+	return diag
+}
+
+// quickDiagnoseCaddy calls diagnoseExternal with Caddy-specific parameters.
 func quickDiagnoseCaddy(binaryName, configPath string) ProviderDiagnostic {
-	diag := ProviderDiagnostic{
-		Provider:   "caddy",
-		ConfigPath: configPath,
-	}
-
-	caddyPath, err := exec.LookPath(binaryName)
-	if err != nil {
-		diag.LastErrorCode = DiagCodeProviderMissing
-		diag.LastErrorMessage = fmt.Sprintf("caddy binary '%s' not found in PATH", binaryName)
-		return diag
-	}
-	diag.Installed = true
-	diag.BinaryPath = caddyPath
-
-	verOut, verErr := exec.Command(caddyPath, "version").Output()
-	if verErr != nil {
-		diag.Version = "unknown"
-		diag.VersionSupported = false
-		diag.LastErrorCode = DiagCodeVersionUnsupported
-		diag.LastErrorMessage = fmt.Sprintf("caddy version check failed: %v", verErr)
-		return diag
-	}
-	diag.Version = strings.TrimSpace(string(verOut))
-	diag.VersionSupported = strings.HasPrefix(diag.Version, "v2") || strings.Contains(diag.Version, "2.")
-
-	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
-		diag.LastErrorCode = DiagCodeConfigFileMissing
-		diag.LastErrorMessage = fmt.Sprintf("config file not found: %s", configPath)
-		return diag
-	}
-	diag.ConfigExists = true
-
-	validOut, validErr := exec.Command(caddyPath, "validate", "--config", configPath).Output()
-	valid := validErr == nil
-	diag.ConfigValid = &valid
-	if !valid {
-		diag.LastErrorCode = DiagCodeConfigValidateFailed
-		diag.LastErrorMessage = fmt.Sprintf("caddy validate failed: %s", string(validOut))
-		return diag
-	}
-
-	_, svcErr := exec.Command("systemctl", "is-active", "--quiet", "caddy").Output()
-	running := svcErr == nil
-	diag.ServiceRunning = &running
-	if !running {
-		diag.LastErrorCode = DiagCodeServiceNotRunning
-		diag.LastErrorMessage = "caddy systemd service is not active"
-		return diag
-	}
-
-	diag.ListenerOK = true
-	rtOK := true
-	diag.RuntimeVerifyOK = &rtOK
-
-	return diag
+	return diagnoseExternal("caddy", "caddy", configPath,
+		"version", []string{"validate", "--config"},
+		func(ver string) bool { return strings.HasPrefix(ver, "v2") || strings.Contains(ver, "2.") },
+	)
 }
 
-// quickDiagnoseHAProxy is the internal implementation shared with HAProxyProvider.
+// quickDiagnoseHAProxy calls diagnoseExternal with HAProxy-specific parameters.
 func quickDiagnoseHAProxy(binaryName, configPath string) ProviderDiagnostic {
-	diag := ProviderDiagnostic{
-		Provider:   "haproxy",
-		ConfigPath: configPath,
-	}
-
-	haproxyPath, err := exec.LookPath(binaryName)
-	if err != nil {
-		diag.LastErrorCode = DiagCodeProviderMissing
-		diag.LastErrorMessage = "haproxy binary not found in PATH"
-		return diag
-	}
-	diag.Installed = true
-	diag.BinaryPath = haproxyPath
-
-	verOut, verErr := exec.Command(haproxyPath, "-v").Output()
-	if verErr != nil {
-		diag.Version = "unknown"
-		diag.VersionSupported = false
-		diag.LastErrorCode = DiagCodeVersionUnsupported
-		diag.LastErrorMessage = fmt.Sprintf("haproxy version check failed: %v", verErr)
-		return diag
-	}
-	diag.Version = strings.TrimSpace(string(verOut))
-	major, minor := ParseHAProxyVersion(diag.Version)
-	diag.VersionSupported = major >= 2 || (major == 1 && minor >= 8)
-
-	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
-		diag.LastErrorCode = DiagCodeConfigFileMissing
-		diag.LastErrorMessage = fmt.Sprintf("config file not found: %s", configPath)
-		return diag
-	}
-	diag.ConfigExists = true
-
-	validOut, validErr := exec.Command(haproxyPath, "-c", "-f", configPath).Output()
-	valid := validErr == nil
-	diag.ConfigValid = &valid
-	if !valid {
-		diag.LastErrorCode = DiagCodeConfigValidateFailed
-		diag.LastErrorMessage = fmt.Sprintf("haproxy -c failed: %s", string(validOut))
-		return diag
-	}
-
-	_, svcErr := exec.Command("systemctl", "is-active", "--quiet", "haproxy").Output()
-	running := svcErr == nil
-	diag.ServiceRunning = &running
-	if !running {
-		diag.LastErrorCode = DiagCodeServiceNotRunning
-		diag.LastErrorMessage = "haproxy systemd service is not active"
-		return diag
-	}
-
-	diag.ListenerOK = true
-	rtOK := true
-	diag.RuntimeVerifyOK = &rtOK
-
-	return diag
+	return diagnoseExternal("haproxy", "haproxy", configPath,
+		"-v", []string{"-c", "-f"},
+		func(ver string) bool {
+			major, minor := ParseHAProxyVersion(ver)
+			return major >= 2 || (major == 1 && minor >= 8)
+		},
+	)
 }
