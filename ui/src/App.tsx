@@ -15,9 +15,7 @@ import CommandCenter from '@/pages/command-center/CommandCenter';
 import ExposureLayout from '@/pages/exposure/ExposureLayout';
 import EntryPoints from '@/pages/exposure/EntryPoints';
 import EntryPointDetail from '@/pages/exposure/EntryPointDetail';
-import Services from '@/pages/exposure/Services';
 import ServiceDetail from '@/pages/exposure/ServiceDetail';
-import Endpoints from '@/pages/exposure/Endpoints';
 import QuickConnect from '@/pages/exposure/QuickConnect';
 
 // ── Fabric ──

@@ -5,48 +5,67 @@ import (
 	"testing"
 
 	"aegis/internal/endpoint"
-	"aegis/internal/proxy"
+	"aegis/internal/fake"
+	"aegis/internal/provider"
 )
 
-func TestFakeProxyAdapter(t *testing.T) {
-	adapter := proxy.NewFakeAdapter()
+func TestFakeProvider(t *testing.T) {
+	fp := fake.NewFakeProvider("caddy", "http")
+
+	// State
+	state := fp.State()
+	if state.ID != "caddy" {
+		t.Errorf("expected provider ID 'caddy', got %q", state.ID)
+	}
+	if state.Status != "ready" {
+		t.Errorf("expected status 'ready', got %q", state.Status)
+	}
+
+	// Diagnose
+	diag := fp.Diagnose()
+	if diag.Provider != "caddy" {
+		t.Errorf("expected provider 'caddy', got %q", diag.Provider)
+	}
 
 	// Render
-	cfg := proxy.GatewayConfig{
-		Routes: []proxy.RouteConfig{
-			{Domain: "test.example.com", UpstreamURL: "http://127.0.0.1:3001", Kind: "reverse_proxy"},
+	plan := provider.Plan{
+		Routes: []provider.RouteSpec{
+			{
+				Match:    provider.MatchSpec{Host: "test.example.com"},
+				Upstream: provider.UpstreamSpec{Target: "http://127.0.0.1:3001"},
+			},
 		},
 	}
-	result, err := adapter.Render(cfg)
+	configs, err := fp.Render(plan)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if len(result) == 0 {
+	if len(configs) == 0 {
 		t.Error("expected rendered output")
 	}
 
-	// Validate success
-	err = adapter.Validate("/tmp/test")
+	// Apply success
+	err = fp.Apply(configs)
 	if err != nil {
-		t.Errorf("validate should succeed: %v", err)
+		t.Errorf("apply should succeed: %v", err)
 	}
 
-	// Validate failure
-	adapter.ValidateShouldFail = true
-	err = adapter.Validate("/tmp/test")
+	// Apply failure (validation)
+	fp.FailValidate = true
+	fp.ValidateErr = "syntax error at line 1"
+	err = fp.Apply(configs)
 	if err == nil {
-		t.Error("validate should fail")
+		t.Error("apply should fail with validation error")
 	}
+	fp.ResetErrors()
 
-	// Reload
-	adapter.ValidateShouldFail = false
-	err = adapter.Reload("")
-	if err != nil {
-		t.Errorf("reload should succeed: %v", err)
+	// Apply failure (reload)
+	fp.FailReload = true
+	err = fp.Apply(configs)
+	if err == nil {
+		t.Error("apply should fail with reload error")
 	}
-	if adapter.ReloadCallCount != 1 {
-		t.Errorf("reload count = %d, want 1", adapter.ReloadCallCount)
-	}
+	fp.ResetErrors()
 }
 
 // TestApplyPlanStructure verifies the ApplyPlan/ApplyWarning types are usable.

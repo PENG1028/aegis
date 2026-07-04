@@ -20,7 +20,6 @@ import (
 	"aegis/internal/manageddomain"
 	"aegis/internal/provider"
 	"aegis/internal/fake"
-	"aegis/internal/proxy"
 	"aegis/internal/topology"
 	"aegis/internal/topology/templates"
 	"aegis/internal/route"
@@ -137,10 +136,10 @@ e2e-test.aegis.local {
 		t.Fatalf("create route: %v", err)
 	}
 
-	// Step 3: First apply — should succeed with normal FakeProxyAdapter
-	fakeAdapter := proxy.NewFakeAdapter()
+	// Step 3: First apply — should succeed with FakeProvider
+	fakeProv := fake.NewFakeProvider("caddy", "http")
 	provReg := provider.NewRegistry()
-	provReg.Register(fake.NewFakeProvider("caddy", "http"))
+	provReg.Register(fakeProv)
 	topoPlanner := topology.NewPlanner(templates.Default(), topology.Dependencies{
 		RouteRepo:        routeRepo,
 		ServiceRepo:      serviceRepo,
@@ -193,7 +192,7 @@ e2e-test.aegis.local {
 	t.Logf("applied configuration length: %d bytes", len(appliedContent))
 
 	// Step 4: Now set adapter to fail validation (simulating invalid config)
-	fakeAdapter.ValidateShouldFail = true
+	fakeProv.FailValidate = true
 	pendingState.MarkPending("route modified — may produce invalid config")
 
 	// Second apply — should fail during validation
@@ -245,7 +244,7 @@ e2e-test.aegis.local {
 	}
 
 	// Reset adapter to not fail (so rollback reload works)
-	fakeAdapter.ValidateShouldFail = false
+	fakeProv.ResetErrors()
 
 	// Step 9: Call Rollback to restore from the backup
 	if plan1.BackupPath != "" {
@@ -275,7 +274,7 @@ e2e-test.aegis.local {
 	// Step 11: Test the high-level Rollback method via AppService
 	// First, let's create a situation where we can roll back via the high-level API
 	// Reset the adapter and apply again to create a second backup
-	fakeAdapter.ValidateShouldFail = false
+	fakeProv.ResetErrors()
 	pendingState.MarkPending("test rollback")
 
 	// Apply a new config to create a history entry with backup
