@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"aegis/internal/endpoint"
-	"aegis/internal/importcfg"
-	"aegis/internal/id"
+	"aegis/internal/config"
+	"aegis/internal/core"
 	"aegis/internal/route"
 	"aegis/internal/service"
 )
@@ -15,21 +15,21 @@ import (
 // AdminImportCaddyPreview handles GET /api/admin/v1/import/caddy/preview
 // Scans the Caddyfile and returns parsed routes without writing.
 func (h *Handlers) AdminImportCaddyPreview(w http.ResponseWriter, r *http.Request) {
-	paths := importcfg.FindCaddyfiles()
+	paths := config.FindCaddyfiles()
 	if len(paths) == 0 {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"routes": []importcfg.ImportedRoute{},
+			"routes": []config.ImportedRoute{},
 			"count":  0,
 			"message": "no Caddyfile found in standard locations",
 		})
 		return
 	}
 
-	var allRoutes []importcfg.ImportedRoute
+	var allRoutes []config.ImportedRoute
 	var allErrors []string
 
 	for _, caddyPath := range paths {
-		result, err := importcfg.ScanCaddyfile(caddyPath)
+		result, err := config.ScanCaddyfile(caddyPath)
 		if err != nil {
 			allErrors = append(allErrors, caddyPath+": "+err.Error())
 			continue
@@ -54,7 +54,7 @@ func (h *Handlers) AdminImportCaddyPreview(w http.ResponseWriter, r *http.Reques
 // Accepts a list of routes to import (the user can select which ones).
 func (h *Handlers) AdminImportCaddyConfirm(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Routes []importcfg.ImportedRoute `json:"routes"`
+		Routes []config.ImportedRoute `json:"routes"`
 	}
 	if err := decodeJSON(r, &input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -83,7 +83,7 @@ func (h *Handlers) AdminImportCaddyConfirm(w http.ResponseWriter, r *http.Reques
 		// Create service
 		now := time.Now()
 		svc := &service.Service{
-			ID:        id.New("svc"),
+			ID:        core.NewID("svc"),
 			ProjectID: projectID,
 			Name:      svcName,
 			Kind:      "http",
@@ -99,7 +99,7 @@ func (h *Handlers) AdminImportCaddyConfirm(w http.ResponseWriter, r *http.Reques
 
 		// Create endpoint
 		ep := &endpoint.Endpoint{
-			ID:        id.New("ep"),
+			ID:        core.NewID("ep"),
 			ServiceID: svc.ID,
 			Type:      "local",
 			Address:   ir.UpstreamURL,
@@ -114,7 +114,7 @@ func (h *Handlers) AdminImportCaddyConfirm(w http.ResponseWriter, r *http.Reques
 
 		// Create route
 		rt := &route.Route{
-			ID:         id.New("rt"),
+			ID:         core.NewID("rt"),
 			Domain:     ir.Domain,
 			PathPrefix: ir.PathPrefix,
 			ServiceID:  svc.ID,

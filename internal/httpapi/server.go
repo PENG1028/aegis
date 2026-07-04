@@ -15,7 +15,6 @@ import (
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
-	"aegis/internal/gateway_link"
 	"aegis/internal/health"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
@@ -28,7 +27,6 @@ import (
 	"aegis/internal/routingtable"
 	"aegis/internal/project"
 	"aegis/internal/provider"
-	"aegis/internal/relay"
 	"aegis/internal/dns"
 	"aegis/internal/route"
 	"aegis/internal/safety"
@@ -69,9 +67,9 @@ type Services struct {
 	DepSvc        *deployment.Service
 	PendingState    *cluster.PendingState  // v1.7S
 	TraceSvc        *trace.Service         // v1.7T
-	GatewayLinkSvc  *gatewaylink.Service   // v1.7AB
+	GatewayLinkSvc  *gateway.LinkService   // v1.7AB
 	SafetySvc       *safety.Service        // v1.8A
-	RelaySvc        *relay.Resolver        // v1.8B
+	RelaySvc        *gateway.Resolver        // v1.8B
 	NodeStateSvc    *nodestate.Service        // v1.8C-2
 	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
 	GatewayInvSvc   *gateway.InventoryService   // v1.8C-2

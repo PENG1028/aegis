@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 // AppService defines the log application service interface.
@@ -35,7 +35,7 @@ func (s *AppService) Log(ctx context.Context, action, targetType, targetID, resu
 		actor = "system"
 	}
 	entry := &OperationLog{
-		ID:         id.New("log"),
+		ID:         core.NewID("log"),
 		Action:     action,
 		TargetType: targetType,
 		TargetID:   targetID,
@@ -68,7 +68,7 @@ func (s *AppService) LogAudit(actorType, actorID, eventType, ip, userAgent, targ
 		return
 	}
 	entry := &AuditLog{
-		ID:         id.New("audit"),
+		ID:         core.NewID("audit"),
 		ActorType:  actorType,
 		ActorID:    actorID,
 		EventType:  eventType,

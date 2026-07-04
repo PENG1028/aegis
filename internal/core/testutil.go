@@ -1,6 +1,6 @@
 // Package testutil provides shared test helpers for Aegis tests.
 // Import this package in _test.go files to eliminate duplicated setup code.
-package testutil
+package core
 
 import (
 	"database/sql"

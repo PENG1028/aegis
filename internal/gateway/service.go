@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/node"
 )
 
@@ -47,7 +47,7 @@ func (s *GatewayService) CreateDomain(ctx context.Context, domain, nodeID string
 	}
 
 	d := &GatewayDomain{
-		ID:          id.New("gd"),
+		ID:          core.NewID("gd"),
 		Domain:      domain,
 		NodeID:      nodeID,
 		TLSEnabled:  tlsEnabled,
@@ -69,7 +69,7 @@ func (s *GatewayService) AttachRoute(ctx context.Context, domainID, path, target
 	}
 	now := time.Now()
 	rt := &GatewayRoute{
-		ID:            id.New("gr"),
+		ID:            core.NewID("gr"),
 		DomainID:      domainID,
 		Path:          path,
 		TargetService: targetService,

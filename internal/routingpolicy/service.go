@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 // Service provides gateway policy business logic.
@@ -30,7 +30,7 @@ func (s *Service) SetServicePolicy(input PolicyInput) (*ServiceGatewayPolicy, er
 	}
 
 	policy := &ServiceGatewayPolicy{
-		PolicyID:           id.New("pol"),
+		PolicyID:           core.NewID("pol"),
 		ServiceID:          input.ServiceID,
 		Mode:               mode,
 		PrimaryGatewayID:   input.PrimaryGatewayID,
@@ -94,7 +94,7 @@ func (s *Service) SetRoutePolicy(input PolicyInput) (*RouteGatewayPolicy, error)
 	}
 
 	policy := &RouteGatewayPolicy{
-		PolicyID:           id.New("pol"),
+		PolicyID:           core.NewID("pol"),
 		RouteID:            input.RouteID,
 		Mode:               mode,
 		PrimaryGatewayID:   input.PrimaryGatewayID,

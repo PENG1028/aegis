@@ -7,7 +7,7 @@ import (
 	"aegis/internal/apply"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/route"
@@ -142,6 +142,6 @@ func (s *ActionService) safeApply(ctx context.Context) error {
 
 // newOperationID generates a unique operation ID.
 func newOperationID() string {
-	opID := id.New("op")
+	opID := core.NewID("op")
 	return fmt.Sprintf("op_%s", opID[3:])
 }

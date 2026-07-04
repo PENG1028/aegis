@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"aegis/internal/edgemux"
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 )
 
@@ -54,7 +54,7 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 
 	now := time.Now()
 	rt := &Route{
-		ID:                 id.New("rt"),
+		ID:                 core.NewID("rt"),
 		Domain:             input.Domain,
 		PathPrefix:         input.PathPrefix,
 		StripPrefix:        input.StripPrefix,

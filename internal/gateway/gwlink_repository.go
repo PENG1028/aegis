@@ -1,4 +1,4 @@
-package gatewaylink
+package gateway
 
 import (
 	"database/sql"
@@ -6,14 +6,14 @@ import (
 	"time"
 )
 
-// Repository provides database access for trusted gateways.
-type Repository struct {
+// LinkRepository provides database access for trusted gateways.
+type LinkRepository struct {
 	DB *sql.DB
 }
 
-// NewRepository creates a new gateway link repository.
-func NewRepository(db *sql.DB) *Repository {
-	return &Repository{DB: db}
+// NewLinkRepository creates a new gateway link repository.
+func NewLinkRepository(db *sql.DB) *LinkRepository {
+	return &LinkRepository{DB: db}
 }
 
 const gwSelectCols = `id, name, host, private_ip, port, auth_type, gateway_type, auto_route, target_node_id, status, created_at, updated_at`
@@ -23,7 +23,7 @@ const gwSelectColsWithAuth = `id, name, host, private_ip, port, auth_type, auth_
 const gwSelectColsEncrypted = `id, name, host, private_ip, port, auth_type, auth_value, gateway_type, auto_route, target_node_id, encrypted_secret, secret_nonce, secret_version, secret_created_at, secret_rotated_at, status, created_at, updated_at`
 
 // Create inserts a new trusted gateway.
-func (r *Repository) Create(g *TrustedGateway) error {
+func (r *LinkRepository) Create(g *TrustedGateway) error {
 	_, err := r.DB.Exec(
 		`INSERT INTO trusted_gateways
 		 (id, name, host, private_ip, port, auth_type, auth_value, gateway_type, auto_route,
@@ -41,18 +41,18 @@ func (r *Repository) Create(g *TrustedGateway) error {
 }
 
 // FindAll returns all trusted gateways (no auth_value or encrypted secret).
-func (r *Repository) FindAll() ([]TrustedGateway, error) {
+func (r *LinkRepository) FindAll() ([]TrustedGateway, error) {
 	rows, err := r.DB.Query(
 		`SELECT ` + gwSelectCols + ` FROM trusted_gateways ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("query trusted_gateways: %w", err)
 	}
 	defer rows.Close()
-	return scanGateways(rows)
+	return scanGwLinkGateways(rows)
 }
 
 // FindByID returns a trusted gateway by ID (includes auth_value and encrypted fields).
-func (r *Repository) FindByID(id string) (*TrustedGateway, error) {
+func (r *LinkRepository) FindByID(id string) (*TrustedGateway, error) {
 	var g TrustedGateway
 	var createdAt, updatedAt string
 	var privateIP, authType, authValue sql.NullString
@@ -88,29 +88,29 @@ func (r *Repository) FindByID(id string) (*TrustedGateway, error) {
 }
 
 // FindByType returns gateways of a specific type (no auth_value or encrypted secret).
-func (r *Repository) FindByType(gatewayType string) ([]TrustedGateway, error) {
+func (r *LinkRepository) FindByType(gatewayType string) ([]TrustedGateway, error) {
 	rows, err := r.DB.Query(
 		`SELECT `+gwSelectCols+` FROM trusted_gateways WHERE gateway_type = ? ORDER BY name`, gatewayType)
 	if err != nil {
 		return nil, fmt.Errorf("query trusted_gateways by type: %w", err)
 	}
 	defer rows.Close()
-	return scanGateways(rows)
+	return scanGwLinkGateways(rows)
 }
 
 // FindByTargetNodeID returns gateways targeting a specific node (no auth_value).
-func (r *Repository) FindByTargetNodeID(nodeID string) ([]TrustedGateway, error) {
+func (r *LinkRepository) FindByTargetNodeID(nodeID string) ([]TrustedGateway, error) {
 	rows, err := r.DB.Query(
 		`SELECT `+gwSelectCols+` FROM trusted_gateways WHERE target_node_id = ? ORDER BY name`, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("query trusted_gateways by target_node_id: %w", err)
 	}
 	defer rows.Close()
-	return scanGateways(rows)
+	return scanGwLinkGateways(rows)
 }
 
 // UpdateHost updates the host and private IP of a gateway.
-func (r *Repository) UpdateHost(id, host, privateIP string) error {
+func (r *LinkRepository) UpdateHost(id, host, privateIP string) error {
 	_, err := r.DB.Exec(
 		`UPDATE trusted_gateways SET host = ?, private_ip = ?, updated_at = ? WHERE id = ?`,
 		host, privateIP, time.Now().Format(time.RFC3339), id)
@@ -118,7 +118,7 @@ func (r *Repository) UpdateHost(id, host, privateIP string) error {
 }
 
 // UpdateStatus updates the status of a gateway.
-func (r *Repository) UpdateStatus(id, status string) error {
+func (r *LinkRepository) UpdateStatus(id, status string) error {
 	_, err := r.DB.Exec(
 		`UPDATE trusted_gateways SET status = ?, updated_at = ? WHERE id = ?`,
 		status, time.Now().Format(time.RFC3339), id)
@@ -126,7 +126,7 @@ func (r *Repository) UpdateStatus(id, status string) error {
 }
 
 // RotateSecret updates the auth secret (legacy HMAC path).
-func (r *Repository) RotateSecret(id, newAuthValue string) error {
+func (r *LinkRepository) RotateSecret(id, newAuthValue string) error {
 	_, err := r.DB.Exec(
 		`UPDATE trusted_gateways SET auth_value = ?, updated_at = ? WHERE id = ?`,
 		newAuthValue, time.Now().Format(time.RFC3339), id)
@@ -134,7 +134,7 @@ func (r *Repository) RotateSecret(id, newAuthValue string) error {
 }
 
 // RotateSecretEncrypted rotates the secret with encrypted storage (v1.8B-5).
-func (r *Repository) RotateSecretEncrypted(id, encryptedSecret, secretNonce string, secretVersion int, secretRotatedAt string) error {
+func (r *LinkRepository) RotateSecretEncrypted(id, encryptedSecret, secretNonce string, secretVersion int, secretRotatedAt string) error {
 	_, err := r.DB.Exec(
 		`UPDATE trusted_gateways SET encrypted_secret = ?, secret_nonce = ?, secret_version = ?,
 		 secret_rotated_at = ?, updated_at = ? WHERE id = ?`,
@@ -144,12 +144,12 @@ func (r *Repository) RotateSecretEncrypted(id, encryptedSecret, secretNonce stri
 }
 
 // Delete removes a trusted gateway.
-func (r *Repository) Delete(id string) error {
+func (r *LinkRepository) Delete(id string) error {
 	_, err := r.DB.Exec(`DELETE FROM trusted_gateways WHERE id = ?`, id)
 	return err
 }
 
-func scanGateways(rows *sql.Rows) ([]TrustedGateway, error) {
+func scanGwLinkGateways(rows *sql.Rows) ([]TrustedGateway, error) {
 	var gateways []TrustedGateway
 	for rows.Next() {
 		var g TrustedGateway

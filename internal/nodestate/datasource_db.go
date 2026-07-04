@@ -2,9 +2,8 @@ package nodestate
 
 import (
 	"aegis/internal/endpoint"
-	"aegis/internal/gateway"
 	"log"
-	gatewaylink "aegis/internal/gateway_link"
+	gatewaylink "aegis/internal/gateway"
 	"aegis/internal/node"
 	"aegis/internal/route"
 	"aegis/internal/routingpolicy"
@@ -16,8 +15,8 @@ type DBDataSource struct {
 	NodeRepo       *node.Repository
 	RouteRepo      *route.Repository
 	EndpointRepo   *endpoint.Repository
-	GatewayInvRepo *gateway.InventoryRepository
-	GWLinkRepo     *gatewaylink.Repository
+	GatewayInvRepo *gatewaylink.InventoryRepository
+	GWLinkRepo     *gatewaylink.LinkRepository
 	TopologyRepo   *topology.Repository
 	PolicySvc      *routingpolicy.Service
 }
@@ -27,8 +26,8 @@ func NewDBDataSource(
 	nodeRepo *node.Repository,
 	routeRepo *route.Repository,
 	endpointRepo *endpoint.Repository,
-	gatewayInvRepo *gateway.InventoryRepository,
-	gwLinkRepo *gatewaylink.Repository,
+	gatewayInvRepo *gatewaylink.InventoryRepository,
+	gwLinkRepo *gatewaylink.LinkRepository,
 	topologyRepo *topology.Repository,
 	policySvc *routingpolicy.Service,
 ) *DBDataSource {

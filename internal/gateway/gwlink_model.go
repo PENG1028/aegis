@@ -1,7 +1,7 @@
 // GatewayLink model — trusted gateway-to-gateway authentication.
 // Each TrustedGateway represents another Aegis gateway that this gateway
 // can securely forward traffic to. Traffic is authenticated via shared secret.
-package gatewaylink
+package gateway
 
 import (
 	"fmt"
@@ -25,8 +25,8 @@ const (
 
 // Status constants.
 const (
-	StatusActive   = "active"
-	StatusDisabled = "disabled"
+	LinkStatusActive   = "active"
+	LinkStatusDisabled = "disabled"
 )
 
 // TrustedGateway represents another gateway node that this gateway trusts.
@@ -67,7 +67,7 @@ func NewTrustedGateway(name, host, privateIP string, port int, authSecret, gatew
 		AuthValue:   hashSecret(authSecret),
 		GatewayType: gatewayType,
 		AutoRoute:   autoRoute,
-		Status:      StatusActive,
+		Status:      LinkStatusActive,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -92,7 +92,7 @@ func NewEncryptedGateway(name, host, privateIP string, port int, rawToken, gatew
 		AuthValue:       hashSecret(rawToken), // keep HMAC hash as fallback for backward compat
 		GatewayType:     gatewayType,
 		AutoRoute:       autoRoute,
-		Status:          StatusActive,
+		Status:          LinkStatusActive,
 		EncryptedSecret: encryptedB64,
 		SecretNonce:     nonceB64,
 		SecretVersion:   1,

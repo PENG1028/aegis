@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 )
 
@@ -37,7 +37,7 @@ func (s *AppService) CreateProject(ctx context.Context, input CreateProjectInput
 
 	now := time.Now()
 	p := &Project{
-		ID:          id.New("proj"),
+		ID:          core.NewID("proj"),
 		Name:        input.Name,
 		Description: input.Description,
 		Status:      "active",

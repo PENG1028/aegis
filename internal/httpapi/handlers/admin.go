@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 	"aegis/internal/node"
 	"aegis/internal/token"
@@ -201,7 +201,7 @@ func (h *Handlers) AdminCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	tokenHash := hashTokenBytes(tokenValue)
 
 	tok := &token.APIToken{
-		ID:        id.New("tok"),
+		ID:        core.NewID("tok"),
 		Name:      input.Name,
 		TokenHash: tokenHash,
 		SpaceID:   spaceID,

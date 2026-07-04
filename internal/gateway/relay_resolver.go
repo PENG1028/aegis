@@ -1,11 +1,10 @@
-package relay
+package gateway
 
 import (
 	"fmt"
 	"sort"
 
 	"aegis/internal/endpoint"
-	gatewaylink "aegis/internal/gateway_link"
 	"aegis/internal/listener"
 	"aegis/internal/node"
 	"aegis/internal/route"
@@ -39,7 +38,7 @@ type NodeRepo interface {
 
 // GWLinkRepo defines gateway link queries needed by the resolver.
 type GWLinkRepo interface {
-	FindByID(id string) (*gatewaylink.TrustedGateway, error)
+	FindByID(id string) (*TrustedGateway, error)
 }
 
 // ListenerRepo defines listener queries needed by the resolver.
@@ -141,7 +140,7 @@ func (r *Resolver) ResolveManagedRelay(domain, fromNodeID string) *RelayResult {
 	res.FromNodeHostname = fromNode.Hostname
 
 	// 7. Get gateway link (if any)
-	var gwLink *gatewaylink.TrustedGateway
+	var gwLink *TrustedGateway
 	if rt.GatewayLinkID != "" {
 		gwLink, _ = r.deps.GWLinkRepo.FindByID(rt.GatewayLinkID)
 		if gwLink != nil {
@@ -232,7 +231,7 @@ func localGateway(res *RelayResult, node *node.NodeRecord, targetHost string, ta
 
 // privateGateway sets mode to private_gateway.
 // Caller must ensure gwLink is non-nil (checked before call).
-func privateGateway(res *RelayResult, node *node.NodeRecord, targetHost string, targetPort, httpPort int, gwLink *gatewaylink.TrustedGateway) *RelayResult {
+func privateGateway(res *RelayResult, node *node.NodeRecord, targetHost string, targetPort, httpPort int, gwLink *TrustedGateway) *RelayResult {
 	res.Mode = string(ModePrivateGateway)
 	res.DirectTargetSuppressed = true
 	res.GatewayHost = node.PrivateIP
@@ -246,7 +245,7 @@ func privateGateway(res *RelayResult, node *node.NodeRecord, targetHost string, 
 }
 
 // publicGateway sets mode to public_gateway.
-func publicGateway(res *RelayResult, node *node.NodeRecord, targetHost string, targetPort, httpsPort int, gwLink *gatewaylink.TrustedGateway) *RelayResult {
+func publicGateway(res *RelayResult, node *node.NodeRecord, targetHost string, targetPort, httpsPort int, gwLink *TrustedGateway) *RelayResult {
 	res.Mode = string(ModePublicGateway)
 	res.DirectTargetSuppressed = true
 	res.GatewayHost = node.PublicIP

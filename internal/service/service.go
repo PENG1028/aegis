@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 )
 
@@ -57,7 +57,7 @@ func (s *AppService) CreateService(ctx context.Context, input CreateServiceInput
 
 	now := time.Now()
 	svc := &Service{
-		ID:        id.New("svc"),
+		ID:        core.NewID("svc"),
 		ProjectID: input.ProjectID,
 		Name:      input.Name,
 		Kind:      input.Kind,

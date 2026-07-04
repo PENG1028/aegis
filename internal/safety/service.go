@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"aegis/internal/endpoint"
-	gatewaylink "aegis/internal/gateway_link"
+	gatewaylink "aegis/internal/gateway"
 	"aegis/internal/listener"
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
@@ -19,7 +19,7 @@ type Dependencies struct {
 	MDRRepo      *manageddomain.Repository
 	EndpointRepo *endpoint.Repository
 	NodeRepo     *node.Repository
-	GWLinkRepo   *gatewaylink.Repository
+	GWLinkRepo   *gatewaylink.LinkRepository
 	ListenerRepo *listener.Repository // v1.8A-4: listener-aware self-loop
 }
 

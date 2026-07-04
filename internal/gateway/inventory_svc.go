@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 // InventoryService provides gateway inventory operations.
@@ -28,7 +28,7 @@ func (s *InventoryService) CreateGateway(input CreateGatewayInput) (*GatewayInve
 
 	now := time.Now()
 	g := &GatewayInventory{
-		GatewayID:         id.New("gw"),
+		GatewayID:         core.NewID("gw"),
 		NodeID:            input.NodeID,
 		Name:              input.Name,
 		Type:              input.Type,

@@ -1,4 +1,4 @@
-package localgateway
+package gateway
 
 import (
 	"fmt"

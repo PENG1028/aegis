@@ -1,7 +1,7 @@
 package config
 
 import (
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -307,7 +307,7 @@ func (c *Config) PanelCaddyfile() string {
 }
 
 // generateAdminToken creates a cryptographically random 32-byte hex token.
-// Delegates to id.GenerateRandomHex — the project's canonical random-hex generator.
+// Delegates to core.GenerateRandomHex — the project's canonical random-hex generator.
 func generateAdminToken() string {
-	return id.GenerateRandomHex(32)
+	return core.GenerateRandomHex(32)
 }

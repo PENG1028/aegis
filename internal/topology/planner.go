@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"aegis/internal/endpoint"
-	gatewaylink "aegis/internal/gateway_link"
+	gatewaylink "aegis/internal/gateway"
 	"aegis/internal/provider"
 	"aegis/internal/route"
 	"aegis/internal/safety"
@@ -34,7 +34,7 @@ type Dependencies struct {
 	RouteRepo        *route.Repository
 	ServiceRepo      *service.Repository
 	EndpointResolver *endpoint.Resolver
-	GwLinkRepo       *gatewaylink.Repository
+	GwLinkRepo       *gatewaylink.LinkRepository
 	SafetySvc        *safety.Service
 	MasterKey        *secrets.MasterKey
 }
@@ -154,7 +154,7 @@ func (p *Planner) resolveIntents(intents []RouteIntent) ([]RouteIntent, []string
 		// Gateway Link resolution
 		if ri.gatewayLinkID != "" && p.deps.GwLinkRepo != nil {
 			gw, err := p.deps.GwLinkRepo.FindByID(ri.gatewayLinkID)
-			if err == nil && gw != nil && gw.Status == gatewaylink.StatusActive {
+			if err == nil && gw != nil && gw.Status == gatewaylink.LinkStatusActive {
 				targetHost := gw.ResolveHost()
 				ri.Upstream = fmt.Sprintf("http://%s:%d", targetHost, gw.Port)
 

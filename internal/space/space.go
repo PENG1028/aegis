@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 // Space is a logical isolation unit (tenant-like).
@@ -40,7 +40,7 @@ func DefaultQuota() Quota {
 func NewSpace(name string) *Space {
 	now := time.Now()
 	return &Space{
-		ID:        id.New("space"),
+		ID:        core.NewID("space"),
 		SpaceID:   fmt.Sprintf("space_%s", name),
 		Name:      name,
 		Quotas:    DefaultQuota(),

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 	"aegis/internal/secrets"
 	"aegis/internal/addr"
@@ -62,7 +62,7 @@ func (s *Service) Create(ctx context.Context, alias, rawConnString, description 
 
 	now := time.Now()
 	c := &Credential{
-		ID:                  id.New("cred"),
+		ID:                  core.NewID("cred"),
 		Alias:               alias,
 		EncryptedConnString: encrypted,
 		SecretVersion:       0,

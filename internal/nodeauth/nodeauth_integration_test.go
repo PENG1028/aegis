@@ -7,7 +7,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/node"
 )
 
@@ -96,11 +96,11 @@ func TestCreateJoinTokenStoresHashOnly(t *testing.T) {
 	defer db.Close()
 	repo := NewRepository(db)
 
-	rawToken := id.GenerateRandomHex(32)
+	rawToken := core.GenerateRandomHex(32)
 	tokenHash := hashToken(rawToken)
 
 	tok := &JoinToken{
-		ID:          id.New("jt"),
+		ID:          core.NewID("jt"),
 		TokenHash:   tokenHash,
 		Name:        "test-token",
 		ExpiresAt:   time.Now().Add(1 * time.Hour),
@@ -142,11 +142,11 @@ func TestExpiredJoinTokenRejected(t *testing.T) {
 	repo := NewRepository(db)
 
 	now := time.Now()
-	rawToken := id.GenerateRandomHex(32)
+	rawToken := core.GenerateRandomHex(32)
 	tokenHash := hashToken(rawToken)
 
 	tok := &JoinToken{
-		ID:        id.New("jt"),
+		ID:        core.NewID("jt"),
 		TokenHash: tokenHash,
 		Name:      "expired-token",
 		ExpiresAt: now.Add(-1 * time.Hour), // expired
@@ -175,11 +175,11 @@ func TestUsedJoinTokenRejected(t *testing.T) {
 	repo := NewRepository(db)
 
 	now := time.Now()
-	rawToken := id.GenerateRandomHex(32)
+	rawToken := core.GenerateRandomHex(32)
 	tokenHash := hashToken(rawToken)
 
 	tok := &JoinToken{
-		ID:        id.New("jt"),
+		ID:        core.NewID("jt"),
 		TokenHash: tokenHash,
 		Name:      "used-token",
 		ExpiresAt: now.Add(1 * time.Hour),
@@ -216,11 +216,11 @@ func TestRevokedJoinTokenRejected(t *testing.T) {
 	repo := NewRepository(db)
 
 	now := time.Now()
-	rawToken := id.GenerateRandomHex(32)
+	rawToken := core.GenerateRandomHex(32)
 	tokenHash := hashToken(rawToken)
 
 	tok := &JoinToken{
-		ID:        id.New("jt"),
+		ID:        core.NewID("jt"),
 		TokenHash: tokenHash,
 		Name:      "revoked-token",
 		ExpiresAt: now.Add(1 * time.Hour),
@@ -252,11 +252,11 @@ func TestNodeCredentialCreateAndFind(t *testing.T) {
 	defer db.Close()
 	repo := NewRepository(db)
 
-	rawToken := id.GenerateRandomHex(32)
+	rawToken := core.GenerateRandomHex(32)
 	tokenHash := hashToken(rawToken)
 
 	cred := &NodeCredential{
-		ID:        id.New("nc"),
+		ID:        core.NewID("nc"),
 		NodeID:    "nd_test",
 		TokenHash: tokenHash,
 		CreatedAt: time.Now(),
@@ -293,11 +293,11 @@ func TestNodeCredentialRevoked(t *testing.T) {
 	defer db.Close()
 	repo := NewRepository(db)
 
-	rawToken := id.GenerateRandomHex(32)
+	rawToken := core.GenerateRandomHex(32)
 	tokenHash := hashToken(rawToken)
 
 	cred := &NodeCredential{
-		ID:        id.New("nc"),
+		ID:        core.NewID("nc"),
 		NodeID:    "nd_test2",
 		TokenHash: tokenHash,
 		CreatedAt: time.Now(),
@@ -339,8 +339,8 @@ func TestListJoinTokens(t *testing.T) {
 	now := time.Now()
 	for i := 0; i < 3; i++ {
 		tok := &JoinToken{
-			ID:        id.New("jt"),
-			TokenHash: hashToken(id.GenerateRandomHex(32)),
+			ID:        core.NewID("jt"),
+			TokenHash: hashToken(core.GenerateRandomHex(32)),
 			Name:      "token",
 			ExpiresAt: now.Add(1 * time.Hour),
 			CreatedAt: now,

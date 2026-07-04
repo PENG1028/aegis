@@ -12,7 +12,6 @@ import (
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
-	"aegis/internal/gateway_link"
 	"aegis/internal/health"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
@@ -70,7 +69,7 @@ type Handlers struct {
 	DeploymentSvc *deployment.Service
 	PendingState    *cluster.PendingState  // v1.7S
 	TraceSvc        *trace.Service         // v1.7T
-	GatewayLinkSvc  *gatewaylink.Service
+	GatewayLinkSvc  *gateway.LinkService
 	ServiceAuthSvc  *serviceauth.Service   // v1.9A
 	SafetySvc       *safety.Service        // v1.7AB
 	RelayResolver   *RelayResolver         // v1.8B

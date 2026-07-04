@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"aegis/internal/gateway_link"
+	"aegis/internal/gateway"
 	"aegis/internal/secrets"
 )
 
@@ -31,7 +31,7 @@ func TestGatewayLinkTokenAPIWithEncryptedSecret(t *testing.T) {
 
 	// Create an encrypted GatewayLink using NewEncryptedGateway
 	gw, err := gatewaylink.NewEncryptedGateway("test-link", "10.0.0.1", "", 443,
-		rawToken, gatewaylink.TypeUpstream, true, mk)
+		rawToken, gateway.TypeUpstream, true, mk)
 	if err != nil {
 		t.Fatalf("NewEncryptedGateway failed: %v", err)
 	}
@@ -93,10 +93,10 @@ func TestReconcilerSyncGatewayLinkSecretsFromControlPlane(t *testing.T) {
 		"link-a": "secret-a-integration-abcdef0123456789abcdef01",
 		"link-b": "secret-b-integration-0123456789abcdef01234567",
 	}
-	gateways := make(map[string]*gatewaylink.TrustedGateway)
+	gateways := make(map[string]*gateway.TrustedGateway)
 	for id, raw := range tokens {
 		gw, err := gatewaylink.NewEncryptedGateway(id, "10.0.0.1", "", 443,
-			raw, gatewaylink.TypeUpstream, true, mk)
+			raw, gateway.TypeUpstream, true, mk)
 		if err != nil {
 			t.Fatalf("NewEncryptedGateway(%s) failed: %v", id, err)
 		}
@@ -194,7 +194,7 @@ func TestGatewayLinkTokenMasterKeyMissingSafeFailure(t *testing.T) {
 	// Create an encrypted link with a valid master key
 	mk := secrets.DevMasterKey()
 	gw, err := gatewaylink.NewEncryptedGateway("safe-fail-test", "10.0.0.1", "", 443,
-		rawToken, gatewaylink.TypeUpstream, true, mk)
+		rawToken, gateway.TypeUpstream, true, mk)
 	if err != nil {
 		t.Fatalf("NewEncryptedGateway failed: %v", err)
 	}

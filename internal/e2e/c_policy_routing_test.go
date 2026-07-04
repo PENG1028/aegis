@@ -12,7 +12,7 @@ import (
 
 	"aegis/internal/endpoint"
 	"aegis/internal/gateway"
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 	"aegis/internal/node"
 	"aegis/internal/route"
@@ -87,7 +87,7 @@ func TestPolicyRouting_MultiService(t *testing.T) {
 
 	// Use CreateServiceDirect to avoid project dependency
 	svc1 := &service.Service{
-		ID:      id.New("svc"),
+		ID:      core.NewID("svc"),
 		Name:    "api-service",
 		Kind:    "http",
 		Env:     "prod",
@@ -99,7 +99,7 @@ func TestPolicyRouting_MultiService(t *testing.T) {
 	}
 
 	svc2 := &service.Service{
-		ID:      id.New("svc"),
+		ID:      core.NewID("svc"),
 		Name:    "worker-service",
 		Kind:    "http",
 		Env:     "prod",
@@ -111,7 +111,7 @@ func TestPolicyRouting_MultiService(t *testing.T) {
 	}
 
 	svc3 := &service.Service{
-		ID:      id.New("svc"),
+		ID:      core.NewID("svc"),
 		Name:    "public-service",
 		Kind:    "http",
 		Env:     "prod",
@@ -317,7 +317,7 @@ func TestPolicyRouting_MultiService(t *testing.T) {
 
 	// Create routes directly via repo (bypass edgemux dependency for simplicity)
 	rt1 := &route.Route{
-		ID:        id.New("rt"),
+		ID:        core.NewID("rt"),
 		Domain:    "api.example.com",
 		PathPrefix: "/",
 		ServiceID: svc1.ID,
@@ -329,7 +329,7 @@ func TestPolicyRouting_MultiService(t *testing.T) {
 	}
 
 	rt2 := &route.Route{
-		ID:        id.New("rt"),
+		ID:        core.NewID("rt"),
 		Domain:    "worker.example.com",
 		PathPrefix: "/",
 		ServiceID: svc2.ID,
@@ -341,7 +341,7 @@ func TestPolicyRouting_MultiService(t *testing.T) {
 	}
 
 	rt3 := &route.Route{
-		ID:        id.New("rt"),
+		ID:        core.NewID("rt"),
 		Domain:    "public.example.com",
 		PathPrefix: "/",
 		ServiceID: svc3.ID,

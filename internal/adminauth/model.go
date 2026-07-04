@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -64,7 +64,7 @@ func NewAdminUser(username, password string) (*AdminUser, error) {
 	}
 	now := time.Now()
 	return &AdminUser{
-		ID:           id.New("admin"),
+		ID:           core.NewID("admin"),
 		Username:     username,
 		PasswordHash: hash,
 		CreatedAt:    now,
@@ -81,7 +81,7 @@ func (u *AdminUser) CheckPassword(password string) bool {
 func NewAdminSession(userID string, sessionToken string, ttl time.Duration) *AdminSession {
 	now := time.Now()
 	return &AdminSession{
-		ID:          id.New("asess"),
+		ID:          core.NewID("asess"),
 		UserID:      userID,
 		SessionHash: hashToken(sessionToken),
 		ExpiresAt:   now.Add(ttl),

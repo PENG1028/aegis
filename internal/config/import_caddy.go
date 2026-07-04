@@ -1,6 +1,6 @@
 // Package importcfg provides parsers for existing proxy configurations
 // so Aegis can import already-managed routes.
-package importcfg
+package config
 
 import (
 	"bufio"

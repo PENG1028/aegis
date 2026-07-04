@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"aegis/internal/localgateway"
+	"aegis/internal/gateway"
 	"aegis/internal/noderuntime"
 )
 
@@ -62,12 +62,12 @@ func main() {
 	// 2. Routing table resolver
 	relayURL := fmt.Sprintf("http://%s:80", serverB)
 	resolver := &simpleResolver{
-		decisions: map[string]*localgateway.RoutingDecision{
+		decisions: map[string]*gateway.RoutingDecision{
 			domain: {
 				Domain:  domain,
 				Status:  "available",
 				RouteID: routeID,
-				SelectedCandidate: &localgateway.CandidateEntry{
+				SelectedCandidate: &gateway.CandidateEntry{
 					Mode:          "private_gateway",
 					GatewayURL:    relayURL,
 					GatewayLinkID: gwLinkID,
@@ -83,7 +83,7 @@ func main() {
 	if p, err := strconv.Atoi(port); err == nil && p > 0 {
 		portInt = p
 	}
-	cfg := localgateway.DefaultConfig()
+	cfg := gateway.DefaultConfig()
 	cfg.Port = portInt
 		nodeID := os.Getenv("NODE_ID")
 	if nodeID == "" {
@@ -92,7 +92,7 @@ func main() {
 	cfg.NodeID = nodeID
 
 	fmt.Print("[3] Starting local HTTP gateway ... ")
-	gateway := localgateway.NewGateway(cfg, resolver, secretProvider)
+	gateway := gateway.NewGateway(cfg, resolver, secretProvider)
 	gateway.WireGatewayStatus()
 
 	if err := gateway.Start(); err != nil {
@@ -143,25 +143,25 @@ func main() {
 }
 
 type simpleResolver struct {
-	decisions map[string]*localgateway.RoutingDecision
+	decisions map[string]*gateway.RoutingDecision
 }
 
-func (r *simpleResolver) Resolve(domain string) *localgateway.RoutingDecision {
+func (r *simpleResolver) Resolve(domain string) *gateway.RoutingDecision {
 	if d, ok := r.decisions[domain]; ok {
 		return d
 	}
-	return &localgateway.RoutingDecision{
+	return &gateway.RoutingDecision{
 		Domain: domain,
 		Status: "unavailable",
 	}
 }
 
-func (r *simpleResolver) GetRoutingTableStatus() localgateway.RoutingTableInfo {
-	return localgateway.RoutingTableInfo{
+func (r *simpleResolver) GetRoutingTableStatus() gateway.RoutingTableInfo {
+	return gateway.RoutingTableInfo{
 		Loaded:  true,
 		Entries: len(r.decisions),
 	}
 }
 
 // Ensure simpleResolver implements RoutingTableStatusProvider
-var _ localgateway.RoutingTableStatusProvider = (*simpleResolver)(nil)
+var _ gateway.RoutingTableStatusProvider = (*simpleResolver)(nil)

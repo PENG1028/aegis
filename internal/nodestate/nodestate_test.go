@@ -7,7 +7,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"aegis/internal/id"
+	"aegis/internal/core"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {

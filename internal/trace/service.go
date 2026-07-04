@@ -8,7 +8,7 @@ import (
 
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
-	"aegis/internal/gateway_link"
+	"aegis/internal/gateway"
 	"aegis/internal/listener"
 	"aegis/internal/node"
 	"aegis/internal/provider"
@@ -23,7 +23,7 @@ type Dependencies struct {
 	ListenerSvc  *listener.Service
 	NodeRepo     *node.Repository
 	EndpointRepo *endpoint.Repository
-	GatewayLinkRepo *gatewaylink.Repository // v1.7W: for target address lookup
+	GatewayLinkRepo *gateway.LinkRepository // v1.7W: for target address lookup
 }
 
 // Service traces access paths for domains, SNI hosts, and routes.

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"aegis/internal/endpoint"
-	"aegis/internal/id"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 	"aegis/internal/service"
 )
@@ -154,7 +154,7 @@ func parseAddress(addr string) (host string, port string, err error) {
 
 func (s *AppService) recordCheck(serviceID, endpointID, status string, latency int64, message string) *HealthCheck {
 	h := &HealthCheck{
-		ID:         id.New("hc"),
+		ID:         core.NewID("hc"),
 		ServiceID:  serviceID,
 		EndpointID: endpointID,
 		Status:     status,
