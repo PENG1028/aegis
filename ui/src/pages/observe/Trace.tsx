@@ -13,7 +13,7 @@ import { Card, PageHeader, Btn, StatusBadge, HealthDot } from '@/components/shar
 import Input from '@/components/ui/Input';
 import { PathRibbon } from '@/components/workspace/PathRibbon';
 import { useChain } from '@/hooks/useChain';
-import { traceApi, providerApi } from '@/lib/api-bridge';
+import { traceApi, runtimeModeApi } from '@/lib/api-bridge';
 
 import { cn } from '@/lib/utils';
 
@@ -100,13 +100,13 @@ export default function Trace() {
   const { data: chain } = useChain('route', chainRouteId);
 
   // Fetch port policy for pipeline visualization
-  const { data: portPolicy } = useQuery({
-    queryKey: ['port-policy'],
-    queryFn: () => providerApi.portPolicy().catch(() => null),
+  const { data: runtimeMode } = useQuery({
+    queryKey: ['runtime-mode'],
+    queryFn: () => runtimeModeApi.get().catch(() => null),
     refetchInterval: 120_000,
   });
 
-  const portPolicyMode = portPolicy?.mode || null;
+  const portPolicyMode = runtimeMode?.current?.id || null;
 
   const handleTrace = async () => {
     setLoading(true);
