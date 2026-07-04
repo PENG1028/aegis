@@ -5,8 +5,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { gatewayLinkApi } from '@/lib/api-bridge';
 import { PageHeader, StatusBadge, Btn, Drawer, Timestamp, Card, MetaRow, useToast } from '@/components/shared';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 import { cn } from '@/lib/utils';
 import { evaluateRisk } from '@/lib/risk-evaluator';
 
@@ -14,8 +13,8 @@ export default function GatewayLinks() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { data } = useQuery({ queryKey: ['gateway-links'], queryFn: () => gatewayLinkApi.list() });
-  const links = API_CONFIG.useMock ? getScenario().gatewayLinks : (Array.isArray(data) ? data : (data as any)?.links || []);
-  const scenario = API_CONFIG.useMock ? getScenario() : null;
+  const links = (Array.isArray(data) ? data : (data as any)?.links || []);
+  
 
   const [selected, setSelected] = useState<any>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -28,9 +27,7 @@ export default function GatewayLinks() {
   };
 
   // Find routes that depend on this link
-  const dependentRoutes = selected && scenario
-    ? scenario.routes.filter(r => r.gateway_policy?.fallback_gateway_ids?.includes(selected.id) || false)
-    : [];
+  const dependentRoutes: any[] = [];
 
   const handleRotate = async () => {
     if (!selected) return;

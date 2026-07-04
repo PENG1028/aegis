@@ -3,23 +3,18 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { fetchListeners, fetchRoutes } from '@/lib/api-bridge';
 import { PageHeader, HealthDot, StatusBadge } from '@/components/shared';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 
 export default function Listeners() {
   const nav = useNavigate();
   const { data } = useQuery({ queryKey: ['listeners'], queryFn: fetchListeners });
   const { data: routesData } = useQuery({ queryKey: ['routes'], queryFn: fetchRoutes });
-  const listeners = API_CONFIG.useMock ? getScenario().listeners : (data || []);
+  const listeners = (data || []);
   const routes = (routesData as any)?.routes || [];
-  const scenario = API_CONFIG.useMock ? getScenario() : null;
+  
 
-  // Resolve node name from scenario nodes
-  const nodeName = (nodeId: string) => {
-    if (!scenario) return nodeId;
-    const n = scenario.nodes.find(n => n.node_id === nodeId);
-    return n?.name || nodeId;
-  };
+  // Resolve node name from null nodes
+  const nodeName = (nodeId: string) => nodeId;
 
   return (
     <div className="p-6 space-y-6">
@@ -27,9 +22,7 @@ export default function Listeners() {
 
       <div className="space-y-2">
         {listeners.map((l: any, i: number) => {
-          const viaRoutes = scenario
-            ? scenario.routes.filter(r => r.gateway_policy?.primary_gateway_id === l.gateway_id)
-            : [];
+          const viaRoutes: any[] = [];
 
           return (
             <div key={i}

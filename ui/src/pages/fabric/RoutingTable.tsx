@@ -1,19 +1,18 @@
 // ─── Routing Table ───
-// Per-node routing table. Mock: built from scenario. Production: real API.
+// Per-node routing table. Mock: built from null. Production: real API.
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { PageHeader, StatusBadge, Card } from '@/components/shared';
 import { fetchNodes } from '@/lib/api-bridge';
 import { nodeApi } from '@/lib/api-bridge';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 import { cn } from '@/lib/utils';
 
 export default function RoutingTable() {
   const nav = useNavigate();
   const [selectedNode, setSelectedNode] = useState<string>('');
-  const scenario = API_CONFIG.useMock ? getScenario() : null;
+  
 
   // Nodes (both modes)
   const { data: nodesData } = useQuery({
@@ -21,9 +20,7 @@ export default function RoutingTable() {
     queryFn: fetchNodes,
     refetchInterval: 120_000,
   });
-  const nodes = API_CONFIG.useMock
-    ? scenario!.nodes
-    : (Array.isArray(nodesData) ? nodesData : []);
+  const nodes = (Array.isArray(nodesData) ? nodesData : []);
 
   // Set default node on first load
   if (!selectedNode && nodes.length > 0) {
@@ -38,18 +35,8 @@ export default function RoutingTable() {
     refetchInterval: 60_000,
   });
 
-  // Build entries
+  // Build entries from real routing table data
   const entries: any[] = (() => {
-    if (API_CONFIG.useMock) {
-      return scenario!.routes.map(r => ({
-        domain: r.domain,
-        route_id: r.route_id,
-        service_id: r.service_id,
-        gateway: r.gateway_policy?.primary_gateway_id || '—',
-        status: r.status === 'active' ? 'available' : 'unavailable',
-      }));
-    }
-    // Real: API returns { entries: [...] } or array
     if (Array.isArray(rtData)) return rtData;
     return (rtData as any)?.entries || (rtData as any)?.routes || [];
   })();

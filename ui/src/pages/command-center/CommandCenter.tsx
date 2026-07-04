@@ -7,8 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { fetchDashboard } from '@/lib/api-bridge';
 import { cn } from '@/lib/utils';
 import { Card, StatCard, HealthDot, StatusBadge, Btn, PageHeader } from '@/components/shared';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 import type { DashboardData } from '@/types';
 import type { Anomaly } from '@/types/workspace';
 
@@ -105,26 +104,7 @@ export default function CommandCenter() {
 
   const d = data as DashboardData | undefined;
 
-  // Mock: use scenario anomalies. Production: derive from real data.
-  const mockAnomalies: Anomaly[] = API_CONFIG.useMock ? getScenario().anomalies : [];
-  const issues = API_CONFIG.useMock
-    ? mockAnomalies.map(a => ({
-        id: a.id, title: a.title, description: a.description,
-        severity: a.severity as 'critical' | 'warning',
-        workspace: a.workspace,
-        targetPath: (() => {
-          const obj = a.affectedObjects[0];
-          if (!obj) return '/';
-          return obj.type === 'node' ? `/runtime/node/${obj.id}`
-            : obj.type === 'route' ? `/exposure/entry/${obj.id}`
-            : obj.type === 'gateway' ? `/fabric/gateway/${obj.id}`
-            : obj.type === 'service' ? `/exposure/service/${obj.id}`
-            : a.workspace === 'release' ? '/release'
-            : a.workspace === 'fabric' ? '/fabric'
-            : '/';
-        })(),
-      }))
-    : deriveIssues(d);
+  const issues = deriveIssues(d);
 
   const hasIssues = issues.length > 0;
 
@@ -153,7 +133,7 @@ export default function CommandCenter() {
 
       {/* Issues / Anomalies */}
       {issues.length > 0 && (
-        <Card title={API_CONFIG.useMock ? `异常事件 (${issues.length})` : `系统问题 (${issues.length})`} subtitle="点击跳转到对应页面">
+        <Card title={`系统问题 (${issues.length})`} subtitle="点击跳转到对应页面">
           <div className="space-y-2">
             {issues.map(issue => (
               <div key={issue.id}

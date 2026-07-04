@@ -5,15 +5,14 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchTopologyMatrix } from '@/lib/api-bridge';
 import { PageHeader, StatusBadge, Drawer, Card, MetaRow, Btn, useToast } from '@/components/shared';
-import { getScenario } from '@/mocks';
-import { API_CONFIG } from '@/lib/api-config';
+
 import { cn } from '@/lib/utils';
 
 export default function Topology() {
   const toast = useToast();
   const { data } = useQuery({ queryKey: ['topology'], queryFn: fetchTopologyMatrix });
-  const scenario = API_CONFIG.useMock ? getScenario() : null;
-  const edges = API_CONFIG.useMock ? scenario!.topologyEdges : (data || []);
+  
+  const edges = (data || []);
 
   const [selected, setSelected] = useState<any>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -24,9 +23,7 @@ export default function Topology() {
   };
 
   // Find the linked GatewayLink if any
-  const linkedLink = selected && scenario
-    ? scenario.gatewayLinks.find((l: any) => l.gateway_link_id === selected.gateway_link_id)
-    : null;
+  const linkedLink: any = null;
 
   return (
     <div className="p-6 space-y-4">
@@ -113,9 +110,9 @@ export default function Topology() {
             <Card title="关联 Gateway Link">
               {linkedLink ? (
                 <>
-                  <MetaRow label="Link ID" value={linkedLink.gateway_link_id} mono />
-                  <MetaRow label="状态" value={linkedLink.status} />
-                  <MetaRow label="创建时间" value={linkedLink.created_at ? new Date(linkedLink.created_at).toLocaleString('zh-CN') : '—'} />
+                  <MetaRow label="Link ID" value={linkedLink?.gateway_link_id || '—'} mono />
+                  <MetaRow label="状态" value={linkedLink?.status || '—'} />
+                  <MetaRow label="创建时间" value={linkedLink && linkedLink.created_at ? new Date(linkedLink.created_at).toLocaleString('zh-CN') : '—'} />
                 </>
               ) : (
                 <div className="text-xs text-a-muted py-2">
