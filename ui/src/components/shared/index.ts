@@ -37,3 +37,4 @@ export { SearchInput } from './SearchInput';
 export { HealthDot } from './HealthDot';
 export { Timestamp } from './Timestamp';
 export { CopyButton } from './CopyButton';
+export { QueryGuard, QuerySpinner } from './QueryGuard';
