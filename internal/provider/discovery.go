@@ -132,26 +132,6 @@ func discoverOne(p Provider) DiscoveredProvider {
 }
 
 // ============================================================================
-// Port policy mode detection
-// ============================================================================
-
-// CurrentPortPolicyMode returns the active port policy mode ("legacy" or
-// "edge_mux") by checking whether HAProxy is installed and running.
-//
-// Rules:
-//   - HAProxy binary found AND haproxy service running → "edge_mux"
-//   - Otherwise → "legacy"
-func CurrentPortPolicyMode() string {
-	if _, err := exec.LookPath("haproxy"); err != nil {
-		return "legacy"
-	}
-	if err := exec.Command("systemctl", "is-active", "--quiet", "haproxy").Run(); err != nil {
-		return "legacy"
-	}
-	return "edge_mux"
-}
-
-// ============================================================================
 // System service detection
 // ============================================================================
 

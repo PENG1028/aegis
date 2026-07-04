@@ -77,9 +77,8 @@ func (p *HAProxyProvider) State() ProviderState {
 		}
 	}
 
-	state.Ports = []PortBinding{
-		{Port: 443, Owner: "haproxy", Protocol: "tcp", Purpose: "tls_sni_mux", Status: "active"},
-	}
+	// Port allocations now come from RuntimeMode (the single source of truth).
+	// HAProxy serves :443 in EdgeMux mode; in Legacy mode it may not be running at all.
 
 	return state
 }
