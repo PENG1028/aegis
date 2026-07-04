@@ -23,6 +23,7 @@ import (
 	"aegis/internal/config"
 	"aegis/internal/id"
 	"aegis/internal/logs"
+	"aegis/internal/topology"
 )
 
 // PendingStateClearer is the interface for clearing pending apply state.
@@ -76,6 +77,7 @@ func (s *AppService) DryRun(ctx context.Context) (*ApplyPlan, error) {
 	return &ApplyPlan{
 		RenderedConfig: rendered.String(),
 		ConfigPath:     s.cfg.Proxy.CaddyfilePath,
+		RouteCount:     planRouteCount(result.Plan),
 		Warnings:       warningsToApply(result.Plan.Warnings),
 	}, nil
 }
@@ -197,6 +199,7 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	return &ApplyPlan{
 		RenderedConfig: renderedStr,
 		ConfigPath:     s.cfg.Proxy.CaddyfilePath,
+		RouteCount:     planRouteCount(result.Plan),
 		Warnings:       warningsToApply(applyResult.Warnings),
 	}, nil
 }
@@ -305,6 +308,18 @@ func warningsToApply(warnings []string) []ApplyWarning {
 		out[i] = ApplyWarning{Code: "WARNING", Message: w, Severity: "warning"}
 	}
 	return out
+}
+
+// planRouteCount counts the total number of routes across all provider plans.
+func planRouteCount(plan *topology.TopologyPlan) int {
+	if plan == nil {
+		return 0
+	}
+	count := 0
+	for _, p := range plan.Plans {
+		count += len(p.Routes)
+	}
+	return count
 }
 
 // ---------------------------------------------------------------------------
