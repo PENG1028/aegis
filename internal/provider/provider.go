@@ -112,3 +112,20 @@ type ConfigReader interface {
 	Provider
 	GetCurrentConfig() (string, error)
 }
+
+// ServiceController is an optional interface for providers backed by a system
+// service (systemd). Used during mode switching to stop a provider that is no
+// longer in the active plan (e.g. stopping HAProxy when switching to Legacy).
+type ServiceController interface {
+	Provider
+	Start() error
+	Stop() error
+	Restart() error
+}
+
+// ConfigCleaner is an optional interface for providers that can remove their
+// configuration files. Used during mode switching to clean up stale configs.
+type ConfigCleaner interface {
+	Provider
+	CleanConfig() error
+}
