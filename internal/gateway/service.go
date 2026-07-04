@@ -64,9 +64,8 @@ func (s *GatewayService) CreateDomain(ctx context.Context, domain, nodeID string
 
 // AttachRoute adds a route to a gateway domain.
 func (s *GatewayService) AttachRoute(ctx context.Context, domainID, path, targetService string, targetPort int, protocol string) (*GatewayRoute, error) {
-	_, err := s.domains.FindByID(domainID)
-	if err != nil || err == nil {
-		// domain exists check
+	if _, err := s.domains.FindByID(domainID); err != nil {
+		return nil, fmt.Errorf("domain %s not found: %w", domainID, err)
 	}
 	now := time.Now()
 	rt := &GatewayRoute{
