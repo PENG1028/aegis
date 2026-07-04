@@ -33,10 +33,10 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   ],
   runtime: [
     { path: '/runtime', label: '节点' },
-    { path: '/runtime/deploy', label: '部署节点' },
+    // WIP: { path: '/runtime/deploy', label: '部署节点' },
     { path: '/runtime/updates', label: '更新' },
     { path: '/runtime/sync', label: '同步状态' },
-    { path: '/runtime/binaries', label: '二进制' },
+    // WIP: { path: '/runtime/binaries', label: '二进制' },
   ],
   release: [
     { path: '/release', label: '变更' },
@@ -65,7 +65,7 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   settings: [
     { path: '/settings', label: '面板' },
     { path: '/settings/dns', label: 'DNS' },
-    { path: '/settings/tls', label: 'TLS' },
+    // WIP: { path: '/settings/tls', label: 'TLS' },
     { path: '/settings/proxy', label: '透明代理' },
     { path: '/settings/advanced', label: '高级' },
   ],
