@@ -118,6 +118,8 @@ func (ri RouteIntent) RequirementsOf() []provider.Capability {
 		caps = append(caps, provider.CapTLSTerminate)
 	case "passthrough":
 		caps = append(caps, provider.CapTLSPassthrough, provider.CapSNIPreread)
+	default:
+		// "none" or unrecognized — no TLS capabilities needed
 	}
 	switch ri.AppProtocol {
 	case "http":
@@ -127,6 +129,8 @@ func (ri RouteIntent) RequirementsOf() []provider.Capability {
 			caps = append(caps, provider.CapHTTP2)
 		case "h3":
 			caps = append(caps, provider.CapHTTP3)
+		default:
+			// "h1" is implicit with CapHTTP1
 		}
 		if ri.Path != "" {
 			caps = append(caps, provider.CapRoutePath)
@@ -135,6 +139,8 @@ func (ri RouteIntent) RequirementsOf() []provider.Capability {
 		caps = append(caps, provider.CapGRPC, provider.CapRouteHost)
 	case "websocket":
 		caps = append(caps, provider.CapWebSocket, provider.CapRouteHost)
+	default:
+		// "raw", "sse", or unrecognized — no additional L7 protocol caps
 	}
 	return caps
 }

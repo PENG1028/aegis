@@ -28,25 +28,7 @@ func (h *Handlers) BindHTTPDomain(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.Action.BindHTTPDomain(r.Context(), input)
 	if err != nil {
-		ae, ok := err.(*action.ActionError)
-		if ok {
-			status := http.StatusBadRequest
-			switch ae.Code {
-			case action.ErrCodeScopeDenied:
-				status = http.StatusForbidden
-			case action.ErrCodeDomainAlreadyOwned:
-				status = http.StatusConflict
-			case action.ErrCodeApplyLocked:
-				status = http.StatusLocked
-			case action.ErrCodeResourceNotFound:
-				status = http.StatusNotFound
-			}
-			writeJSON(w, status, map[string]interface{}{
-				"error": ae,
-			})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeActionError(w, err)
 		return
 	}
 
@@ -75,25 +57,7 @@ func (h *Handlers) BindTLSBackend(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.Action.BindTLSBackend(r.Context(), input)
 	if err != nil {
-		ae, ok := err.(*action.ActionError)
-		if ok {
-			status := http.StatusBadRequest
-			switch ae.Code {
-			case action.ErrCodeScopeDenied:
-				status = http.StatusForbidden
-			case action.ErrCodeDomainAlreadyOwned:
-				status = http.StatusConflict
-			case action.ErrCodeApplyLocked:
-				status = http.StatusLocked
-			case action.ErrCodeTargetNotAllowed:
-				status = http.StatusBadRequest
-			}
-			writeJSON(w, status, map[string]interface{}{
-				"error": ae,
-			})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeActionError(w, err)
 		return
 	}
 
