@@ -70,18 +70,10 @@ func (p *CaddyProvider) State() ProviderState {
 		}
 	}
 
-	// Determine port bindings
-	mode := CurrentPortPolicyMode()
-	if mode == "edge_mux" {
-		state.Ports = []PortBinding{
-			{Port: 80, Owner: "caddy", Protocol: "tcp", Purpose: "http", Status: "active"},
-			{Port: 8443, Owner: "caddy", Protocol: "tcp", Purpose: "internal_https", Status: "active"},
-		}
-	} else {
-		state.Ports = []PortBinding{
-			{Port: 80, Owner: "caddy", Protocol: "tcp", Purpose: "http", Status: "active"},
-			{Port: 443, Owner: "caddy", Protocol: "tcp", Purpose: "https", Status: "active"},
-		}
+	// Port allocations now come from RuntimeMode (the single source of truth).
+	// ProviderState.Ports is display-only — the atom matrix shows mode-accurate ports.
+	state.Ports = []PortBinding{
+		{Port: 80, Owner: "caddy", Protocol: "tcp", Purpose: "http", Status: "active"},
 	}
 
 	return state
@@ -137,16 +129,22 @@ func (p *CaddyProvider) Apply(configs []ConfigFile) error {
 func (p *CaddyProvider) renderCaddyfile(plan Plan) []byte {
 	var buf bytes.Buffer
 
-	mode := CurrentPortPolicyMode()
-	needGlobalBlock := p.email != "" || mode == "edge_mux"
+	// Detect if Caddy is behind HAProxy by checking for internal_https listener.
+	// This replaces shell-based CurrentPortPolicyMode() — now derived from Plan.
+	isEdgeMux := hasListenerPurpose(plan.Listeners, "internal_https")
+	needGlobalBlock := p.email != "" || isEdgeMux
 
 	if needGlobalBlock {
 		buf.WriteString("{\n")
 		if p.email != "" {
 			buf.WriteString("    email " + sanitizeCaddyValue(p.email) + "\n")
 		}
-		if mode == "edge_mux" {
-			buf.WriteString("    https_port 8443\n")
+		if isEdgeMux {
+			httpsPort := listenerPort(plan.Listeners, "internal_https")
+			if httpsPort == 0 {
+				httpsPort = 8443 // fallback
+			}
+			buf.WriteString(fmt.Sprintf("    https_port %d\n", httpsPort))
 		}
 		buf.WriteString("}\n\n")
 	}
@@ -405,7 +403,9 @@ func caddyCapabilities() []Capability {
 	return []Capability{
 		// L4
 		CapListenTCP,
+		CapListenUDP, // required for HTTP/3 QUIC on :443/udp
 		CapUpstreamTCP,
+		CapUpstreamUDP,
 		// L5
 		CapTLSTerminate,
 		CapTLSMasquerade,
@@ -461,4 +461,24 @@ func (p *CaddyProvider) GetCurrentConfig() (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// hasListenerPurpose returns true if any listener has the given purpose.
+func hasListenerPurpose(listeners []ListenerSpec, purpose string) bool {
+	for _, l := range listeners {
+		if l.Purpose == purpose {
+			return true
+		}
+	}
+	return false
+}
+
+// listenerPort returns the port for the first listener with the given purpose.
+func listenerPort(listeners []ListenerSpec, purpose string) int {
+	for _, l := range listeners {
+		if l.Purpose == purpose {
+			return l.Port
+		}
+	}
+	return 0
 }
