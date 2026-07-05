@@ -59,6 +59,16 @@ func (h *Handlers) AdminGetRoute(w http.ResponseWriter, r *http.Request) {
 	h.GetRoute(w, r)
 }
 
+// AdminDeleteRoute handles DELETE /api/admin/v1/routes/{id}
+func (h *Handlers) AdminDeleteRoute(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.Route.DeleteRoute(r.Context(), id); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "route_id": id})
+}
+
 func (h *Handlers) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotImplemented, "not implemented yet")
 }
