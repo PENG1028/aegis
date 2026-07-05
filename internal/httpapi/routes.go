@@ -294,6 +294,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// v1.8H Transparent Proxy (IP:port interception rules)
 	mux.HandleFunc("GET /api/admin/v1/transparent/rules", h.AdminListTransparentRules)
 	mux.HandleFunc("DELETE /api/admin/v1/transparent/rules/{id}", h.AdminDeleteTransparentRule)
+	mux.HandleFunc("GET /api/admin/v1/transparent/status", h.TransparentProxyStatus) // v1.8L-22
 
 	// v1.8L Node binary update
 	mux.HandleFunc("POST /api/admin/v1/system/upload-binary", h.UploadBinary)

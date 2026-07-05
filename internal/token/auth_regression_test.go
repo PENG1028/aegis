@@ -17,7 +17,7 @@ func TestAuthMiddlewareBypassesLoginPath(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mw := NewAuthMiddleware("test-admin-token", nil)
+	mw := NewAuthMiddleware("test-admin-token")
 	h := mw.Middleware(handler)
 
 	// Test: login POST without Bearer token — should pass through
@@ -40,7 +40,7 @@ func TestAuthMiddlewareBlocksNonLoginWithoutToken(t *testing.T) {
 		called = true
 	})
 
-	mw := NewAuthMiddleware("test-admin-token", nil)
+	mw := NewAuthMiddleware("test-admin-token")
 	h := mw.Middleware(handler)
 
 	// Non-login path without token — should be rejected
@@ -68,7 +68,7 @@ func TestAuthMiddlewareLoginWrongPassword(t *testing.T) {
 		w.Write([]byte(`{"error":"invalid credentials"}`))
 	})
 
-	mw := NewAuthMiddleware("test-admin-token", nil)
+	mw := NewAuthMiddleware("test-admin-token")
 	h := mw.Middleware(handler)
 
 	req := httptest.NewRequest("POST", "/api/admin/v1/auth/login", nil)
@@ -97,7 +97,7 @@ func TestAuthMiddlewareBypassesNodeJoin(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mw := NewAuthMiddleware("test-admin-token", nil)
+	mw := NewAuthMiddleware("test-admin-token")
 	h := mw.Middleware(handler)
 
 	// POST /api/node/v1/join without Bearer token — must pass through
@@ -120,7 +120,7 @@ func TestAuthMiddlewareBypassesNodeJoinOnlyPOST(t *testing.T) {
 		called = true
 	})
 
-	mw := NewAuthMiddleware("test-admin-token", nil)
+	mw := NewAuthMiddleware("test-admin-token")
 	h := mw.Middleware(handler)
 
 	// GET /api/node/v1/join — should NOT bypass (only POST is allowed)

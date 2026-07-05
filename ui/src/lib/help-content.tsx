@@ -435,22 +435,7 @@ export const HELP: Record<string, HelpEntry> = {
   },
 
   // ─── API Keys ───
-  'api-keys': {
-    title: 'API Keys',
-    content: (
-      <div className="space-y-3">
-        <p><strong>API Key</strong> 是用于外部系统集成访问的 Bearer 令牌。</p>
-        <div>
-          <p className="font-medium mb-1">两种类型：</p>
-          <ul className="list-disc list-inside space-y-1 text-a-fg2">
-            <li><strong>admin 类型</strong> — 系统级访问，不限制 Scope</li>
-            <li><strong>space 类型</strong> — 绑定到指定 Scope，只可访问该 Scope 内的资源</li>
-          </ul>
-        </div>
-        <p className="text-a-warn">⚠ 创建后 Token 只展示一次，关闭后无法再次查看。Secret 以 SHA-256 哈希存储。</p>
-      </div>
-    ),
-  },
+
 
   // ─── Logs ───
   logs: {

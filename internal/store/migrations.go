@@ -431,7 +431,6 @@ CREATE INDEX IF NOT EXISTS idx_apply_versions_created_at ON apply_versions(creat
 CREATE INDEX IF NOT EXISTS idx_apply_versions_status ON apply_versions(status);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_action ON operation_logs(action);
-CREATE INDEX IF NOT EXISTS idx_api_tokens_token_hash ON api_tokens(token_hash);
 `
 
 // migration003 adds the exposures table.
@@ -628,12 +627,9 @@ CREATE TABLE IF NOT EXISTS spaces (
 );
 `
 
-// migration015 adds space_id and token_type to api_tokens.
-const migration015 = `
-ALTER TABLE api_tokens ADD COLUMN space_id TEXT NOT NULL DEFAULT '';
-ALTER TABLE api_tokens ADD COLUMN token_type TEXT NOT NULL DEFAULT 'admin';
-CREATE INDEX IF NOT EXISTS idx_api_tokens_space_id ON api_tokens(space_id);
-`
+// migration015 removed — api_tokens table no longer exists.
+const migration015 = `DROP TABLE IF EXISTS api_tokens;`
+
 
 // migration016 adds ownership fields to services, routes, and edge_mux_rules.
 const migration016 = `

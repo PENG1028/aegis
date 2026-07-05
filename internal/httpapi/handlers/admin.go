@@ -1,17 +1,12 @@
 package handlers
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"log"
 	"net/http"
 	"time"
 
-	"aegis/internal/core"
 	"aegis/internal/logs"
 	"aegis/internal/node"
-	"aegis/internal/token"
 )
 
 // SystemOverview handles GET /api/admin/v1/system/overview
@@ -142,132 +137,6 @@ func (h *Handlers) AdminCreateSpace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, sp)
 }
 
-// AdminListAPIKeys handles GET /api/admin/v1/api-keys
-func (h *Handlers) AdminListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	tokens, err := h.TokenRepo.FindAll()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if tokens == nil {
-		tokens = []*token.APIToken{}
-	}
-	type keyInfo struct {
-		ID        string   `json:"id"`
-		Name      string   `json:"name"`
-		KeyPrefix string   `json:"key_prefix"`
-		SpaceID   string   `json:"space_id"`
-		TokenType string   `json:"token_type"`
-		Scopes    []string `json:"scopes"`
-		Status    string   `json:"status"`
-		CreatedAt string   `json:"created_at"`
-	}
-	var keys []keyInfo
-	for _, t := range tokens {
-		prefix := ""
-		if len(t.ID) >= 8 {
-			prefix = t.ID[:8]
-		}
-		keys = append(keys, keyInfo{
-			ID: t.ID, Name: t.Name, KeyPrefix: prefix,
-			SpaceID: t.SpaceID, TokenType: t.TokenType,
-			Scopes: t.Scopes, Status: t.Status,
-			CreatedAt: t.CreatedAt.Format(time.RFC3339),
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"api_keys": keys, "count": len(keys)})
-}
-
-// AdminCreateAPIKey handles POST /api/admin/v1/scopes/{id}/api-keys
-func (h *Handlers) AdminCreateAPIKey(w http.ResponseWriter, r *http.Request) {
-	spaceID := r.PathValue("id")
-	var input struct {
-		Name   string   `json:"name"`
-		Scopes []string `json:"scopes"`
-	}
-	if err := decodeJSON(r, &input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if input.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	if len(input.Scopes) == 0 {
-		input.Scopes = []string{"read:own", "domain:bind", "service:create", "route:create", "edge:create"}
-	}
-
-	tokenValue := genToken(32)
-	tokenHash := hashTokenBytes(tokenValue)
-
-	tok := &token.APIToken{
-		ID:        core.NewID("tok"),
-		Name:      input.Name,
-		TokenHash: tokenHash,
-		SpaceID:   spaceID,
-		TokenType: token.TokenTypeSpace,
-		Scopes:    input.Scopes,
-		Status:    "active",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	if err := h.TokenRepo.Create(tok); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"id":         tok.ID,
-		"name":       tok.Name,
-		"token":      tokenValue,
-		"space_id":   tok.SpaceID,
-		"token_type": tok.TokenType,
-		"scopes":     tok.Scopes,
-		"warning":    "store this token securely — it will not be shown again",
-	})
-}
-
-// AdminRevokeAPIKey handles POST /api/admin/v1/api-keys/{id}/revoke
-func (h *Handlers) AdminRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	tok, err := h.TokenRepo.FindByID(id)
-	if err != nil || tok == nil {
-		writeError(w, http.StatusNotFound, "api key not found")
-		return
-	}
-	tok.Status = "disabled"
-	tok.UpdatedAt = time.Now()
-	if err := h.TokenRepo.Update(tok); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "api key revoked", "id": id})
-}
-
-// AdminRotateAPIKey handles POST /api/admin/v1/api-keys/{id}/rotate
-func (h *Handlers) AdminRotateAPIKey(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	tok, err := h.TokenRepo.FindByID(id)
-	if err != nil || tok == nil {
-		writeError(w, http.StatusNotFound, "api key not found")
-		return
-	}
-	tokenValue := genToken(32)
-	tokenHash := hashTokenBytes(tokenValue)
-	tok.TokenHash = tokenHash
-	tok.UpdatedAt = time.Now()
-	if err := h.TokenRepo.Update(tok); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"id":      tok.ID,
-		"name":    tok.Name,
-		"token":   tokenValue,
-		"warning": "store this token securely — it will not be shown again",
-	})
-}
 
 // AdminListOperations handles GET /api/admin/v1/operations
 func (h *Handlers) AdminListOperations(w http.ResponseWriter, r *http.Request) {
@@ -333,14 +202,3 @@ func (h *Handlers) AdminSystemApply(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Helper functions
-func genToken(bytes int) string {
-	b := make([]byte, bytes)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-func hashTokenBytes(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
-}

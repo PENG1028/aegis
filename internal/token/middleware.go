@@ -1,8 +1,6 @@
 package token
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -13,16 +11,13 @@ import (
 )
 
 // AuditLogger is the interface for writing audit log entries.
-// Implemented by logs.AppService.
 type AuditLogger interface {
 	LogAudit(actorType, actorID, eventType, ip, userAgent, targetType, targetID, result, errorCode string)
 }
 
-// auditLog is the global audit logger for auth failures.
-// Set via SetAuditLogger during initialization.
 var auditLog logs.AuditLogger
 
-// SetAuditLogger sets the global audit logger for the token middleware.
+// SetAuditLogger sets the global audit logger for the auth middleware.
 func SetAuditLogger(l logs.AuditLogger) {
 	auditLog = l
 }
@@ -37,28 +32,27 @@ type ServiceAuthChecker interface {
 
 var serviceAuthChecker ServiceAuthChecker
 
-// SetServiceAuthChecker injects a serviceauth bridge into the token middleware.
+// SetServiceAuthChecker injects a serviceauth bridge into the auth middleware.
 func SetServiceAuthChecker(checker ServiceAuthChecker) {
 	serviceAuthChecker = checker
 }
 
-// AuthMiddleware provides Bearer token authentication with scope checking.
+// AuthMiddleware provides authentication for the HTTP API.
+// It supports three auth methods (tried in order):
+//
+//  1. Admin session cookie (set by AdminAuthMiddleware)
+//  2. X-Service-Ticket header (service-to-service, via serviceauth bridge)
+//  3. Authorization: Bearer <admin_token> (static admin token, CLI/curl)
 type AuthMiddleware struct {
 	adminToken string
-	tokenRepo  *Repository
 }
 
 // NewAuthMiddleware creates a new auth middleware.
-func NewAuthMiddleware(adminToken string, repo *Repository) *AuthMiddleware {
-	return &AuthMiddleware{
-		adminToken: adminToken,
-		tokenRepo:  repo,
-	}
+func NewAuthMiddleware(adminToken string) *AuthMiddleware {
+	return &AuthMiddleware{adminToken: adminToken}
 }
 
 // isPublicPath returns true for paths that don't require authentication.
-// These include: login endpoint, node join, relay dispatch, health probes,
-// and the embedded UI (login page + SPA assets).
 func isPublicPath(path, method string) bool {
 	if path == "/api/admin/v1/auth/login" && method == "POST" {
 		return true
@@ -70,39 +64,33 @@ func isPublicPath(path, method string) bool {
 		return true
 	}
 	// v1.9A: Service-Auth SDK endpoints — protected by isInCluster() IP check
-	// rather than Bearer token (the SDK has no token on first register).
 	if strings.HasPrefix(path, "/api/service-auth/v1/") {
 		return true
 	}
 	if path == "/api/healthz" || path == "/api/readyz" {
 		return true
 	}
-	// System status — used by the login page to detect server version/health
 	if path == "/api/system/status" && method == "GET" {
 		return true
 	}
-	// Runtime mode — used by the binding matrix page (public system info, v1.8L-20)
 	if path == "/api/system/runtime-mode" && method == "GET" {
 		return true
 	}
-	// Composition registry — canonical binding capability list (public, v1.8L-22)
 	if path == "/api/system/compositions" && method == "GET" {
 		return true
 	}
-	// Embedded UI — must be public so the login form loads
+	// Embedded UI
 	if path == "/" || strings.HasPrefix(path, "/assets/") || path == "/favicon.ico" || path == "/favicon.svg" {
 		return true
 	}
-	// SPA routes: any path without a dot extension and not under /api/
-	// (e.g. /exposure, /fabric, /runtime). React Router handles them.
-	// The UI handler serves index.html for these.
+	// SPA routes
 	if !strings.HasPrefix(path, "/api/") && !strings.Contains(path, ".") {
 		return true
 	}
 	return false
 }
 
-// Middleware returns an HTTP middleware that validates Bearer tokens.
+// Middleware returns an HTTP middleware that authenticates requests.
 func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Public paths: no auth required
@@ -111,8 +99,7 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// If admin session is already validated (by AdminAuthMiddleware),
-		// skip bearer token check and use admin context directly.
+		// ① Admin session cookie (set by AdminAuthMiddleware for /api/admin/v1/*)
 		if adminCtx := adminauth.GetAdminContext(r.Context()); adminCtx != nil {
 			ac := &action.ActionContext{
 				SpaceID:   "",
@@ -125,111 +112,43 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// ③ Static admin Bearer token
 		token := extractBearerToken(r)
-		if token == "" {
-			// v1.9A: Fallback — try serviceauth Ticket before rejecting.
-			if serviceAuthChecker != nil {
-				ticket := r.Header.Get("X-Service-Ticket")
-				if ticket != "" {
-					serviceName, err := serviceAuthChecker.VerifyTicketAndGetSpace(ticket)
-					if err == nil {
-						ac := &action.ActionContext{
-							SpaceID:   serviceName, // service name doubles as space
-							TokenType: "service",
-							TokenID:   serviceName,
-							Actor:     "service",
-						}
-						ctx := action.WithActionContext(r.Context(), ac)
-						next.ServeHTTP(w, r.WithContext(ctx))
-						return
+		if token != "" && m.adminToken != "" && token == m.adminToken {
+			ac := &action.ActionContext{
+				SpaceID:   "",
+				TokenType: "admin",
+				TokenID:   "",
+				Actor:     "api",
+			}
+			ctx := action.WithActionContext(r.Context(), ac)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		// ② Service-to-service Ticket (via serviceauth bridge)
+		if serviceAuthChecker != nil {
+			ticket := r.Header.Get("X-Service-Ticket")
+			if ticket != "" {
+				serviceName, err := serviceAuthChecker.VerifyTicketAndGetSpace(ticket)
+				if err == nil {
+					ac := &action.ActionContext{
+						SpaceID:   serviceName,
+						TokenType: "service",
+						TokenID:   serviceName,
+						Actor:     "service",
 					}
+					ctx := action.WithActionContext(r.Context(), ac)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
 				}
 			}
-
-			logAuditEvent("service_key", "", "unauthorized_access", r, "", "missing_token", "failed", "UNAUTHORIZED")
-			writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing Authorization header")
-			return
 		}
 
-		scopes, tokenType, spaceID, tokenID, ok := m.validateTokenWithScopes(token)
-		if !ok {
-			logAuditEvent("service_key", "", "unauthorized_access", r, "", "invalid_token", "failed", "UNAUTHORIZED")
-			writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token")
-			return
-		}
 
-		// Check scope for this route
-		requiredScope, hasScope := FindMatchingScope(r.Method, r.URL.Path)
-		if hasScope && !HasScope(scopes, requiredScope) {
-			logAuditEvent(tokenType, tokenID, "scope_violation", r, requiredScope, r.URL.Path, "failed", "FORBIDDEN")
-			writeAuthError(w, http.StatusForbidden, "FORBIDDEN",
-				"missing required scope: "+requiredScope)
-			return
-		}
-
-		// For space tokens, block access to system-level routes
-		if tokenType == "space" && isSystemRoute(r.URL.Path) {
-			logAuditEvent(tokenType, tokenID, "service_key_denied_admin", r, "admin_route", r.URL.Path, "failed", "SCOPE_DENIED")
-			writeAuthError(w, http.StatusForbidden, "SCOPE_DENIED",
-				"service API keys cannot access admin routes")
-			return
-		}
-
-		// Inject action context into request context
-		ac := &action.ActionContext{
-			SpaceID:   spaceID,
-			TokenType: tokenType,
-			TokenID:   tokenID,
-			Actor:     "api",
-		}
-		ctx := action.WithActionContext(r.Context(), ac)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		logAuditEvent("service_key", "", "unauthorized_access", r, "", "missing_token", "failed", "UNAUTHORIZED")
+		writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid auth")
 	})
-}
-
-// validateTokenWithScopes validates a token and returns its scopes, type, space_id, and token_id.
-func (m *AuthMiddleware) validateTokenWithScopes(token string) (scopes []string, tokenType, spaceID, tokenID string, ok bool) {
-	if m.adminToken != "" && token == m.adminToken {
-		return []string{ScopeAdminAll}, "admin", "", "", true
-	}
-
-	if m.tokenRepo != nil {
-		hash := hashToken(token)
-		t, err := m.tokenRepo.FindByTokenHash(hash)
-		if err == nil && t != nil {
-			return t.Scopes, t.TokenType, t.SpaceID, t.ID, true
-		}
-	}
-
-	return nil, "", "", "", false
-}
-
-// isSystemRoute returns true if the path targets system-level resources
-// that space tokens should not access.
-func isSystemRoute(path string) bool {
-	systemPrefixes := []string{
-		"/api/admin/",
-		"/api/system/",
-		"/api/config/",
-		"/api/apply",
-		"/api/rollback",
-		"/api/diagnostics/",
-		"/api/settings",
-		"/api/health",
-		"/api/logs",
-		"/api/routes",
-		"/api/services",
-		"/api/managed-domains",
-		"/api/endpoints",
-		"/api/exposures",
-		"/api/projects",
-	}
-	for _, prefix := range systemPrefixes {
-		if strings.HasPrefix(path, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 // extractBearerToken extracts the Bearer token from an Authorization header.
@@ -238,19 +157,11 @@ func extractBearerToken(r *http.Request) string {
 	if auth == "" {
 		return ""
 	}
-
 	parts := strings.SplitN(auth, " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return ""
 	}
-
 	return strings.TrimSpace(parts[1])
-}
-
-// hashToken returns the SHA-256 hex hash of a token.
-func hashToken(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
 }
 
 func writeAuthError(w http.ResponseWriter, status int, code, message string) {
@@ -264,7 +175,7 @@ func writeAuthError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-// logAuditEvent writes an audit log entry for auth failures using the global audit logger.
+// logAuditEvent writes an audit log entry for auth failures.
 func logAuditEvent(actorType, actorID, eventType string, r *http.Request, targetType, targetID, result, errorCode string) {
 	if auditLog != nil {
 		ip := r.RemoteAddr

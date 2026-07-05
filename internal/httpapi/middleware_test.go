@@ -173,7 +173,7 @@ func TestCORS_MultipleAllowedOrigins(t *testing.T) {
 // ── Recovery middleware tests (M4 fix) ──
 
 func TestRecovery_CatchesPanic(t *testing.T) {
-	mw := NewMiddleware(token.NewAuthMiddleware("test-token", nil), nil)
+	mw := NewMiddleware(token.NewAuthMiddleware("test-token"), nil)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("test panic")
 	})
@@ -196,7 +196,7 @@ func TestRecovery_CatchesPanic(t *testing.T) {
 }
 
 func TestRecovery_PassesNormalResponse(t *testing.T) {
-	mw := NewMiddleware(token.NewAuthMiddleware("test-token", nil), nil)
+	mw := NewMiddleware(token.NewAuthMiddleware("test-token"), nil)
 	called := false
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -219,7 +219,7 @@ func TestRecovery_PassesNormalResponse(t *testing.T) {
 }
 
 func TestRecovery_NilPointerPanic(t *testing.T) {
-	mw := NewMiddleware(token.NewAuthMiddleware("test-token", nil), nil)
+	mw := NewMiddleware(token.NewAuthMiddleware("test-token"), nil)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var p *struct{ X int }
 		_ = p.X // nil pointer dereference
