@@ -89,7 +89,7 @@ func AllMigrations() []Migration {
 		},
 		{
 			Version: "015",
-			Name:    "alter_api_tokens_add_space",
+			Name:    "remove_api_tokens",
 			UpSQL:   migration015,
 		},
 		{
@@ -403,15 +403,6 @@ CREATE TABLE IF NOT EXISTS operation_logs (
 	created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS api_tokens (
-	id TEXT PRIMARY KEY,
-	name TEXT NOT NULL,
-	token_hash TEXT NOT NULL,
-	scopes TEXT NOT NULL,
-	status TEXT NOT NULL DEFAULT 'active',
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
-);
 `
 
 // migration002 adds performance indexes.

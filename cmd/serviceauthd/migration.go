@@ -16,6 +16,7 @@ type migration struct {
 func allMigrations() []migration {
 	return []migration{
 		{"001", "initial_service_auth_schema", migration001},
+		{"002", "add_performance_indexes", migration002},
 	}
 }
 
@@ -118,4 +119,9 @@ CREATE TABLE IF NOT EXISTS svc_auth_blocklist (
     created_at  TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_svc_auth_bl_version ON svc_auth_blocklist(version);
+`
+
+// migration002 adds composite index for service identity lookups (name+host+port).
+const migration002 = `
+CREATE INDEX IF NOT EXISTS idx_svc_auth_svc_identity ON svc_auth_services(name, host, port);
 `
