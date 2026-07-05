@@ -9,13 +9,6 @@ export default function EntryList() {
   const nav = useNavigate(); const toast = useToast(); const qc = useQueryClient();
   const [scope, setScope] = useState('all');
 
-  // Fetch admin token for enable/disable operations (needed for /api/routes/* endpoints)
-  const { data: tokenData } = useQuery({
-    queryKey: ['admin-token'], queryFn: () => fetch('/api/settings', { credentials: 'include' }).then(r => r.json()).catch(() => ({})),
-    staleTime: 300_000,
-  });
-  const adminToken = (tokenData as any)?.admin_token || '';
-
   const { data: rd, isLoading: rl } = useQuery({
     queryKey: ['routes'], queryFn: () => routeApi.list().catch(() => ({ routes: [] })), refetchInterval: 30_000,
   });
@@ -25,7 +18,7 @@ export default function EntryList() {
 
   const disableRoute = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/routes/${id}/disable`, { method: 'POST', headers: { 'Authorization': `Bearer ${adminToken}` }, credentials: 'include' });
+      const res = await fetch(`/api/admin/v1/routes/${id}/disable`, { method: 'POST', credentials: 'include' });
       if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error((e as any).error?.message || `HTTP ${res.status}`); }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['routes'] }); toast('已禁用'); },
@@ -33,7 +26,7 @@ export default function EntryList() {
   });
   const enableRoute = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/routes/${id}/enable`, { method: 'POST', headers: { 'Authorization': `Bearer ${adminToken}` } });
+      const res = await fetch(`/api/admin/v1/routes/${id}/enable`, { method: 'POST', credentials: 'include' });
       if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error((e as any).error?.message || `HTTP ${res.status}`); }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['routes'] }); toast('已启用'); },
