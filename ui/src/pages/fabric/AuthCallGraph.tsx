@@ -272,7 +272,7 @@ export default function AuthTopology() {
   }).length;
 
   return (
-    <div className="space-y-5">
+    <div className="p-6 space-y-5">
       <PageHeader
         title="服务拓扑 · Service Topology"
         subtitle={`${nodes.length} 个服务 · ${edges.length} 条调用边 · 过去 1h 窗口`}

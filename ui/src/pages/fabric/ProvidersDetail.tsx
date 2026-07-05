@@ -165,7 +165,7 @@ export default function ProvidersDetail() {
   const universe = provData?.universe || [];
 
   return (
-    <div className="space-y-5">
+    <div className="p-6 space-y-5">
       <PageHeader
         title="Provider 详情"
         subtitle={`${providers.length} 个 Provider · ${universe.length} 项能力`}

@@ -89,7 +89,7 @@ export default function AuthServices() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="p-6 space-y-5">
       <PageHeader title="服务认证 · Service Auth" subtitle={`${activeCount} 在线 · ${blockedCount} 已封锁 · ${todayCalls} 调用/24h`} />
 
       {/* Stat cards */}
