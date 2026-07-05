@@ -7,7 +7,7 @@ import { Card, PageHeader, StatusBadge, Btn, useToast } from '@/components/share
 import { fmtBytes, cn } from '@/lib/utils';
 import { useState } from 'react';
 
-function StatusPanel({ status }: { status: TransparentStatus | undefined }) {
+function StatusPanel({ status }: { status: TransparentStatus | null | undefined }) {
   if (!status) return null;
 
   const allPassed = status.available;
