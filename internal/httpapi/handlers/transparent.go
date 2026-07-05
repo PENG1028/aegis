@@ -108,7 +108,7 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 			// Found a capable provider — get its port from RuntimeMode
 			listeners := mode.ListenerSpecsFor(p.ID)
 			for _, l := range listeners {
-				if l.Purpose == "http" || l.Purpose == "https" || l.Purpose == "internal_https" {
+				if l.Purpose == "http" || l.Purpose == "https" || l.Purpose == "internal_https" || l.Protocol == "udp" {
 					entry := fwdEntry{
 						Composition: comp.Name,
 						ProviderID:  p.ID,
