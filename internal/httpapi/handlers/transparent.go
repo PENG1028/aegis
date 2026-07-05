@@ -74,71 +74,50 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 	//    When new compositions are added to the registry, they auto-appear here.
 	states := h.ProvReg.List()
 	mode := provider.DetectRuntimeMode(states)
+	mode.EvalAllCompositions(states) // same status path as diagnostic table
 
 	var allForwardTargets []fwdEntry
-	for _, comp := range provider.AllCompositions() {
-		if !comp.IsTransparentForwardTarget() {
+	for _, c := range mode.Compositions {
+		def := provider.LookupCompByName(c.Name)
+		if def == nil || !def.IsTransparentForwardTarget() {
 			continue
 		}
-
-		// Check if mode supports this composition (atoms have bindings)
-		modeSupported := provider.CompKeySupported(comp.Key, mode)
-		if !modeSupported {
-			allForwardTargets = append(allForwardTargets, fwdEntry{
-				Composition: comp.Name,
-				Status:      "unsupported",
-				Detail:      fmt.Sprintf("%s 模式不支持此组合能力", mode.Label),
-			})
-			continue
-		}
-
-		// Mode supports it — find a provider that satisfies the requirements
-		found := false
-		for _, p := range states {
-			hasAll := true
-			for _, cap := range comp.Requirements() {
-				if !p.HasCapability(cap) {
-					hasAll = false
-					break
-				}
-			}
-			if !hasAll {
-				continue
-			}
-			// Found a capable provider — get its port from RuntimeMode
-			listeners := mode.ListenerSpecsFor(p.ID)
-			for _, l := range listeners {
-				if l.Purpose == "http" || l.Purpose == "https" || l.Purpose == "internal_https" || l.Protocol == "udp" {
-					entry := fwdEntry{
-						Composition: comp.Name,
-						ProviderID:  p.ID,
-						Host:        "127.0.0.1",
-						Port:        l.Port,
-						ProviderOK:  p.Healthy(),
+		entry := fwdEntry{Composition: c.Name, Status: c.Status}
+		switch c.Status {
+		case provider.CompUnsupported:
+			entry.Detail = fmt.Sprintf("%s 模式不支持此组合能力", mode.Label)
+		case provider.CompAvailable, provider.CompMissingProvider:
+			for _, p := range states {
+				hasAll := true
+				for _, cap := range def.Requirements() {
+					if !p.HasCapability(cap) {
+						hasAll = false
+						break
 					}
-					if p.Healthy() {
-						entry.Status = "available"
-						entry.Detail = fmt.Sprintf("%s → %s:%d（%s 已就绪）", comp.Name, entry.Host, entry.Port, p.ID)
-					} else {
-						entry.Status = "provider_missing"
-						entry.Detail = fmt.Sprintf("需要 %s 提供 %s 能力（%s 未安装或未运行）", p.ID, comp.Name, p.ID)
-					}
-					allForwardTargets = append(allForwardTargets, entry)
-					found = true
-					break
 				}
-			}
-			if found {
+				if !hasAll {
+					continue
+				}
+				listeners := mode.ListenerSpecsFor(p.ID)
+				for _, l := range listeners {
+					if l.Purpose == "http" || l.Purpose == "https" || l.Purpose == "internal_https" || l.Protocol == "udp" {
+						entry.ProviderID, entry.Host, entry.Port = p.ID, "127.0.0.1", l.Port
+						entry.ProviderOK = p.Healthy()
+						if p.Healthy() {
+							entry.Detail = fmt.Sprintf("%s → %s:%d（%s 已就绪）", c.Name, entry.Host, entry.Port, p.ID)
+						} else {
+							entry.Detail = fmt.Sprintf("需要 %s 提供 %s 能力（%s 未安装或未运行）", p.ID, c.Name, p.ID)
+						}
+						break
+					}
+				}
 				break
 			}
+			if entry.ProviderID == "" {
+				entry.Detail = fmt.Sprintf("需要 %s 组合能力，但无 Provider 声明所需能力", c.Name)
+			}
 		}
-		if !found {
-			allForwardTargets = append(allForwardTargets, fwdEntry{
-				Composition: comp.Name,
-				Status:      "provider_missing",
-				Detail:      fmt.Sprintf("需要 %s 组合能力，但无 Provider 声明所需能力", comp.Name),
-			})
-		}
+		allForwardTargets = append(allForwardTargets, entry)
 	}
 
 	// Gateway check passes if at least one forward target is available
