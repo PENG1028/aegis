@@ -58,9 +58,6 @@ import JoinTokens from '@/pages/access/JoinTokens';
 import AdminAccount from '@/pages/access/AdminAccount';
 
 // ── Settings ──
-import PanelSettings from '@/pages/settings/Panel';
-import DnsSettings from '@/pages/settings/DnsSettings';
-import TlsSettings from '@/pages/settings/TlsSettings';
 import AdvancedSettings from '@/pages/settings/Advanced';
 
 // ── Legacy ──
@@ -177,9 +174,7 @@ export default function App() {
 
                 {/* ── Workspace 8: Settings / 系统设置 ── */}
                 <Route path="/settings" element={<OutletLayout />}>
-                  <Route index element={<PanelSettings />} />
-                  <Route path="dns" element={<DnsSettings />} />
-                  <Route path="tls" element={<TlsSettings />} />
+                  <Route index element={<AdvancedSettings />} />
                   <Route path="advanced" element={<AdvancedSettings />} />
                 </Route>
 
