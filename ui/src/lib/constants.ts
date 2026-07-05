@@ -6,7 +6,7 @@ import type { ForwardingMode } from '@/types/workspace';
 // ─── Workspace Definitions ───
 export const WORKSPACES = [
   { id: 'command-center', path: '/', label: '总控台', icon: 'dashboard' },
-  { id: 'exposure', path: '/exposure', label: '流量管理', icon: 'exposure' },
+  { id: 'exposure', path: '/exposure', label: '域名与路由', icon: 'exposure' },
   { id: 'fabric', path: '/fabric', label: '网关网络', icon: 'fabric' },
   { id: 'runtime', path: '/runtime', label: '节点运行时', icon: 'runtime' },
   { id: 'release', path: '/release', label: '配置发布', icon: 'release' },
@@ -20,8 +20,8 @@ export type WorkspaceId = (typeof WORKSPACES)[number]['id'];
 // ─── Workspace Sub-navigation ───
 export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = {
   exposure: [
-    { path: '/exposure', label: '入口总览' },
-    { path: '/exposure/new', label: '新建入口' },
+    { path: '/exposure', label: '域名列表' },
+    { path: '/exposure/new', label: '添加域名' },
   ],
   fabric: [
     { path: '/fabric', label: '能力矩阵' },
