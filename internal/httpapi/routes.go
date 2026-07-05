@@ -95,6 +95,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/routes", h.ListRoutes)
 	mux.HandleFunc("POST /api/routes", h.CreateRoute)
 	mux.HandleFunc("GET /api/routes/{id}", h.GetRoute)
+	mux.HandleFunc("GET /api/admin/v1/routes/{id}", h.AdminGetRoute)
 	mux.HandleFunc("PATCH /api/routes/{id}", h.UpdateRoute)
 	mux.HandleFunc("POST /api/routes/{id}/enable", h.EnableRoute)
 	mux.HandleFunc("POST /api/routes/{id}/disable", h.DisableRoute)

@@ -54,6 +54,11 @@ func (h *Handlers) GetRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, routeToMap(*rt))
 }
 
+// AdminGetRoute handles GET /api/admin/v1/routes/{id} — same as GetRoute but with admin cookie auth.
+func (h *Handlers) AdminGetRoute(w http.ResponseWriter, r *http.Request) {
+	h.GetRoute(w, r)
+}
+
 func (h *Handlers) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotImplemented, "not implemented yet")
 }
