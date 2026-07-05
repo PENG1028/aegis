@@ -14,11 +14,10 @@ import CommandCenter from '@/pages/command-center/CommandCenter';
 // ── Shared layout for workspaces without custom chrome ──
 import OutletLayout from '@/components/layout/OutletLayout';
 
-// ── Exposure ──
-import EntryPoints from '@/pages/exposure/EntryPoints';
+// ── Exposure / 流量管理 ──
+import EntryList from '@/pages/exposure/EntryList';
+import NewEntry from '@/pages/exposure/NewEntry';
 import EntryPointDetail from '@/pages/exposure/EntryPointDetail';
-import ServiceDetail from '@/pages/exposure/ServiceDetail';
-import QuickConnect from '@/pages/exposure/QuickConnect';
 
 // ── Fabric ──
 import Providers from '@/pages/fabric/Providers';
@@ -119,13 +118,11 @@ export default function App() {
                 {/* ── Workspace 1: Command Center ── */}
                 <Route path="/" element={<CommandCenter />} />
 
-                {/* ── Workspace 2: Exposure / 服务暴露 ── */}
+                {/* ── Workspace 2: 流量管理 ── */}
                 <Route path="/exposure" element={<OutletLayout />}>
-                  <Route index element={<EntryPoints />} />
+                  <Route index element={<EntryList />} />
+                  <Route path="new" element={<NewEntry />} />
                   <Route path="entry/:entryId" element={<EntryPointDetail />} />
-                  <Route path="service/:serviceId" element={<ServiceDetail />} />
-                  <Route path="endpoint/:endpointId" element={<EntryPointDetail />} />
-                  <Route path="connect" element={<QuickConnect />} />
                 </Route>
 
                 {/* ── Workspace 3: Fabric / 网关网络 ── */}

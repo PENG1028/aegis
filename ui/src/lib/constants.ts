@@ -6,7 +6,7 @@ import type { ForwardingMode } from '@/types/workspace';
 // ─── Workspace Definitions ───
 export const WORKSPACES = [
   { id: 'command-center', path: '/', label: '总控台', icon: 'dashboard' },
-  { id: 'exposure', path: '/exposure', label: '服务暴露', icon: 'exposure' },
+  { id: 'exposure', path: '/exposure', label: '流量管理', icon: 'exposure' },
   { id: 'fabric', path: '/fabric', label: '网关网络', icon: 'fabric' },
   { id: 'runtime', path: '/runtime', label: '节点运行时', icon: 'runtime' },
   { id: 'release', path: '/release', label: '配置发布', icon: 'release' },
