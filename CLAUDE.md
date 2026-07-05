@@ -2,6 +2,10 @@
 
 > **给 AI Agent 的完整项目手册。** 每当你被派到这个项目工作，阅读此文件即可理解全貌、完成部署、排查问题。
 
+**架构规则（修改 Provider/能力/组合/透明代理前必读）：**
+- `.claude/rules/provider-architecture.md` — 三大真理源 + 红线规则
+- `.claude/rules/code-standards.md` — 防分叉规范
+
 ---
 
 ## 一、项目身份
