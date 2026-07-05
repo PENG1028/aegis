@@ -46,6 +46,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		RelayResolver:   &handlers.RelayResolver{Resolver: svcs.RelaySvc},
 		TransparentMgr:  svcs.TransparentMgr,
 		ProvReg:         svcs.ProvReg, // v1.8L-19 — provider registry for install/uninstall/config handlers
+		EgressSvc:       svcs.EgressSvc,     // v1.9A-5 — egress rule engine
 		Version:         svcs.Version,
 		BuildTime:       svcs.BuildTime,
 	}
