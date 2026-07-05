@@ -341,6 +341,15 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("GET /api/admin/v1/service-auth/call-logs", h.AdminServiceAuthCallLogs)
 	}
 
+		// v1.9A-5 Egress Gateway — allow/block rules
+	if svcs.EgressSvc != nil {
+		mux.HandleFunc("GET /api/admin/v1/egress/rules", h.AdminListEgressRules)
+		mux.HandleFunc("POST /api/admin/v1/egress/rules", h.AdminCreateEgressRule)
+		mux.HandleFunc("PUT /api/admin/v1/egress/rules/{id}", h.AdminUpdateEgressRule)
+		mux.HandleFunc("DELETE /api/admin/v1/egress/rules/{id}", h.AdminDeleteEgressRule)
+		mux.HandleFunc("GET /api/admin/v1/egress/check", h.AdminEgressCheck)
+	}
+
 	// v1.8J Embedded UI — catch-all for SPA routes not matching any API path.
 	// Uses /{path...} wildcard to match all paths (Go 1.22+ mux syntax).
 	// The Go 1.22 mux treats "/" as root-only, so we need an explicit wildcard.

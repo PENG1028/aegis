@@ -8,6 +8,26 @@ import { dnsApi, transparentApi, adminApi } from '@/lib/api-bridge';
 import { PageHeader, StatCard, Card, Btn, StatusBadge, useToast, LoadingState, ErrorBanner, EmptyState, Modal } from '@/components/shared';
 import { cn } from '@/lib/utils';
 
+// ─── Types for egress rules ───
+
+interface EgressRule {
+  id: string;
+  type: 'allow' | 'block';
+  match_type: 'domain' | 'ip' | 'cidr';
+  match_value: string;
+  priority: number;
+  status: 'active' | 'disabled';
+  note?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CheckResult {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
 // ─── Types ───
 
 interface DnsEntry {
@@ -104,10 +124,16 @@ export default function EgressGateway() {
     refetchInterval: 30_000,
   });
 
-  const { data: tpRules, isLoading: rulesLoading, refetch: refetchRules } = useQuery({
+  const { data: tpRules, isLoading: tpRulesLoading, refetch: refetchTpRules } = useQuery({
     queryKey: ['egress-tp-rules'],
     queryFn: () => transparentApi.listRules(),
     refetchInterval: 10_000,
+  });
+
+  const { data: egressRulesData, isLoading: egressRulesLoading, error: egressRulesError, refetch: refetchEgressRules } = useQuery({
+    queryKey: ['egress-rules'],
+    queryFn: () => adminApi.listEgressRules(),
+    refetchInterval: 30_000,
   });
 
   const { data: servicesData } = useQuery({
@@ -142,12 +168,37 @@ export default function EgressGateway() {
     onError: (e: any) => toast(e.message || '删除失败', 'error'),
   });
 
+  const deleteEgressRule = useMutation({
+    mutationFn: (id: string) => adminApi.deleteEgressRule(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['egress-rules'] }); toast('出口规则已删除'); },
+    onError: (e: any) => toast(e.message || '删除失败', 'error'),
+  });
+
+  // ── Health check state ──
+  const [checkResults, setCheckResults] = useState<CheckResult[]>([]);
+  const [checkRunning, setCheckRunning] = useState(false);
+  const [showRuleModal, setShowRuleModal] = useState(false);
+  const allHealthy = checkResults.length > 0 && checkResults.every(cr => cr.passed);
+
+  const runCheck = async () => {
+    setCheckRunning(true);
+    try {
+      const res = await adminApi.checkEgress();
+      setCheckResults(res.checks);
+    } catch (e: any) {
+      setCheckResults([{ name: '全链路检测', passed: false, detail: e.message || '检测请求失败' }]);
+    } finally {
+      setCheckRunning(false);
+    }
+  };
+
   // ── Derived Data ──
 
   const dns = dnsData as DnsStatus | undefined;
   const checks: TransparentCheck[] = (tpStatus as any)?.checks || [];
   const fwdTargets: ForwardTarget[] = (tpStatus as any)?.forward_targets || [];
   const rules: TransparentRule[] = (tpRules as any)?.rules || [];
+  const egressRules: EgressRule[] = egressRulesData?.rules || [];
   const services: ServiceRecord[] = servicesData?.services || [];
 
   const allChecksPassed = checks.length > 0 && checks.every(c => c.passed);
@@ -318,7 +369,93 @@ export default function EgressGateway() {
       </Card>
 
       {/* ════════════════════════════════════════════════════════════ */}
-      {/* SECTION 3: Egress Route Overview ★ Core */}
+      {/* SECTION 3: Egress Rules — Allow/Block */}
+      {/* ════════════════════════════════════════════════════════════ */}
+
+      <Card title="出口规则" subtitle="允许名单（重名保护）和拦截名单 — 域名级别">
+        <div className="mb-3 flex items-center gap-2">
+          <Btn onClick={() => setShowRuleModal(true)} className="text-[10px]" primary>新建规则</Btn>
+          <Btn onClick={() => refetchEgressRules()} className="text-[10px]" disabled={egressRulesLoading}>刷新</Btn>
+          <span className="text-[10px] text-a-muted ml-auto">{egressRules.length} 条规则</span>
+        </div>
+        {egressRulesLoading ? <LoadingState /> : egressRulesError ? <ErrorBanner message="加载失败" onRetry={refetchEgressRules} /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-a-border/30 text-a-muted text-left">
+                  <th className="py-1.5 pr-2 font-medium w-16">类型</th>
+                  <th className="py-1.5 px-2 font-medium w-20">匹配</th>
+                  <th className="py-1.5 px-2 font-medium">值</th>
+                  <th className="py-1.5 px-2 font-medium w-12 text-center">优先级</th>
+                  <th className="py-1.5 px-2 font-medium w-16">状态</th>
+                  <th className="py-1.5 px-2 font-medium">备注</th>
+                  <th className="py-1.5 pl-2 font-medium w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {egressRules.length > 0 ? egressRules.map((r: EgressRule) => (
+                  <tr key={r.id} className="border-b border-a-border/20 hover:bg-a-border/10 transition-colors">
+                    <td className="py-1.5 pr-2">
+                      <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium',
+                        r.type === 'allow' ? 'bg-[#4cd964]/10 text-[#4cd964]' : 'bg-[#ff5c72]/10 text-[#ff5c72]',
+                      )}>{r.type === 'allow' ? '放行' : '拦截'}</span>
+                    </td>
+                    <td className="py-1.5 px-2 font-mono text-a-muted">{r.match_type}</td>
+                    <td className="py-1.5 px-2 font-mono text-a-fg">{r.match_value}</td>
+                    <td className="py-1.5 px-2 text-center text-a-muted">{r.priority}</td>
+                    <td className="py-1.5 px-2"><StatusBadge status={r.status === 'active' ? 'active' : 'disabled'} /></td>
+                    <td className="py-1.5 px-2 text-a-muted text-[11px]">{r.note || '—'}</td>
+                    <td className="py-1.5 pl-2 text-right">
+                      <Btn onClick={() => deleteEgressRule.mutate(r.id)} className="text-[9px]" danger disabled={deleteEgressRule.isPending}>删除</Btn>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan={7} className="py-6 text-center text-a-muted text-xs">无规则 · 所有域名正常解析和转发</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-[10px] text-a-muted mt-2">放行规则中的域名将跳过内部 DNS 解析，直接走上游 DNS，实现重名保护。</p>
+      </Card>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* SECTION 4: Health Check */}
+      {/* ════════════════════════════════════════════════════════════ */}
+
+      <Card title="出口检测" subtitle="一键验证出口链路各环节是否正常">
+        <Btn onClick={runCheck} disabled={checkRunning} className="text-xs" primary>
+          {checkRunning ? '检测中...' : '🔍 运行全链路检测'}
+        </Btn>
+
+        {checkResults.length > 0 && (
+          <div className="mt-4 space-y-1.5">
+            {checkResults.map((cr, i) => (
+              <div key={i} className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-a-sm border text-xs',
+                cr.passed ? 'bg-[#4cd964]/5 border-[#4cd964]/15' : 'bg-[#ff5c72]/5 border-[#ff5c72]/15',
+              )}>
+                <span className={cn('font-bold', cr.passed ? 'text-[#4cd964]' : 'text-[#ff5c72]')}>
+                  {cr.passed ? '✓' : '✗'}
+                </span>
+                <span className="font-medium text-a-fg">{cr.name}</span>
+                <span className={cr.passed ? 'text-a-muted' : 'text-[#ff5c72]/80'}>{cr.detail}</span>
+              </div>
+            ))}
+            <div className={cn(
+              'mt-2 px-3 py-2 rounded-a-sm text-xs font-medium text-center',
+              allHealthy ? 'bg-[#4cd964]/10 text-[#4cd964]' : 'bg-[#ff5c72]/10 text-[#ff5c72]',
+            )}>
+              {allHealthy ? '✓ 出口网关正常' : '✗ 存在异常，请检查上述项目'}
+            </div>
+          </div>
+        )}
+
+        <p className="text-[10px] text-a-muted mt-2">检测 DNS 解析器、出口规则、透明代理、ServiceAuth 等各环节。</p>
+      </Card>
+
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* SECTION 5: Egress Route Overview ★ Core */}
       {/* ════════════════════════════════════════════════════════════ */}
 
       <Card title="出口路径总览" subtitle="融合 DNS + 透明代理 + ServiceAuth — 每条出站流量的完整路径">

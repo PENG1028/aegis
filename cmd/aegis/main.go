@@ -14,6 +14,7 @@ import (
 	"aegis/internal/credential"
 	"aegis/internal/dns"
 	"aegis/internal/edgemux"
+	"aegis/internal/egress"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
@@ -307,6 +308,12 @@ func main() {
 	})
 	authMiddleware := token.NewAuthMiddleware(cfg.Server.AdminToken)
 
+	// ── Egress Gateway (v1.9A-5) ──
+	egressRepo := egress.NewRepository(db)
+	egressSvc := egress.NewService(egress.Dependencies{Repo: egressRepo, IDGen: nil})
+	egressRuleChecker := egress.NewRuleChecker(egressSvc)
+	egressRuleChecker.Refresh()
+
 	dnsMgmt := dns.NewManager(
 		routeRepo,
 		service.NewRepository(db),
@@ -316,6 +323,7 @@ func main() {
 		cfg.DNS.Upstream,
 		cfg.DNS.RefreshSec,
 	)
+	dnsMgmt.Resolver.SetAllowlistChecker(egressRuleChecker)
 	if cfg.DNS.Enabled {
 		if err := dnsMgmt.Enable(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: dns resolver start failed: %v\n", err)
@@ -372,6 +380,7 @@ func main() {
 		TransparentMgr: transparentMgr,
 		CredentialSvc:  credSvc,
 		ServiceAuthSvc: serviceAuthSvc,
+		EgressSvc:       egressSvc,
 		ProvReg:        provRegistry,
 		Version:        Version,
 		BuildTime:      BuildTime,

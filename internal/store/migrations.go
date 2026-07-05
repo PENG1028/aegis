@@ -182,6 +182,11 @@ func AllMigrations() []Migration {
 			Name:    "add_credentials",
 			UpSQL:   migration033,
 		},
+		{
+			Version: "034",
+			Name:    "add_egress_rules",
+			UpSQL:   migration034,
+		},
 	}
 }
 
@@ -1033,4 +1038,22 @@ CREATE TABLE IF NOT EXISTS credentials (
 );
 CREATE INDEX IF NOT EXISTS idx_credentials_alias ON credentials(alias);
 CREATE INDEX IF NOT EXISTS idx_credentials_scheme ON credentials(scheme);
+`
+
+
+// migration034 adds the egress_rules table for allow/block rules.
+const migration034 = `
+CREATE TABLE IF NOT EXISTS egress_rules (
+	id TEXT PRIMARY KEY,
+	type TEXT NOT NULL DEFAULT 'allow',
+	match_type TEXT NOT NULL DEFAULT 'domain',
+	match_value TEXT NOT NULL,
+	priority INTEGER NOT NULL DEFAULT 0,
+	status TEXT NOT NULL DEFAULT 'active',
+	note TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_egress_rules_type ON egress_rules(type);
+CREATE INDEX IF NOT EXISTS idx_egress_rules_status ON egress_rules(status);
 `
