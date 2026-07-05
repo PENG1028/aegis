@@ -32,8 +32,8 @@ export default function EntryList() {
     onError: (e: any) => toast(e.message || '禁用失败', 'error'),
   });
 
-  const routes = (rd as any)?.routes || [];
-  const exposures = (ed as any)?.exposures || [];
+  const routes = (rd as any)?.data || (rd as any)?.routes || [];
+  const exposures = (ed as any)?.data || (ed as any)?.exposures || [];
 
   const allItems = useMemo(() => [
     ...routes.map((r: any) => ({
