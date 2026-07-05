@@ -30,9 +30,21 @@ function StatusPanel({ status }: { status: TransparentStatus | null | undefined 
           </div>
         ))}
       </div>
-      {allPassed && (
-        <div className="mt-3 text-[10px] text-a-muted">
-          转发目标：{status.mode} 模式 → {status.forward_host}:{status.forward_port}
+      {status.forward_targets.length > 0 && (
+        <div className="mt-3 p-2 rounded-a-sm bg-a-border/5 border border-a-border/20 text-[10px] text-a-muted">
+          <span className="text-a-muted/60">依赖组合能力：</span>
+          <span className="text-a-accent font-medium">{status.composition}</span>
+          <span className="text-a-muted/60 ml-2">｜转发目标：</span>
+          {status.forward_targets.map((ft, i) => (
+            <span key={i} className="font-mono">
+              {ft.host}:{ft.port}
+              <span className={ft.provider_ok ? 'text-[#4cd964]' : 'text-[#ff5c72]'}>
+                （{ft.provider_id} {ft.provider_ok ? '✓' : '✗'}）
+              </span>
+              {i < status.forward_targets.length - 1 && <span className="text-a-border">、</span>}
+            </span>
+          ))}
+          <span className="ml-2 text-a-muted/50">（{status.mode} 模式）</span>
         </div>
       )}
     </Card>
