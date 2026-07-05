@@ -179,14 +179,22 @@ type CompStatus = 'ok' | 'missing' | 'unsupported';
 
 function compCardStatus(comp: Composition, providerRows: ProviderAtoms[], installedIds: Set<string>): CompStatus {
   if (!comp.atoms || comp.atoms.length === 0) return 'unsupported';
+  let allOptional = true;
   for (const atomKey of comp.atoms) {
-    const hasBinding = providerRows.some(row => {
+    const anyBinding = providerRows.some(row => {
+      const slots = row.bindings?.[atomKey];
+      return slots && slots.length > 0;
+    });
+    if (!anyBinding) return 'unsupported'; // no provider claims this atom at all
+    const hasRequired = providerRows.some(row => {
       const slots = row.bindings?.[atomKey];
       return slots && slots.length > 0 && slots.some(s => s.required);
     });
-    if (!hasBinding) return 'unsupported';
+    if (hasRequired) allOptional = false;
   }
-  // Mode supports this composition — check if providers are installed
+  // All-optional compositions are supported but not required (e.g. HTTP/3 over QUIC)
+  if (allOptional) return 'ok';
+  // Check if required providers are installed
   const needProviders = new Set<string>();
   for (const atomKey of comp.atoms) {
     for (const row of providerRows) {
