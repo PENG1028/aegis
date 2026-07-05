@@ -12,7 +12,7 @@ import type { DashboardData } from '@/types';
 import type { Anomaly } from '@/types/workspace';
 
 const QUICK_ACTIONS = [
-  { label: '快速接入', desc: '创建域名映射', path: '/exposure/connect' },
+  { label: '快速接入', desc: '创建域名映射', path: '/exposure/new' },
   { label: '链路追踪', desc: '诊断请求路径', path: '/observe' },
   { label: '推送配置', desc: 'Apply 变更', path: '/release' },
   { label: '部署节点', desc: '添加新节点', path: '/runtime/deploy' },

@@ -21,7 +21,7 @@ export type WorkspaceId = (typeof WORKSPACES)[number]['id'];
 export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = {
   exposure: [
     { path: '/exposure', label: '入口总览' },
-    { path: '/exposure/connect', label: '快速接入' },
+    { path: '/exposure/new', label: '新建入口' },
   ],
   fabric: [
     { path: '/fabric', label: '能力矩阵' },
@@ -99,7 +99,7 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/apply': '/release',
   '/config': '/release',
   '/import': '/exposure',
-  '/quick-create': '/exposure/connect',
+  '/quick-create': '/exposure/new',
   '/trace': '/observe',
   '/health': '/observe/health',
   '/safety': '/observe/safety',
