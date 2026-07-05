@@ -317,7 +317,7 @@ func findForwardTarget(available []provider.ProviderState, mode provider.Runtime
 			}
 			listeners := mode.ListenerSpecsFor(p.ID)
 			for _, l := range listeners {
-				if l.Purpose == "http" || l.Purpose == "internal_https" {
+				if l.Purpose == "http" || l.Purpose == "https" || l.Purpose == "internal_https" {
 					return &provider.ForwardTarget{Host: "127.0.0.1", Port: l.Port}
 				}
 			}
