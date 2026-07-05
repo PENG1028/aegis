@@ -1274,6 +1274,7 @@ export interface Composition {
   name: string;   // "HTTPS Route"
   atoms: string[]; // ["tcp", "tls", "http"]
   chain: string;  // "L4 → L5 → L7"
+  status: string; // "available" | "missing_provider" | "unsupported"
 }
 
 /** Canonical composition definition from the registry. */
@@ -1354,18 +1355,6 @@ export const adminApi = {
   createScope: (data: any): Promise<any> =>
     post('/api/admin/v1/scopes', data),
 
-  // API Keys
-  listApiKeys: (scopeId?: string): Promise<{ api_keys: any[]; count: number }> =>
-    get(`/api/admin/v1/api-keys${scopeId ? '?scope_id=' + encodeURIComponent(scopeId) : ''}`),
-
-  createApiKey: (scopeId: string, name: string): Promise<any> =>
-    post(`/api/admin/v1/scopes/${scopeId}/api-keys`, { name }),
-
-  revokeApiKey: (id: string): Promise<any> =>
-    post(`/api/admin/v1/api-keys/${id}/revoke`),
-
-  rotateApiKey: (id: string): Promise<any> =>
-    post(`/api/admin/v1/api-keys/${id}/rotate`),
 
   // Logs
   listOperations: (): Promise<{ operations: any[]; count: number }> =>

@@ -175,70 +175,28 @@ function CellContent({ ev }: { ev: EvaluatedCell }) {
 // Composition bar — clickable cards above the atom matrix
 // ══════════════════════════════════════════════════════════════════════════════
 
-type CompStatus = 'ok' | 'missing' | 'unsupported';
-
-function compCardStatus(comp: Composition, providerRows: ProviderAtoms[], installedIds: Set<string>): CompStatus {
-  if (!comp.atoms || comp.atoms.length === 0) return 'unsupported';
-  let allOptional = true;
-  for (const atomKey of comp.atoms) {
-    const anyBinding = providerRows.some(row => {
-      const slots = row.bindings?.[atomKey];
-      return slots && slots.length > 0;
-    });
-    if (!anyBinding) return 'unsupported'; // no provider claims this atom at all
-    const hasRequired = providerRows.some(row => {
-      const slots = row.bindings?.[atomKey];
-      return slots && slots.length > 0 && slots.some(s => s.required);
-    });
-    if (hasRequired) allOptional = false;
-  }
-  // Check if required providers are installed (required or optional)
-  const needProviders = new Set<string>();
-  for (const atomKey of comp.atoms) {
-    for (const row of providerRows) {
-      const slots = row.bindings?.[atomKey];
-      if (slots && slots.length > 0) {
-        needProviders.add(row.provider_id);
-      }
-    }
-  }
-  for (const pid of needProviders) {
-    if (!installedIds.has(pid)) return 'missing';
-  }
-  return 'ok';
-}
-
-const COMP_CARD_STYLE: Record<CompStatus, { card: string; text: string; cursor: string }> = {
-  ok:          { card: 'bg-a-surface border-a-border/30 hover:border-[#4cd964]/40 hover:bg-[#4cd964]/5',     text: 'text-a-fg',            cursor: 'cursor-pointer' },
-  missing:     { card: 'bg-[#ff5c72]/5 border-[#ff5c72]/30 hover:border-[#ff5c72]/50 hover:bg-[#ff5c72]/10', text: 'text-[#ff5c72]',       cursor: 'cursor-pointer' },
-  unsupported: { card: 'bg-transparent border-a-border/10',                                                     text: 'text-a-muted/40',      cursor: 'cursor-not-allowed' },
+const COMP_CARD_STYLE: Record<string, { card: string; text: string; cursor: string }> = {
+  available:          { card: 'bg-a-surface border-a-border/30 hover:border-[#4cd964]/40 hover:bg-[#4cd964]/5',     text: 'text-a-fg',            cursor: 'cursor-pointer' },
+  missing_provider:   { card: 'bg-[#ff5c72]/5 border-[#ff5c72]/30 hover:border-[#ff5c72]/50 hover:bg-[#ff5c72]/10', text: 'text-[#ff5c72]',       cursor: 'cursor-pointer' },
+  unsupported:        { card: 'bg-transparent border-a-border/10',                                                     text: 'text-a-muted/40',      cursor: 'cursor-not-allowed' },
 };
 
-function CompositionBar({ compositions, activeAtoms, onHover, providerRows, providers }: {
+function CompositionBar({ compositions, activeAtoms, onHover }: {
   compositions: Composition[];
   activeAtoms: Set<string>;
   onHover: (atoms: string[] | null) => void;
-  providerRows: ProviderAtoms[];
-  providers: ProviderState[];
 }) {
-  const installedIds = useMemo(() => {
-    const s = new Set<string>();
-    providers.filter(p => p.installed && p.running).forEach(p => s.add(p.id));
-    return s;
-  }, [providers]);
-
   return (
     <div className="flex items-center gap-2 flex-wrap mb-1">
       <span className="text-[10px] text-a-muted uppercase tracking-wider mr-1">组合流</span>
       {compositions.map(comp => {
-        const status = compCardStatus(comp, providerRows, installedIds);
-        const st = COMP_CARD_STYLE[status];
-        const disabled = status === 'unsupported';
-        const title = status === 'unsupported'
+        const st = COMP_CARD_STYLE[comp.status] || COMP_CARD_STYLE.unsupported;
+        const disabled = comp.status === 'unsupported';
+        const title = comp.status === 'unsupported'
           ? `${comp.name}：此模式不支持`
-          : status === 'missing'
+          : comp.status === 'missing_provider'
             ? `${comp.name}：Provider 未安装`
-            : `${comp.name} = ${comp.atoms!.join(' → ')}`;
+            : `${comp.name} = ${(comp.atoms || []).join(' → ')}`;
 
         return (
           <button
@@ -249,7 +207,7 @@ function CompositionBar({ compositions, activeAtoms, onHover, providerRows, prov
             title={title}
             className={cn('px-2.5 py-1 rounded-a-sm text-[10px] font-mono transition-colors border', st.card, st.cursor)}>
             <span className={st.text}>{comp.name}</span>
-            <span className={cn('ml-1.5', status === 'unsupported' ? 'text-a-muted/30' : status === 'missing' ? 'text-[#ff5c72]/60' : 'text-a-muted')}>
+            <span className={cn('ml-1.5', comp.status === 'unsupported' ? 'text-a-muted/30' : comp.status === 'missing_provider' ? 'text-[#ff5c72]/60' : 'text-a-muted')}>
               {comp.chain || '—'}
             </span>
           </button>
@@ -456,11 +414,11 @@ function CompositionDiagnostic({ compositions, providerRows, providers, atoms }:
         <span className="text-[10px] text-a-muted uppercase tracking-wider">组合能力诊断</span>
         <span className="ml-2 text-[10px]">
           {(() => {
-            const ok = diags.filter(d => d.overall === 'available').length;
-            const miss = diags.filter(d => d.overall === 'missing-provider').length;
-            const unsup = diags.filter(d => d.overall === 'unsupported').length;
+            const avail = compositions.filter(c => c.status === 'available').length;
+            const miss = compositions.filter(c => c.status === 'missing_provider').length;
+            const unsup = compositions.filter(c => c.status === 'unsupported').length;
             const parts = [];
-            if (ok > 0) parts.push(<span key="ok" className="text-[#4cd964]">{ok} 可用</span>);
+            if (avail > 0) parts.push(<span key="ok" className="text-[#4cd964]">{avail} 可用</span>);
             if (miss > 0) parts.push(<span key="miss" className="text-[#ff5c72]">{miss} 缺Provider</span>);
             if (unsup > 0) parts.push(<span key="unsup" className="text-a-muted/50">{unsup} 不支持</span>);
             return parts.length > 0 ? parts.reduce((a,b) => <>{a} <span className="text-a-border/50">·</span> {b}</>) : <span className="text-a-muted/50">—</span>;
@@ -605,7 +563,7 @@ function BindingMatrix({ mode, providers, onCellClick }: {
   return (
     <>
       {/* Composition cards */}
-      <CompositionBar compositions={compositions} activeAtoms={highlightAtoms} onHover={(atoms) => setHighlightAtoms(atoms ? new Set(atoms) : new Set())} providerRows={providerRows} providers={providers} />
+      <CompositionBar compositions={compositions} activeAtoms={highlightAtoms} onHover={(atoms) => setHighlightAtoms(atoms ? new Set(atoms) : new Set())} />
 
       {/* Composition diagnostic table */}
       <CompositionDiagnostic compositions={compositions} providerRows={providerRows} providers={providers} atoms={atoms} />

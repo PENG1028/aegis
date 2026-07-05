@@ -188,9 +188,65 @@ func (p ProviderAtoms) listenerSpecs() []ListenerSpec {
 // Compositions are rendered as clickable cards above the atom matrix.
 // Clicking a composition highlights its constituent atom columns.
 type Composition struct {
-	Name  string   `json:"name"`  // "HTTPS Route"
-	Atoms []string `json:"atoms"` // ["tcp", "tls", "http"] — ordered
-	Chain string   `json:"chain"` // "L4 → L5 → L7" — human-readable
+	Name   string   `json:"name"`   // "HTTPS Route"
+	Atoms  []string `json:"atoms"`  // ["tcp", "tls", "http"] — ordered
+	Chain  string   `json:"chain"`  // "L4 → L5 → L7" — human-readable
+	Status string   `json:"status"` // "available" | "missing_provider" | "unsupported"
+}
+
+// CompStatus constants for Composition.Status.
+const (
+	CompAvailable      = "available"
+	CompMissingProvider = "missing_provider"
+	CompUnsupported    = "unsupported"
+)
+
+// EvalStatus computes the status of this composition given actual provider states.
+// Call this at request time — it uses live ProviderState, not static definitions.
+func (c *Composition) EvalStatus(mode RuntimeMode, states []ProviderState) {
+	if len(c.Atoms) == 0 {
+		c.Status = CompUnsupported
+		return
+	}
+	// Check each atom: does any provider in this mode have a binding for it?
+	needsProviders := make(map[string]bool)
+	for _, atomKey := range c.Atoms {
+		hasAny := false
+		for _, p := range mode.Providers {
+			slots, ok := p.Bindings[atomKey]
+			if !ok || len(slots) == 0 {
+				continue
+			}
+			hasAny = true
+			needsProviders[p.ProviderID] = true
+		}
+		if !hasAny {
+			c.Status = CompUnsupported
+			return
+		}
+	}
+	// Mode supports this composition. Check if required providers are installed.
+	installed := make(map[string]bool)
+	for _, s := range states {
+		if s.Healthy() {
+			installed[s.ID] = true
+		}
+	}
+	for pid := range needsProviders {
+		if !installed[pid] {
+			c.Status = CompMissingProvider
+			return
+		}
+	}
+	// All providers installed (all-optional compositions are "available" too)
+	c.Status = CompAvailable
+}
+
+// EvalAllCompositions evaluates status for all compositions in this mode.
+func (m *RuntimeMode) EvalAllCompositions(states []ProviderState) {
+	for i := range m.Compositions {
+		m.Compositions[i].EvalStatus(*m, states)
+	}
 }
 
 // ============================================================================
