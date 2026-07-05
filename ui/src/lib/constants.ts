@@ -25,6 +25,9 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   ],
   fabric: [
     { path: '/fabric', label: '能力矩阵' },
+    { path: '/fabric/providers', label: 'Provider 详情' },
+    { path: '/fabric/auth', label: '服务认证' },
+    { path: '/fabric/callgraph', label: '调用拓扑' },
   ],
   runtime: [
     { path: '/runtime', label: '节点' },
@@ -59,8 +62,6 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   settings: [
     { path: '/settings', label: '面板' },
     { path: '/settings/dns', label: 'DNS' },
-    // WIP: { path: '/settings/tls', label: 'TLS' },
-    { path: '/settings/proxy', label: '透明代理' },
     { path: '/settings/advanced', label: '高级' },
   ],
 };

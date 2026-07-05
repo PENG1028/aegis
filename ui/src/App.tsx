@@ -22,6 +22,9 @@ import QuickConnect from '@/pages/exposure/QuickConnect';
 
 // ── Fabric ──
 import Providers from '@/pages/fabric/Providers';
+import ProvidersDetail from '@/pages/fabric/ProvidersDetail';
+import AuthServices from '@/pages/fabric/AuthServices';
+import AuthCallGraph from '@/pages/fabric/AuthCallGraph';
 
 // ── Runtime ──
 import Nodes from '@/pages/runtime/Nodes';
@@ -124,6 +127,9 @@ export default function App() {
                 {/* ── Workspace 3: Fabric / 网关网络 ── */}
                 <Route path="/fabric" element={<OutletLayout />}>
                   <Route index element={<Providers />} />
+                  <Route path="providers" element={<ProvidersDetail />} />
+                  <Route path="auth" element={<AuthServices />} />
+                  <Route path="callgraph" element={<AuthCallGraph />} />
                 </Route>
 
                 {/* ── Workspace 4: Runtime / 节点运行时 ── */}
