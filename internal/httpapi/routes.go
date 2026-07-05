@@ -260,6 +260,17 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/actual-state", h.AdminGetActualState)
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/sync-status", h.AdminGetSyncStatus)
 
+		// v1.9B: Distributed Node Runtime
+		mux.HandleFunc("GET /api/admin/v1/distnode/status", h.AdminDistNodeStatus)
+		mux.HandleFunc("POST /api/admin/v1/distnode/check", h.AdminDistNodeCheck)
+		mux.HandleFunc("POST /api/admin/v1/distnode/ping/{id}", h.AdminDistNodePingPeer)
+			mux.HandleFunc("GET /api/admin/v1/distnode/aggregate", h.AdminDistNodeAggregate)
+		mux.HandleFunc("GET /api/admin/v1/nodes/{id}/distnode-overview", h.AdminDistNodeOverview)
+
+		// distnode transport call (used by peers)
+		// Mounted separately in RegisterDistNodeTransport if enabled
+
+
 	// Admin Gateway Inventory
 	mux.HandleFunc("GET /api/admin/v1/gateways", h.AdminListGateways)
 	mux.HandleFunc("POST /api/admin/v1/gateways", h.AdminCreateGateway)

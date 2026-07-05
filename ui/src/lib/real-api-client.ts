@@ -13,6 +13,7 @@
  */
 
 import { API_CONFIG, apiUrl } from './api-config';
+import { viewStore } from './view-store';
 import type {
   Node, NodeDetail, Gateway, GatewayDetail,
   TopologyEdge, TopologyPathResult, TopologyPathHop,
@@ -1586,3 +1587,59 @@ export async function fetchListeners(): Promise<any[]> {
     node_id: gw.node_id,
   }));
 }
+
+// ─── DistNode API ───
+
+export interface DistNodeStatus {
+  node_id: string;
+  name?: string;
+  role: string;
+  addr: string;
+  peer_count: number;
+  alive_count: number;
+  peers: DistNodePeer[];
+  enabled: boolean;
+}
+
+export interface DistNodePeer {
+  id: string;
+  addr: string;
+  alive: boolean;
+  since?: string;
+}
+
+export interface DistNodeCheckResult {
+  peer_id: string;
+  addr: string;
+  healthz: string;
+  echo: string;
+  details?: string;
+}
+
+export interface AggregatedNodeResult {
+  node_id: string;
+  status: number;
+  body?: any;
+  error?: string;
+}
+
+export interface DistNodeCheck {
+  node_id: string;
+  healthy: boolean;
+  peer_count: number;
+  checks: DistNodeCheckResult[];
+}
+
+export const distnodeApi = {
+  status: (): Promise<DistNodeStatus> =>
+    get('/api/admin/v1/distnode/status'),
+
+  check: (): Promise<DistNodeCheck> =>
+    post('/api/admin/v1/distnode/check'),
+
+  ping: (peerId: string): Promise<{peer_id: string; alive: boolean; reply?: any; error?: string}> =>
+    post('/api/admin/v1/distnode/ping/' + peerId),
+
+  aggregate: (path: string): Promise<{results: AggregatedNodeResult[]; total: number}> =>
+    get('/api/admin/v1/distnode/aggregate?path=' + encodeURIComponent(path)),
+};

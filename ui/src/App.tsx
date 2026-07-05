@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthGuard, ToastProvider } from '@/components/shared';
 import { AppShell } from '@/components/layout/AppShell';
+import { ViewProvider } from '@/lib/view-context';
 import { LEGACY_REDIRECTS } from '@/lib/constants';
 
 // ── Command Center ──
@@ -113,6 +114,7 @@ export default function App() {
       <ToastProvider>
         <BrowserRouter>
           <AuthGuard>
+            <ViewProvider>
             <Routes>
               <Route element={<AppShell />}>
                 {/* ── Workspace 1: Command Center ── */}
@@ -185,6 +187,7 @@ export default function App() {
                 <Route path="*" element={<LegacyRedirect />} />
               </Route>
             </Routes>
+            </ViewProvider>
           </AuthGuard>
         </BrowserRouter>
       </ToastProvider>

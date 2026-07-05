@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { system } from '@/lib/api-bridge';
 import { WorkbenchSidebar } from './WorkbenchSidebar';
+import { NodeSwitcher } from './NodeSwitcher';
 
 export function AppShell() {
   const { user, logout } = useAuth();
@@ -29,6 +30,7 @@ export function AppShell() {
         </button>
         <span className="text-[10px] text-a-muted font-mono">{statusVersion}</span>
         <div className="flex-1" />
+        <NodeSwitcher />
         <span className="text-[10px] text-a-muted">{user?.username || 'admin'}</span>
         <button onClick={logout} className="text-[10px] text-a-muted hover:text-a-fg transition-colors cursor-pointer">登出</button>
       </header>

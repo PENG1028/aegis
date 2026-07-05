@@ -50,5 +50,6 @@ export {
   runtimeModeApi,
   compositionApi,
   routeApi,
+  distnodeApi,
 } from './real-api-client';
 export type { RuntimeModeDef, RuntimeModeRole, RuntimeModeBinding, RuntimeAtom, AtomSlot, ProviderAtoms, Composition, CompDef } from './real-api-client';
