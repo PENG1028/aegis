@@ -1,6 +1,8 @@
 # Binary (root only)
 /aegis
 /aegis.exe
+/aegis-dev.exe
+/serviceauthd.exe
 /aegis-linux
 /aegis-linux.gz
 /simulated-acceptance
@@ -10,6 +12,7 @@
 # Development data
 .aegis/
 .aegis-test/
+data/
 
 # IDE
 .vscode/
