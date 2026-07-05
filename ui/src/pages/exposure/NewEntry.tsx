@@ -118,7 +118,7 @@ export default function NewEntry() {
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-a-border/10 text-a-muted border border-a-border/20">本机 127.0.0.1</span>
               </>
             )}
-            {nodeLabels[selectedNode?.id||'']?.label && (
+            {selectedNode && nodeLabels[selectedNode.id]?.label && (
               <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border', nodeLabels[selectedNode.id].color)}>
                 {nodeLabels[selectedNode.id].forced ? '⚠ 重复内网IP — 需指定网络: ' : ''}{nodeLabels[selectedNode.id].label}
               </span>
