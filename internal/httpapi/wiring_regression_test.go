@@ -25,7 +25,7 @@ func TestServicesFieldTypes(t *testing.T) {
 
 	t.Log("Bug 5 regression: Services struct compiles with all required fields")
 	t.Log("  Fields: Config, Project, Service, EndpointRepo, Route, ManagedDomain,")
-	t.Log("  Exposure, Apply, Health, Logs, Auth, Action, Space, TokenRepo,")
+	t.Log("  Exposure, Apply, Health, Logs, Auth, Action, Space,")
 	t.Log("  AdminAuth, EdgeSvc, ListenerSvc, NodeRepo, Gateway, DepSvc, PendingState, TraceSvc")
 }
 
