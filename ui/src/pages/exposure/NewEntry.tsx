@@ -65,8 +65,8 @@ export default function NewEntry() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-a-fg">新建入口</h2>
-        <p className="text-xs text-a-muted mt-1">创建域名映射或端口转发</p>
+        <h2 className="text-lg font-bold text-a-fg">添加域名</h2>
+        <p className="text-xs text-a-muted mt-1">创建域名映射或端口转发，系统自动处理路由和证书</p>
       </div>
 
       {/* Service type — all options visible, status inline */}
