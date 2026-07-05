@@ -108,16 +108,14 @@ export default function NewEntry() {
           </select>
           {/* Always show IP tags for current selection or default */}
           <div className="flex items-center gap-2 mt-1.5">
-            {selectedNode ? (
-              <>
-                {selectedNode.privateIP && <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">内网 {selectedNode.privateIP}</span>}
-                {selectedNode.publicIP ? <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-a-border/10 text-a-muted border border-a-border/20">公网 {selectedNode.publicIP}</span> : <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-a-border/10 text-a-muted/50 border border-a-border/20">公网 —</span>}
-              </>
-            ) : (
-              <>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-a-border/10 text-a-muted border border-a-border/20">本机 127.0.0.1</span>
-              </>
-            )}
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              内网 {selectedNode?.privateIP || '—'}
+            </span>
+            <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-mono border',
+              selectedNode?.publicIP ? 'bg-a-border/10 text-a-muted border-a-border/20' : 'bg-a-border/5 text-a-muted/40 border-a-border/20')}>
+              公网 {selectedNode?.publicIP || '—'}
+            </span>
+            {!selectedNode && <span className="text-[9px] text-a-muted/50">（选择节点后显示实际 IP）</span>}
             {selectedNode && nodeLabels[selectedNode.id]?.label && (
               <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border', nodeLabels[selectedNode.id].color)}>
                 {nodeLabels[selectedNode.id].forced ? '⚠ 重复内网IP — 需指定网络: ' : ''}{nodeLabels[selectedNode.id].label}
