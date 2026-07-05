@@ -296,19 +296,31 @@ func missingCapabilities(required []provider.Capability, available []provider.Pr
 	return missing
 }
 
-// findForwardTarget finds the HTTP router to forward transparent proxy traffic to.
-// v1.8L-22: uses RuntimeMode instead of ProviderState.Ports (old shell-based detection).
+// findForwardTarget finds forward targets for transparent proxy iptables interception.
+// v1.8L-22: auto-discovers from composition registry — same logic as transparent status handler.
+// When new compositions are added with IsTransparentForwardTarget()=true, this auto-picks them up.
 func findForwardTarget(available []provider.ProviderState, mode provider.RuntimeMode) *provider.ForwardTarget {
-	for _, p := range available {
-		if p.HasCapability(provider.CapRouteHost) && p.HasCapability(provider.CapUpstreamTCP) {
-			// Get the HTTP port from RuntimeMode — the single source of truth
+	for _, comp := range provider.AllCompositions() {
+		if !comp.IsTransparentForwardTarget() {
+			continue
+		}
+		for _, p := range available {
+			hasAll := true
+			for _, cap := range comp.Requirements() {
+				if !p.HasCapability(cap) {
+					hasAll = false
+					break
+				}
+			}
+			if !hasAll {
+				continue
+			}
 			listeners := mode.ListenerSpecsFor(p.ID)
 			for _, l := range listeners {
 				if l.Purpose == "http" || l.Purpose == "internal_https" {
 					return &provider.ForwardTarget{Host: "127.0.0.1", Port: l.Port}
 				}
 			}
-			// Fallback: default HTTP port
 			return &provider.ForwardTarget{Host: "127.0.0.1", Port: 80}
 		}
 	}
