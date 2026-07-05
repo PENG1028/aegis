@@ -101,6 +101,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/routes/{id}/disable", h.DisableRoute)
 	mux.HandleFunc("POST /api/admin/v1/routes/{id}/enable", h.EnableRoute)
 	mux.HandleFunc("POST /api/admin/v1/routes/{id}/disable", h.DisableRoute)
+	mux.HandleFunc("DELETE /api/admin/v1/routes/{id}", h.AdminDeleteRoute)
 	mux.HandleFunc("POST /api/routes/{id}/switch-service", h.SwitchRouteService)
 	mux.HandleFunc("POST /api/routes/{id}/maintenance-on", h.RouteMaintenanceOn)
 	mux.HandleFunc("POST /api/routes/{id}/maintenance-off", h.RouteMaintenanceOff)
