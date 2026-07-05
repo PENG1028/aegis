@@ -192,14 +192,12 @@ function compCardStatus(comp: Composition, providerRows: ProviderAtoms[], instal
     });
     if (hasRequired) allOptional = false;
   }
-  // All-optional compositions are supported but not required (e.g. HTTP/3 over QUIC)
-  if (allOptional) return 'ok';
-  // Check if required providers are installed
+  // Check if required providers are installed (required or optional)
   const needProviders = new Set<string>();
   for (const atomKey of comp.atoms) {
     for (const row of providerRows) {
       const slots = row.bindings?.[atomKey];
-      if (slots && slots.length > 0 && slots.some(s => s.required)) {
+      if (slots && slots.length > 0) {
         needProviders.add(row.provider_id);
       }
     }
