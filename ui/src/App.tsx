@@ -57,7 +57,6 @@ import AdminAccount from '@/pages/access/AdminAccount';
 import PanelSettings from '@/pages/settings/Panel';
 import DnsSettings from '@/pages/settings/DnsSettings';
 import TlsSettings from '@/pages/settings/TlsSettings';
-import TransparentProxyPage from '@/pages/settings/TransparentProxy';
 import AdvancedSettings from '@/pages/settings/Advanced';
 
 // ── Legacy ──
@@ -171,7 +170,6 @@ export default function App() {
                   <Route index element={<PanelSettings />} />
                   <Route path="dns" element={<DnsSettings />} />
                   <Route path="tls" element={<TlsSettings />} />
-                  <Route path="proxy" element={<TransparentProxyPage />} />
                   <Route path="advanced" element={<AdvancedSettings />} />
                 </Route>
 
