@@ -903,6 +903,9 @@ function ProviderCard({ provider, universe }: { provider: ProviderState; univers
 const PAGE_TABS = [
   { key: 'binding', label: 'Runtime Binding' },
   { key: 'matrix', label: '能力矩阵' },
+  { key: 'detail', label: 'Provider 详情' },
+  { key: 'transparent', label: '透明代理' },
+  { key: 'entry', label: '服务入口' },
 ];
 
 export default function Providers() {
@@ -986,6 +989,18 @@ export default function Providers() {
         )
       )}
 
+      {pageTab === 'detail' && (
+        isLoading ? <Card title="Provider 详情"><div className="text-sm text-a-muted py-12 text-center">加载中...</div></Card>
+        : providers.length > 0 ? (
+          <Card title="Provider 详情" subtitle="点击展开查看完整能力清单、诊断信息和操作">
+            <div className="space-y-2">{providers.map(p => <ProviderCard key={p.id} provider={p} universe={universe} />)}</div>
+          </Card>
+        ) : <Card title="Provider 详情"><div className="text-center py-12 text-sm text-a-muted">没有检测到 Provider · 运行 <code className="text-a-accent">aegis doctor</code> 诊断</div></Card>
+      )}
+
+      {pageTab === 'transparent' && <TransparentProxyPanel />}
+      {pageTab === 'entry' && <ServiceEntry />}
+
       {/* Cell detail drawer */}
       <CellDrawer cell={drawerCell} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </div>
@@ -995,6 +1010,50 @@ export default function Providers() {
 // ══════════════════════════════════════════════════════════════════════════════
 // Transparent Proxy Panel — availability diagnosis + iptables rules
 // ══════════════════════════════════════════════════════════════════════════════
+
+function TransparentProxyPanel() {
+  const { data: status, isLoading: statusLoading } = useQuery({
+    queryKey: ['transparent-status'], queryFn: () => transparentApi.status().catch(() => null), refetchInterval: 30_000,
+  });
+  const { data: rulesData, isLoading: rulesLoading } = useQuery({
+    queryKey: ['transparent-rules'], queryFn: () => transparentApi.listRules(), refetchInterval: 10_000,
+  });
+  const queryClient = useQueryClient(); const toast = useToast();
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => transparentApi.deleteRule(id),
+    onSettled: () => { queryClient.invalidateQueries({ queryKey: ['transparent-rules'] }); toast('规则已删除'); },
+    onError: (e: any) => toast(e.message || '删除失败', 'error'),
+  });
+  const rules = (rulesData as any)?.rules || [];
+  const checks = status?.checks || [];
+  const fwds = status?.forward_targets || [];
+  const allPassed = status?.available || false;
+
+  return (<div className="space-y-5">
+    <Card title="可用性诊断" subtitle={statusLoading ? '检查中...' : allPassed ? '透明代理已就绪' : `${checks.filter((c:any) => c.passed).length}/${checks.length} 条件满足`}>
+      {statusLoading ? <div className="text-sm text-a-muted py-6 text-center">检查中...</div>
+      : checks.length === 0 ? <div className="text-sm text-a-muted py-6 text-center">无法获取诊断数据</div>
+      : <div className="space-y-2">{checks.map((c: any, i: number) => (
+        <div key={i} className={cn('flex items-center gap-3 px-3 py-2.5 rounded-a-sm border text-xs', c.passed ? 'bg-[#4cd964]/5 border-[#4cd964]/15' : 'bg-[#ff5c72]/5 border-[#ff5c72]/15')}>
+          <span className={cn('font-mono text-sm shrink-0', c.passed ? 'text-[#4cd964]' : 'text-[#ff5c72]')}>{c.passed ? '✓' : '✗'}</span>
+          <span className="font-medium w-28 shrink-0">{c.name}</span>
+          <span className={c.passed ? 'text-a-muted' : 'text-[#ff5c72]/80'}>{c.detail}</span>
+        </div>))}</div>}
+      {fwds.length > 0 && (<div className="mt-3"><div className="text-[10px] text-a-muted/60 mb-1.5">转发入口能力（{status?.mode || '—'} 模式）</div>
+        <div className="flex items-center gap-2 flex-wrap">{fwds.map((ft: any, i: number) => {
+          const cs = COMP_CARD_STYLE[ft.status] || COMP_CARD_STYLE.unsupported;
+          return <div key={i} title={ft.detail} className={cn('px-2.5 py-1 rounded-a-sm text-[10px] font-mono border', cs.card, ft.status !== 'unsupported' ? cs.cursor : '')}><span className={cs.text}>{ft.composition}</span></div>;
+        })}</div></div>)}
+    </Card>
+    <Card title={`iptables 规则 (${rules.length})`} subtitle="目标 IP:端口 → 本地代理端口">
+      {rulesLoading ? <div className="text-sm text-a-muted py-8 text-center">加载中...</div>
+      : rules.length === 0 ? <div className="text-center py-8 text-a-muted text-sm"><p>无活跃规则</p><p className="text-xs mt-1 opacity-60">需要 Linux 系统 + root 权限</p></div>
+      : <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b border-a-border text-a-muted text-left"><th className="py-2 px-3 font-medium">目标</th><th className="py-2 px-3 font-medium">代理端口</th><th className="py-2 px-3 font-medium">状态</th><th className="py-2 px-3 font-medium">流量</th><th className="py-2 px-3 font-medium"></th></tr></thead><tbody>
+        {rules.map((rule: any) => (<tr key={rule.id} className="border-b border-a-border/50 hover:bg-a-border/10"><td className="py-2 px-3 font-mono">{rule.original_ip}:{rule.original_port}</td><td className="py-2 px-3 font-mono text-a-muted">:{rule.local_proxy_port}</td><td className="py-2 px-3"><StatusBadge status={rule.active ? 'active' : 'disabled'} /></td><td className="py-2 px-3 font-mono text-[11px]">↓{rule.bytes_in || 0} ↑{rule.bytes_out || 0}</td><td className="py-2 px-3"><button onClick={() => deleteMutation.mutate(rule.id)} className="text-[10px] px-2 py-0.5 rounded border border-[#ff5c72]/30 text-[#ff5c72] hover:bg-[#ff5c72]/10 transition-colors cursor-pointer">删除</button></td></tr>))}
+      </tbody></table></div>}
+    </Card>
+  </div>);
+}
 
 function CapabilityMatrixTab({ providers, universe }: { providers: ProviderState[]; universe: CapabilityDef[] }) {
   if (!universe.length || !providers.length) {
