@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"aegis/internal/core"
+	"aegis/internal/listener"
 	"aegis/internal/logs"
 )
 
@@ -74,6 +75,7 @@ func (s *AppService) EnsureRuleForHTTPRoute(ctx context.Context, domain, routeID
 		return nil, fmt.Errorf("invalid HTTP route domain for edge rule: %w", err)
 	}
 
+	internalPort := internalHTTPSPort()
 	existing, _ := s.repo.FindBySNIHost(domain)
 	if existing != nil {
 		// Check ownership — only http_route-managed rules are auto-updated
@@ -82,7 +84,7 @@ func (s *AppService) EnsureRuleForHTTPRoute(ctx context.Context, domain, routeID
 			return existing, nil
 		}
 		existing.TargetHost = "127.0.0.1"
-		existing.TargetPort = 8443
+		existing.TargetPort = internalPort
 		existing.DeclaredKind = KindHTTPSApp
 		existing.ManagedBy = "http_route"
 		existing.SourceRef = routeID
@@ -99,7 +101,7 @@ func (s *AppService) EnsureRuleForHTTPRoute(ctx context.Context, domain, routeID
 		SNIHost:      domain,
 		DeclaredKind: KindHTTPSApp,
 		TargetHost:   "127.0.0.1",
-		TargetPort:   8443,
+		TargetPort:   internalHTTPSPort(),
 		ManagedBy:    "http_route",
 		SourceRef:    routeID,
 		Status:       "active",
@@ -112,7 +114,7 @@ func (s *AppService) EnsureRuleForHTTPRoute(ctx context.Context, domain, routeID
 	}
 
 	s.logSvc.Log(ctx, "edgemux.sync", "edge_mux_rule", rule.ID, "success",
-		fmt.Sprintf("auto-created edge rule for HTTP route %s: SNI %s -> 127.0.0.1:8443", routeID, domain), "system")
+		fmt.Sprintf("auto-created edge rule for HTTP route %s: SNI %s -> 127.0.0.1:%d", routeID, domain, internalPort), "system")
 	return rule, nil
 }
 
@@ -234,4 +236,15 @@ func (s *AppService) DisableRule(ctx context.Context, id string) error {
 	rule.Status = "disabled"
 	rule.UpdatedAt = time.Now()
 	return s.repo.Update(rule)
+}
+
+// internalHTTPSPort reads the internal HTTPS port from listener defaults.
+// Replaces the hardcoded 8443 — if listener defaults change, this follows.
+func internalHTTPSPort() int {
+	for _, l := range listener.EdgeMuxDefaults() {
+		if l.Purpose == "internal_https" {
+			return l.Port
+		}
+	}
+	return 8443 // fallback: standard EdgeMux internal HTTPS port
 }

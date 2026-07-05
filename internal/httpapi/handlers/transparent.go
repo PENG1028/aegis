@@ -79,7 +79,7 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 	var allForwardTargets []fwdEntry
 	for _, c := range mode.Compositions {
 		def := provider.LookupCompByName(c.Name)
-		if def == nil || !def.IsTransparentForwardTarget() {
+		if def == nil {
 			continue
 		}
 		entry := fwdEntry{Composition: c.Name, Status: c.Status}
