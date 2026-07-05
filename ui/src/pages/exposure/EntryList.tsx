@@ -17,12 +17,18 @@ export default function EntryList() {
   });
 
   const disableRoute = useMutation({
-    mutationFn: (id: string) => fetch(`/api/routes/${id}/disable`, { method: 'POST', credentials: 'include' }),
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/routes/${id}/disable`, { method: 'POST', credentials: 'include' });
+      if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error((e as any).error?.message || `HTTP ${res.status}`); }
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['routes'] }); toast('已禁用'); },
     onError: (e: any) => toast(e.message || '禁用失败', 'error'),
   });
   const enableRoute = useMutation({
-    mutationFn: (id: string) => fetch(`/api/routes/${id}/enable`, { method: 'POST', credentials: 'include' }),
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/routes/${id}/enable`, { method: 'POST', credentials: 'include' });
+      if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error((e as any).error?.message || `HTTP ${res.status}`); }
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['routes'] }); toast('已启用'); },
     onError: (e: any) => toast(e.message || '启用失败', 'error'),
   });
@@ -101,7 +107,8 @@ export default function EntryList() {
               </tr></thead>
               <tbody>
                 {filtered.map(item => (
-                  <tr key={item.key} className="border-b border-a-border/30 hover:bg-a-border/5">
+                  <tr key={item.key} className="border-b border-a-border/30 hover:bg-a-border/5 cursor-pointer"
+                    onClick={() => nav(`/exposure/entry/${item.key}`)}>
                     <td className="py-2.5 px-3 font-mono text-[11px]">{item.name}</td>
                     <td className="py-2.5 px-3 text-[10px] text-a-muted">{item.type}</td>
                     <td className="py-2.5 px-3 font-mono text-[11px] text-a-muted">{item.target}</td>
@@ -114,11 +121,11 @@ export default function EntryList() {
                     <td className="py-2.5 px-3">
                       {item._t === 'route' ? (
                         item.status === 'active'
-                          ? <button onClick={() => disableRoute.mutate(item.key)} className="text-[10px] px-2 py-0.5 rounded border border-[#e8b830]/30 text-[#e8b830] hover:bg-[#e8b830]/10 cursor-pointer">禁用</button>
-                          : <button onClick={() => enableRoute.mutate(item.key)} className="text-[10px] px-2 py-0.5 rounded border border-[#4cd964]/30 text-[#4cd964] hover:bg-[#4cd964]/10 cursor-pointer">启用</button>
+                          ? <button onClick={e => { e.stopPropagation(); disableRoute.mutate(item.key); }} className="text-[10px] px-2 py-0.5 rounded border border-[#e8b830]/30 text-[#e8b830] hover:bg-[#e8b830]/10 cursor-pointer">禁用</button>
+                          : <button onClick={e => { e.stopPropagation(); enableRoute.mutate(item.key); }} className="text-[10px] px-2 py-0.5 rounded border border-[#4cd964]/30 text-[#4cd964] hover:bg-[#4cd964]/10 cursor-pointer">启用</button>
                       ) : (
                         item.status === 'active'
-                          ? <button onClick={() => disableExposure.mutate(item.key)} className="text-[10px] px-2 py-0.5 rounded border border-[#e8b830]/30 text-[#e8b830] hover:bg-[#e8b830]/10 cursor-pointer">禁用</button>
+                          ? <button onClick={e => { e.stopPropagation(); disableExposure.mutate(item.key); }} className="text-[10px] px-2 py-0.5 rounded border border-[#e8b830]/30 text-[#e8b830] hover:bg-[#e8b830]/10 cursor-pointer">禁用</button>
                           : <span className="text-[10px] text-a-muted/50">—</span>
                       )}
                     </td>
