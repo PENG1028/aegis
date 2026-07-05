@@ -52,9 +52,7 @@ func AllCompKeys() []CompKey {
 // CompDef — the canonical definition of one binding capability
 // ============================================================================
 
-// CompDef defines everything the system needs to know about a composition:
-// how to display it, what atoms it requires, what transport fields it maps to,
-// and which Capability constants the Planner should check.
+// CompDef defines everything the system needs to know about a composition.
 type CompDef struct {
 	// Identity
 	Key         CompKey `json:"key"`         // "https_route"
@@ -103,6 +101,21 @@ func (d CompDef) Requirements() []Capability {
 	}
 
 	return caps
+}
+
+// IsTransparentForwardTarget returns true if this composition can serve as a
+// forward entry for transparent proxy iptables interception.
+//
+// Not all compositions can: Raw TCP/UDP forward to specific ports, not through
+// a shared HTTP router. TLS Passthrough routes by SNI, not by destination.
+//
+// Currently only HTTP-based compositions qualify — they provide a shared entry
+// port (Caddy :80/:8443) that routes arbitrary traffic by Host header.
+// When new compositions are added to the registry (e.g. future gRPC proxy),
+// this method is the single place to declare whether they qualify.
+func (d CompDef) IsTransparentForwardTarget() bool {
+	// Compositions that route by Host header → can forward transparent proxy traffic
+	return d.AppProtocol == "http" && d.TLSMode == "none"
 }
 
 // ============================================================================

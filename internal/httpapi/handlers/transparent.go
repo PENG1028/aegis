@@ -58,34 +58,47 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 		Detail: map[bool]string{true: "具有 root 权限", false: "iptables DNAT 需要 root"}[isRoot],
 	})
 
-	// 4. Gateway forward entry — search by capability, not hardcoded provider name.
-	//    Derived from HTTP Route composition = [listen_tcp, upstream_tcp, route_host].
-	//    Any provider with those capabilities can serve as the transparent proxy target.
+	// 4. Gateway forward entries — iterate ALL compositions, ask each if it
+	//    qualifies as a transparent proxy forward target. Automatically discovers
+	//    new compositions when they are added to the registry.
 	states := h.ProvReg.List()
 	mode := provider.DetectRuntimeMode(states)
 
 	var forwardTargets []fwdTarget
-	for _, p := range states {
-		if !p.HasCapability(provider.CapRouteHost) || !p.HasCapability(provider.CapUpstreamTCP) {
+	for _, comp := range provider.AllCompositions() {
+		if !comp.IsTransparentForwardTarget() {
 			continue
 		}
-		listeners := mode.ListenerSpecsFor(p.ID)
-		for _, l := range listeners {
-			if l.Purpose == "http" || l.Purpose == "internal_https" {
-				forwardTargets = append(forwardTargets, fwdTarget{
-					Composition: "HTTP Route",
-					ProviderID:  p.ID,
-					Host:        "127.0.0.1",
-					Port:        l.Port,
-					ProviderOK:  p.Healthy(),
-				})
-				break
+		// This composition qualifies — find providers that satisfy it
+		for _, p := range states {
+			hasAll := true
+			for _, cap := range comp.Requirements() {
+				if !p.HasCapability(cap) {
+					hasAll = false
+					break
+				}
+			}
+			if !hasAll {
+				continue
+			}
+			listeners := mode.ListenerSpecsFor(p.ID)
+			for _, l := range listeners {
+				if l.Purpose == "http" || l.Purpose == "internal_https" {
+					forwardTargets = append(forwardTargets, fwdTarget{
+						Composition: comp.Name,
+						ProviderID:  p.ID,
+						Host:        "127.0.0.1",
+						Port:        l.Port,
+						ProviderOK:  p.Healthy(),
+					})
+					break
+				}
 			}
 		}
 	}
 
 	gatewayReady := len(forwardTargets) > 0 && forwardTargets[0].ProviderOK
-	gatewayDetail := "无 Provider 提供 route_host + upstream_tcp 能力（需要 HTTP Route 组合）"
+	gatewayDetail := "无可用组合能力提供透明代理转发入口"
 	if len(forwardTargets) > 0 {
 		ft := forwardTargets[0]
 		if ft.ProviderOK {
