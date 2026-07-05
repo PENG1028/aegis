@@ -12,11 +12,17 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [statusVersion, setStatusVersion] = useState('...');
+  const [panelHost, setPanelHost] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     system.status()
-      .then((s: any) => setStatusVersion(s.version || 'dev'))
+      .then((s: any) => {
+        setStatusVersion(s.version || 'dev');
+        // Use configured domain, or fall back to browser host
+        const host = s.panel_domain || window.location.host;
+        setPanelHost(host);
+      })
       .catch(() => setStatusVersion('dev'));
   }, []);
 
@@ -28,6 +34,9 @@ export function AppShell() {
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" /></svg>
           <span className="text-xs font-bold tracking-wide">AEGIS</span>
         </button>
+        {panelHost && (
+          <span className="text-[10px] text-a-muted font-mono hidden sm:inline">{panelHost}</span>
+        )}
         <span className="text-[10px] text-a-muted font-mono">{statusVersion}</span>
         <div className="flex-1" />
         <NodeSwitcher />

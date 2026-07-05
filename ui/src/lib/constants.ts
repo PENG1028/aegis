@@ -61,8 +61,7 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
     { path: '/access/admin', label: '管理员' },
   ],
   settings: [
-    { path: '/settings', label: '面板' },
-    { path: '/settings/dns', label: 'DNS' },
+    { path: '/settings', label: '通用' },
     { path: '/settings/advanced', label: '高级' },
   ],
 };
