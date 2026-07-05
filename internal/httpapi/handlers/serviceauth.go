@@ -127,7 +127,8 @@ func (h *Handlers) AdminListServiceAuthServices(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, services)
+	if services == nil { services = []serviceauth.ServiceRecord{} }
+	writeJSON(w, http.StatusOK, map[string]interface{}{"services": services, "count": len(services)})
 }
 
 // AdminGetServiceAuthService handles GET /api/admin/v1/service-auth/services/{id}
