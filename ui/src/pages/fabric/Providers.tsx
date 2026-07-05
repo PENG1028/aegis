@@ -11,7 +11,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { providerApi, runtimeModeApi, transparentApi } from '@/lib/api-bridge';
 import type { RuntimeModeDef, RuntimeAtom, AtomSlot, ProviderAtoms, Composition } from '@/lib/api-bridge';
 import { PageHeader, HealthDot, StatusBadge, Card, Btn, Drawer, TabBar, useToast } from '@/components/shared';
-import ServiceEntry from './ServiceEntry';
 import { cn } from '@/lib/utils';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -905,7 +904,6 @@ const PAGE_TABS = [
   { key: 'matrix', label: '能力矩阵' },
   { key: 'detail', label: 'Provider 详情' },
   { key: 'transparent', label: '透明代理' },
-  { key: 'entry', label: '服务入口' },
 ];
 
 export default function Providers() {
@@ -999,7 +997,6 @@ export default function Providers() {
       )}
 
       {pageTab === 'transparent' && <TransparentProxyPanel />}
-      {pageTab === 'entry' && <ServiceEntry />}
 
       {/* Cell detail drawer */}
       <CellDrawer cell={drawerCell} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
