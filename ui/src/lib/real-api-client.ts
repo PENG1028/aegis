@@ -1415,23 +1415,46 @@ export const adminApi = {
 
   importCaddyConfirm: (routes: any[]): Promise<any> =>
     post('/api/admin/v1/import/caddy/confirm', { routes }),
+
+  // ── Service Auth (v1.9A) ──
+  listAuthServices: (): Promise<{ services: any[]; count: number }> =>
+    get('/api/admin/v1/service-auth/services'),
+
+  getAuthService: (id: string): Promise<any> =>
+    get(`/api/admin/v1/service-auth/services/${id}`),
+
+  blockAuthService: (id: string, reason: string): Promise<any> =>
+    post(`/api/admin/v1/service-auth/services/${id}/block`, { reason }),
+
+  blockAuthAPI: (serviceID: string, apiName: string, reason: string): Promise<any> =>
+    post(`/api/admin/v1/service-auth/apis/${serviceID}/block`, { service_id: serviceID, api_name: apiName, reason }),
+
+  unblockAuthService: (id: string): Promise<any> =>
+    post(`/api/admin/v1/service-auth/blocklist/${id}/unblock`),
+
+  getAuthTopology: (window?: string): Promise<{ nodes: any[]; edges: any[] }> =>
+    get(`/api/admin/v1/service-auth/topology${window ? '?window=' + encodeURIComponent(window) : ''}`),
+
+  getAuthCallLogs: (since?: string, limit?: number): Promise<any> =>
+    get(`/api/admin/v1/service-auth/call-logs?since=${encodeURIComponent(since || new Date(Date.now() - 86400000).toISOString())}&limit=${limit || 100}`),
 };
 
 // ─── Transparent Proxy (v1.8F) ───
 
 export interface TransparentForwardTarget {
   composition: string;
-  provider_id: string;
-  host: string;
-  port: number;
-  provider_ok: boolean;
+  status: 'available' | 'provider_missing' | 'unsupported';
+  provider_id?: string;
+  host?: string;
+  port?: number;
+  provider_ok?: boolean;
+  detail: string;
 }
 
 export interface TransparentStatus {
   available: boolean;
   checks: { name: string; passed: boolean; detail: string }[];
   forward_targets: TransparentForwardTarget[];
-  composition: string;
   mode: string;
 }
 

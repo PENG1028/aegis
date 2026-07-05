@@ -1074,19 +1074,20 @@ function TransparentProxyPanel() {
 
         {/* Forward targets — auto-discovered from composition registry */}
         {forwardTargets.length > 0 && (
-          <div className="mt-3 p-2.5 rounded-a-sm bg-a-border/5 border border-a-border/20 text-[10px]">
-            <span className="text-a-muted/60">依赖组合能力：</span>
-            <span className="text-a-accent font-medium">{status?.composition || '—'}</span>
-            {forwardTargets.map((ft: any, i: number) => (
-              <span key={i} className="ml-3">
-                <span className="text-a-muted/60">转发目标：</span>
-                <span className="font-mono">{ft.host}:{ft.port}</span>
-                <span className={ft.provider_ok ? 'text-[#4cd964]' : 'text-[#ff5c72]'}>
-                  （{ft.provider_id} {ft.provider_ok ? '✓' : '✗'}）
-                </span>
-              </span>
-            ))}
-            <span className="ml-2 text-a-muted/50">（{status?.mode || '—'} 模式）</span>
+          <div className="mt-3 space-y-1.5">
+            <div className="text-[10px] text-a-muted/60">转发入口能力（{status?.mode || '—'} 模式）</div>
+            {forwardTargets.map((ft: any, i: number) => {
+              const st = ft.status === 'available' ? 'bg-[#4cd964]/5 border-[#4cd964]/15 text-[#4cd964]'
+                : ft.status === 'provider_missing' ? 'bg-[#ff5c72]/5 border-[#ff5c72]/15 text-[#ff5c72]'
+                : 'bg-a-border/5 border-a-border/20 text-a-muted';
+              const icon = ft.status === 'available' ? '✓' : ft.status === 'provider_missing' ? '✗' : '—';
+              return (
+                <div key={i} className={cn('px-2.5 py-1.5 rounded-a-sm border text-[10px]', st)}>
+                  <span className="font-medium">{ft.composition}</span>
+                  <span className="ml-2 opacity-70">{ft.detail}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>
