@@ -12,6 +12,7 @@ import (
 	"aegis/internal/credential"
 	"aegis/internal/deployment"
 	"aegis/internal/edgemux"
+	"aegis/internal/egress"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
@@ -80,6 +81,7 @@ type Services struct {
 	TransparentMgr  *transparent.Manager    // v1.8H transparent IP:port proxy
 	CredentialSvc   *credential.Service     // v1.8K encrypted connection strings
 	ServiceAuthSvc  *serviceauth.Service    // v1.9A
+	EgressSvc       *egress.Service         // v1.9A-5
 	ProvReg         *provider.Registry      // v1.8L-19 — provider registry for install/uninstall/config handlers
 	Version         string                  // build-injected version
 	BuildTime       string                  // build-injected timestamp

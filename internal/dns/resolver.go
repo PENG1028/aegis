@@ -41,6 +41,14 @@ type ReachabilityChecker interface {
 	IsReachable(nodeID string) bool
 }
 
+// AllowlistChecker is an optional interface for the egress gateway.
+// When set, allowlisted domains are skipped from internal resolution,
+// so they resolve via upstream DNS instead.
+type AllowlistChecker interface {
+	IsAllowlisted(domain string) bool
+	Refresh() error
+}
+
 // ─── ResolvedEntry ───
 
 // ResolvedEntry holds the DNS resolution result for one domain.
@@ -66,6 +74,10 @@ type Resolver struct {
 	nodeRepo     NodeRepo
 	reachability ReachabilityChecker
 
+	// AllowlistChecker is used to check if a domain should bypass
+	// internal resolution (egress gateway allow list).
+	allowlistChecker AllowlistChecker
+
 	currentNodeID string
 
 	mu    sync.RWMutex
@@ -88,6 +100,12 @@ func NewResolver(
 		reachability:   reachability,
 		table:          make(map[string]ResolvedEntry),
 	}
+}
+
+// SetAllowlistChecker injects an egress allowlist checker.
+// Call before Refresh().
+func (r *Resolver) SetAllowlistChecker(ac AllowlistChecker) {
+	r.allowlistChecker = ac
 }
 
 // Lookup returns the resolved entry for a domain, or nil if not managed.
@@ -146,6 +164,14 @@ func (r *Resolver) Refresh() error {
 		// Path-based routing is handled at the proxy level (Caddy)
 		if rt.PathPrefix != "" {
 			continue
+		}
+
+		// 3.5 Skip allowlisted domains (egress gateway 重名保护)
+		// These domains resolve via upstream DNS instead of internally.
+		if r.allowlistChecker != nil {
+			if r.allowlistChecker.IsAllowlisted(rt.Domain) {
+				continue
+			}
 		}
 
 		// 4. Get service for this route

@@ -9,6 +9,7 @@ import (
 	"aegis/internal/deployment"
 	"aegis/internal/dns"
 	"aegis/internal/edgemux"
+	"aegis/internal/egress"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
@@ -69,6 +70,7 @@ type Handlers struct {
 	TraceSvc        *trace.Service         // v1.7T
 	GatewayLinkSvc  *gateway.LinkService
 	ServiceAuthSvc  *serviceauth.Service   // v1.9A
+	EgressSvc       *egress.Service        // v1.9A-5
 	SafetySvc       *safety.Service        // v1.7AB
 	RelayResolver   *RelayResolver         // v1.8B
 	NodeStateSvc    *nodestate.Service        // v1.8C-2

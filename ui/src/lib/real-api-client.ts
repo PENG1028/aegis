@@ -1437,6 +1437,22 @@ export const adminApi = {
 
   getAuthCallLogs: (since?: string, limit?: number): Promise<any> =>
     get(`/api/admin/v1/service-auth/call-logs?since=${encodeURIComponent(since || new Date(Date.now() - 86400000).toISOString())}&limit=${limit || 100}`),
+
+  // ── Egress Gateway (v1.9A-5) ──
+  listEgressRules: (): Promise<{ rules: any[]; count: number }> =>
+    get('/api/admin/v1/egress/rules'),
+
+  createEgressRule: (rule: any): Promise<any> =>
+    post('/api/admin/v1/egress/rules', rule),
+
+  updateEgressRule: (id: string, rule: any): Promise<any> =>
+    put(`/api/admin/v1/egress/rules/${id}`, rule),
+
+  deleteEgressRule: (id: string): Promise<any> =>
+    del(`/api/admin/v1/egress/rules/${id}`),
+
+  checkEgress: (): Promise<{ checks: any[]; healthy: boolean }> =>
+    get('/api/admin/v1/egress/check'),
 };
 
 // ─── Transparent Proxy (v1.8F) ───
