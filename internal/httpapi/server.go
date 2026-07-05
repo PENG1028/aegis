@@ -56,7 +56,6 @@ type Services struct {
 	Auth          *token.AuthMiddleware
 	Action        *action.ActionService
 	Space         *space.AppService
-	TokenRepo     *token.Repository
 	AdminAuth     *adminauth.Service
 	EdgeSvc       *edgemux.AppService
 	ListenerSvc   *listener.Service

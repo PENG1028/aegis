@@ -30,7 +30,6 @@ import (
 	"aegis/internal/serviceauth"
 	"aegis/internal/space"
 	"aegis/internal/store"
-	"aegis/internal/token"
 	"aegis/internal/trace"
 	"aegis/internal/transparent"
 	"database/sql"
@@ -58,7 +57,6 @@ type Handlers struct {
 	Logs          logs.Logger
 	Action        *action.ActionService
 	Space         *space.AppService
-	TokenRepo     *token.Repository
 	AdminAuth     *adminauth.Service
 	EdgeSvc       *edgemux.AppService
 	ListenerSvc   *listener.Service
@@ -195,6 +193,12 @@ func (h *Handlers) RuntimeMode(w http.ResponseWriter, r *http.Request) {
 	states := h.ProvReg.List()
 	current := provider.DetectRuntimeMode(states)
 	allModes := provider.AllRuntimeModes()
+
+	// Evaluate live composition status for each mode
+	for i := range allModes {
+		allModes[i].EvalAllCompositions(states)
+	}
+	current.EvalAllCompositions(states)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"current":         current,

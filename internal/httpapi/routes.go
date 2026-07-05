@@ -24,7 +24,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		Logs:          svcs.Logs,
 		Action:        svcs.Action,
 		Space:         svcs.Space,
-		TokenRepo:     svcs.TokenRepo,
 		AdminAuth:     svcs.AdminAuth,
 		EdgeSvc:       svcs.EdgeSvc,
 		ListenerSvc:   svcs.ListenerSvc,
@@ -171,10 +170,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/services", h.AdminListServices)
 	mux.HandleFunc("GET /api/admin/v1/scopes", h.AdminListScopes)
 	mux.HandleFunc("POST /api/admin/v1/scopes", h.AdminCreateSpace)
-	mux.HandleFunc("GET /api/admin/v1/api-keys", h.AdminListAPIKeys)
-	mux.HandleFunc("POST /api/admin/v1/scopes/{id}/api-keys", h.AdminCreateAPIKey)
-	mux.HandleFunc("POST /api/admin/v1/api-keys/{id}/revoke", h.AdminRevokeAPIKey)
-	mux.HandleFunc("POST /api/admin/v1/api-keys/{id}/rotate", h.AdminRotateAPIKey)
 	mux.HandleFunc("GET /api/admin/v1/operations", h.AdminListOperations)
 	mux.HandleFunc("GET /api/admin/v1/apply-logs", h.AdminListApplyLogs)
 	mux.HandleFunc("GET /api/admin/v1/audit-logs", h.AdminListAuditLogs)
