@@ -12,14 +12,6 @@ import (
 
 // TransparentProxyStatus returns the availability diagnosis for transparent proxy.
 // GET /api/admin/v1/transparent/status
-//
-// Diagnosis checks:
-//  1. Platform (Linux required for iptables)
-//  2. iptables binary available
-//  3. Root/sudo access
-//  4. Gateway forward entry — derived from HTTP Route composition availability.
-//     Transparent proxy needs ANY provider with route_host + upstream_tcp capability.
-//     This is the same requirement as the "HTTP Route" binding composition.
 func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request) {
 	type check struct {
 		Name   string `json:"name"`
@@ -27,49 +19,81 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 		Detail string `json:"detail"`
 	}
 
-	type fwdTarget struct {
-		Composition string `json:"composition"`
-		ProviderID  string `json:"provider_id"`
-		Host        string `json:"host"`
-		Port        int    `json:"port"`
-		ProviderOK  bool   `json:"provider_ok"`
+	type fwdEntry struct {
+		Composition   string `json:"composition"`
+		Status        string `json:"status"` // "available" | "provider_missing" | "unsupported"
+		ProviderID    string `json:"provider_id,omitempty"`
+		Host          string `json:"host,omitempty"`
+		Port          int    `json:"port,omitempty"`
+		ProviderOK    bool   `json:"provider_ok"`
+		Detail        string `json:"detail"`
 	}
 
 	checks := make([]check, 0, 4)
 
 	// 1. Platform
 	isLinux := runtime.GOOS == "linux"
+	platformDetail := runtime.GOOS
+	if !isLinux {
+		platformDetail = "透明代理需要 Linux iptables（当前: " + runtime.GOOS + "）"
+	}
 	checks = append(checks, check{
 		Name: "Linux 系统", Passed: isLinux,
-		Detail: map[bool]string{true: runtime.GOOS, false: "透明代理需要 Linux iptables"}[isLinux],
+		Detail: platformDetail,
 	})
 
-	// 2. iptables binary
+	// 2. iptables
 	_, iptErr := exec.LookPath("iptables")
+	iptDetail := "iptables 已安装"
+	if iptErr != nil {
+		iptDetail = "未找到 iptables 命令（需要安装 iptables）"
+	}
 	checks = append(checks, check{
 		Name: "iptables 可用", Passed: iptErr == nil,
-		Detail: map[bool]string{true: "iptables 已安装", false: "未找到 iptables 命令"}[iptErr == nil],
+		Detail: iptDetail,
 	})
 
-	// 3. Root
+	// 3. Root / sudo
 	isRoot := os.Geteuid() == 0
+	_, sudoErr := exec.LookPath("sudo")
+	rootDetail := "具有 root 权限"
+	if !isRoot {
+		if sudoErr == nil {
+			rootDetail = "非 root，但 sudo 可用（iptables 可通过 sudo 执行）"
+		} else {
+			rootDetail = "非 root 且 sudo 不可用（iptables DNAT 需要 root 或 sudo）"
+		}
+	}
 	checks = append(checks, check{
-		Name: "Root 权限", Passed: isRoot,
-		Detail: map[bool]string{true: "具有 root 权限", false: "iptables DNAT 需要 root"}[isRoot],
+		Name: "Root / Sudo", Passed: isRoot || sudoErr == nil,
+		Detail: rootDetail,
 	})
 
-	// 4. Gateway forward entries — iterate ALL compositions, ask each if it
-	//    qualifies as a transparent proxy forward target. Automatically discovers
-	//    new compositions when they are added to the registry.
+	// 4. Gateway forward entries — iterate ALL compositions.
+	//    Each composition declares whether it qualifies as a transparent proxy target.
+	//    When new compositions are added to the registry, they auto-appear here.
 	states := h.ProvReg.List()
 	mode := provider.DetectRuntimeMode(states)
 
-	var forwardTargets []fwdTarget
+	var allForwardTargets []fwdEntry
 	for _, comp := range provider.AllCompositions() {
 		if !comp.IsTransparentForwardTarget() {
 			continue
 		}
-		// This composition qualifies — find providers that satisfy it
+
+		// Check if mode supports this composition (atoms have bindings)
+		modeSupported := provider.CompKeySupported(comp.Key, mode)
+		if !modeSupported {
+			allForwardTargets = append(allForwardTargets, fwdEntry{
+				Composition: comp.Name,
+				Status:      "unsupported",
+				Detail:      fmt.Sprintf("%s 模式不支持此组合能力", mode.Label),
+			})
+			continue
+		}
+
+		// Mode supports it — find a provider that satisfies the requirements
+		found := false
 		for _, p := range states {
 			hasAll := true
 			for _, cap := range comp.Requirements() {
@@ -81,31 +105,62 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 			if !hasAll {
 				continue
 			}
+			// Found a capable provider — get its port from RuntimeMode
 			listeners := mode.ListenerSpecsFor(p.ID)
 			for _, l := range listeners {
 				if l.Purpose == "http" || l.Purpose == "internal_https" {
-					forwardTargets = append(forwardTargets, fwdTarget{
+					entry := fwdEntry{
 						Composition: comp.Name,
 						ProviderID:  p.ID,
 						Host:        "127.0.0.1",
 						Port:        l.Port,
 						ProviderOK:  p.Healthy(),
-					})
+					}
+					if p.Healthy() {
+						entry.Status = "available"
+						entry.Detail = fmt.Sprintf("%s → %s:%d（%s 已就绪）", comp.Name, entry.Host, entry.Port, p.ID)
+					} else {
+						entry.Status = "provider_missing"
+						entry.Detail = fmt.Sprintf("需要 %s 提供 %s 能力（%s 未安装或未运行）", p.ID, comp.Name, p.ID)
+					}
+					allForwardTargets = append(allForwardTargets, entry)
+					found = true
 					break
 				}
 			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			allForwardTargets = append(allForwardTargets, fwdEntry{
+				Composition: comp.Name,
+				Status:      "provider_missing",
+				Detail:      fmt.Sprintf("需要 %s 组合能力，但无 Provider 声明所需能力", comp.Name),
+			})
 		}
 	}
 
-	gatewayReady := len(forwardTargets) > 0 && forwardTargets[0].ProviderOK
-	gatewayDetail := "无可用组合能力提供透明代理转发入口"
-	if len(forwardTargets) > 0 {
-		ft := forwardTargets[0]
-		if ft.ProviderOK {
-			gatewayDetail = fmt.Sprintf("%s → %s:%d（%s 已就绪，%s 模式）", ft.Composition, ft.Host, ft.Port, ft.ProviderID, mode.Label)
-		} else {
-			gatewayDetail = fmt.Sprintf("%s → %s:%d（%s 未安装，%s 模式）", ft.Composition, ft.Host, ft.Port, ft.ProviderID, mode.Label)
+	// Gateway check passes if at least one forward target is available
+	gatewayReady := false
+	for _, ft := range allForwardTargets {
+		if ft.Status == "available" {
+			gatewayReady = true
+			break
 		}
+	}
+
+	gatewayDetail := "无可用转发入口"
+	if gatewayReady {
+		gatewayDetail = "至少一个转发入口已就绪"
+	} else if len(allForwardTargets) > 0 {
+		unavailable := 0
+		for _, ft := range allForwardTargets {
+			if ft.Status != "available" {
+				unavailable++
+			}
+		}
+		gatewayDetail = fmt.Sprintf("%d 个转发入口均不可用", unavailable)
 	}
 	checks = append(checks, check{
 		Name:   "网关转发入口",
@@ -113,14 +168,13 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 		Detail: gatewayDetail,
 	})
 
-	allPassed := isLinux && iptErr == nil && isRoot && gatewayReady
+	allPassed := isLinux && iptErr == nil && (isRoot || sudoErr == nil) && gatewayReady
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"available":       allPassed,
-		"checks":          checks,
-		"forward_targets": forwardTargets,
-		"composition":     "HTTP Route",
-		"mode":            mode.Label,
+		"available":          allPassed,
+		"checks":             checks,
+		"forward_targets":    allForwardTargets,
+		"mode":               mode.Label,
 	})
 }
 
