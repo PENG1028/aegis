@@ -1,7 +1,7 @@
 // ─── Service Entry — unified inbound gateway binding ───
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { runtimeModeApi, nodeApi } from '@/lib/api-bridge';
+import { runtimeModeApi, exposureApi, nodeApi } from '@/lib/api-bridge';
 import type { Composition } from '@/lib/api-bridge';
 import { Btn, useToast } from '@/components/shared';
 import { cn } from '@/lib/utils';
