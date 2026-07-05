@@ -1,9 +1,9 @@
 // ─── Service Entry — unified inbound gateway binding ───
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { runtimeModeApi, routeApi, exposureApi, nodeApi } from '@/lib/api-bridge';
+import { runtimeModeApi, nodeApi } from '@/lib/api-bridge';
 import type { Composition } from '@/lib/api-bridge';
-import { Card, StatusBadge, Btn, useToast } from '@/components/shared';
+import { Btn, useToast } from '@/components/shared';
 import { cn } from '@/lib/utils';
 
 // ═══════════════════════════════════════════════════════
@@ -198,38 +198,6 @@ function EntryForm({ comp, nodes, onSubmit, loading }: {
 }
 
 // ═══════════════════════════════════════════════════════
-// Entry list
-// ═══════════════════════════════════════════════════════
-
-function EntryList({ routes, exposures, isLoading }: { routes: any[]; exposures: any[]; isLoading: boolean }) {
-  const qc = useQueryClient(); const toast = useToast();
-  const items = [
-    ...routes.map((r: any) => ({ ...r, _t: 'route' as const })),
-    ...exposures.map((e: any) => ({ ...e, _t: 'exposure' as const })),
-  ];
-  if (isLoading) return <div className="text-sm text-a-muted py-6 text-center">加载中...</div>;
-  if (items.length === 0) return <div className="text-center py-10 text-a-muted text-sm">暂无入口 — 选择组合能力开始创建</div>;
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead><tr className="border-b border-a-border text-a-muted text-left">
-          <th className="py-2 px-3 font-medium">入口</th><th className="py-2 px-3 font-medium">类型</th>
-          <th className="py-2 px-3 font-medium">后端</th><th className="py-2 px-3 font-medium">状态</th>
-        </tr></thead>
-        <tbody>{items.map((item: any, i: number) => (
-          <tr key={i} className="border-b border-a-border/30 hover:bg-a-border/5">
-            <td className="py-2 px-3 font-mono text-[11px]">{item._t === 'route' ? item.domain : `:${item.port || item.entry_port || '?'}`}</td>
-            <td className="py-2 px-3 text-[10px] text-a-muted">{item._t === 'route' ? 'HTTP/HTTPS' : (item.type || 'TCP/UDP').toUpperCase()}</td>
-            <td className="py-2 px-3 font-mono text-[11px] text-a-muted">{item.target || item.target_host || '—'}{item.target_port ? `:${item.target_port}` : ''}</td>
-            <td className="py-2 px-3"><StatusBadge status={item.status === 'active' ? 'active' : 'disabled'} /></td>
-          </tr>
-        ))}</tbody>
-      </table>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════
 
@@ -239,13 +207,9 @@ export default function ServiceEntry() {
   const [submitting, setSubmitting] = useState(false);
 
   const { data: rm } = useQuery({ queryKey: ['runtime-mode'], queryFn: () => runtimeModeApi.get(), refetchInterval: 60_000 });
-  const { data: rd, isLoading: rl } = useQuery({ queryKey: ['routes'], queryFn: () => routeApi.list().catch(() => ({ routes: [] })), refetchInterval: 30_000 });
-  const { data: ed, isLoading: el } = useQuery({ queryKey: ['exposures'], queryFn: () => exposureApi.list().catch(() => ({ exposures: [] })), refetchInterval: 30_000 });
   const { data: nd } = useQuery({ queryKey: ['nodes'], queryFn: () => nodeApi.list().catch(() => ({ nodes: [] })), refetchInterval: 120_000 });
 
   const compositions = rm?.current?.compositions || [];
-  const routes = (rd as any)?.routes || [];
-  const exposures = (ed as any)?.exposures || [];
   const nodes: NodeInfo[] = ((nd as any)?.nodes || []).map((n: any) => ({
     id: n.id || n.node_id, name: n.name || n.node_id || n.id,
     privateIP: n.private_ip || '', publicIP: n.public_ip || '',
@@ -275,12 +239,9 @@ export default function ServiceEntry() {
   const selected = compositions.find(c => c.name === selectedComp);
 
   return (
-    <div className="space-y-5">
+    <div className="p-6 space-y-5">
       <CompSelector compositions={compositions} selected={selectedComp} onSelect={setSelectedComp} />
       {selected && <EntryForm comp={selected} nodes={nodes} onSubmit={handleSubmit} loading={submitting} />}
-      <Card title={`已有入口 (${routes.length + exposures.length})`}>
-        <EntryList routes={routes} exposures={exposures} isLoading={rl || el} />
-      </Card>
     </div>
   );
 }
