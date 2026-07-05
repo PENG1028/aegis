@@ -13,6 +13,7 @@ import (
 	"aegis/internal/adminauth"
 	"aegis/internal/config"
 	"aegis/internal/httpapi"
+	"aegis/internal/httpapi/handlers"
 	"aegis/internal/token"
 
 	"github.com/spf13/cobra"
@@ -51,10 +52,14 @@ func newServeCommand(cfg *config.Config, svcs *httpapi.Services) *cobra.Command 
 			// Middleware order (last wrapped = outermost = runs first):
 			//   1. AdminAuth — injects AdminContext from cookie for /api/admin/v1/*
 			//   2. Auth — checks AdminContext first, falls back to Bearer token
-			//   3. CORS (innermost, runs last)
+			//   3. ViewProxy — intercepts X-Aegis-View-As, forwards before auth
+		//   4. CORS (innermost, runs last)
 			var handler http.Handler = mux
 			handler = apiMiddleware.Recovery(handler)
 			handler = apiMiddleware.CORS(handler)
+		if svcs.DistNode != nil {
+			handler = handlers.NewViewProxyHandler(svcs.DistNode)(handler)
+		}
 			handler = apiMiddleware.Auth(handler)
 			handler = adminAuthMw.Middleware(handler)
 

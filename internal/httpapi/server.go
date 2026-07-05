@@ -11,6 +11,7 @@ import (
 	"aegis/internal/config"
 	"aegis/internal/credential"
 	"aegis/internal/deployment"
+	"aegis/internal/distnode"
 	"aegis/internal/edgemux"
 	"aegis/internal/egress"
 	"aegis/internal/endpoint"
@@ -85,5 +86,6 @@ type Services struct {
 	ProvReg         *provider.Registry      // v1.8L-19 — provider registry for install/uninstall/config handlers
 	Version         string                  // build-injected version
 	BuildTime       string                  // build-injected timestamp
+	DistNode        *distnode.DistNode      // v1.9B distributed node runtime
 	OnShutdown      func()                  // graceful shutdown hook — stops DNS, backups, reconcile, proxies
 }

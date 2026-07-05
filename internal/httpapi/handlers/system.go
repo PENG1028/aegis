@@ -7,6 +7,7 @@ import (
 	"aegis/internal/cluster"
 	"aegis/internal/config"
 	"aegis/internal/deployment"
+	"aegis/internal/distnode"
 	"aegis/internal/dns"
 	"aegis/internal/edgemux"
 	"aegis/internal/egress"
@@ -84,6 +85,8 @@ type Handlers struct {
 	ProvReg         *provider.Registry           // v1.8L-19 — provider registry for install/uninstall/config handlers
 	Version         string // build-injected version
 	BuildTime       string // build-injected timestamp
+	DistNode        *distnode.DistNode // v1.9B distributed node runtime
+		proxyMux        *http.ServeMux      // v1.9B cross-node view proxy
 }
 
 // SystemStatus returns enhanced system status.

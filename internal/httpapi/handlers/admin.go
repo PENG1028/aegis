@@ -1,27 +1,41 @@
 package handlers
 
 import (
+	"context"
 	"log"
+	"net"
 	"net/http"
 	"time"
 
+	"aegis/internal/distnode"
 	"aegis/internal/logs"
 	"aegis/internal/node"
 )
 
 // SystemOverview handles GET /api/admin/v1/system/overview
 func (h *Handlers) SystemOverview(w http.ResponseWriter, r *http.Request) {
+	data := h.getSystemOverview(r.Context())
+	writeJSON(w, http.StatusOK, data)
+}
+
+// getSystemOverview aggregates system-level counts and status.
+// SINGLE SOURCE OF TRUTH — called by both:
+//   - SystemOverview()     HTTP handler (GET /api/admin/v1/system/overview)
+//   - Aegis.SystemOverview transport handler (cross-node call)
+//
+// DO NOT DUPLICATE: add new data sources here, not in the caller.
+func (h *Handlers) getSystemOverview(ctx context.Context) map[string]interface{} {
 	nodes, err := h.NodeRepo.FindAll()
 	if err != nil { log.Printf("[overview] nodes: %v", err) }
-	routes, err := h.Route.ListRoutes(r.Context())
+	routes, err := h.Route.ListRoutes(ctx)
 	if err != nil { log.Printf("[overview] routes: %v", err) }
-	services, err := h.Service.ListServices(r.Context())
+	services, err := h.Service.ListServices(ctx)
 	if err != nil { log.Printf("[overview] services: %v", err) }
-	edgeRules, err := h.EdgeSvc.ListRules(r.Context())
+	edgeRules, err := h.EdgeSvc.ListRules(ctx)
 	if err != nil { log.Printf("[overview] edge-rules: %v", err) }
-	spaces, err := h.Space.ListSpaces(r.Context())
+	spaces, err := h.Space.ListSpaces(ctx)
 	if err != nil { log.Printf("[overview] spaces: %v", err) }
-	history, err := h.Apply.History(r.Context())
+	history, err := h.Apply.History(ctx)
 	if err != nil { log.Printf("[overview] history: %v", err) }
 
 	leaderID := ""
@@ -43,7 +57,7 @@ func (h *Handlers) SystemOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	return map[string]interface{}{
 		"node_count":       nodeCount,
 		"leader_node":      leaderID,
 		"route_count":      len(routes),
@@ -51,7 +65,7 @@ func (h *Handlers) SystemOverview(w http.ResponseWriter, r *http.Request) {
 		"service_count":    len(services),
 		"space_count":      len(spaces),
 		"last_apply":       lastApply,
-	})
+	}
 }
 
 // AdminListNodes handles GET /api/admin/v1/nodes
@@ -61,13 +75,94 @@ func (h *Handlers) AdminListNodes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	// Merge distnode membership into node list
+	if h.DistNode != nil {
+		nodes = mergeMembershipNodes(nodes, h.DistNode)
+	}
+
 	if nodes == nil {
 		nodes = []node.NodeRecord{}
 	}
 	limit, offset := paginationParams(r)
 	total := len(nodes)
 	page := paginateSlice(nodes, limit, offset)
-	writePaginatedJSON(w, http.StatusOK, page, total, limit, offset)
+
+	// Build response with distnode metadata
+	resp := map[string]interface{}{
+		"data":  page,
+		"meta": paginationMeta{
+			Total:  total,
+			Limit:  limit,
+			Offset: offset,
+		},
+	}
+
+	if h.DistNode != nil {
+		resp["distnode"] = map[string]interface{}{
+			"enabled":  true,
+			"node_id":  h.DistNode.ID,
+			"role":     h.DistNode.Role.Current(),
+			"addr":     h.DistNode.Config.Addr,
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// mergeMembershipNodes merges distnode membership peers into the SQLite node list.
+// Peers known to membership but absent from SQLite appear as virtual nodes.
+// Peers present in both get their status overridden by distnode liveness.
+func mergeMembershipNodes(dbNodes []node.NodeRecord, dn *distnode.DistNode) []node.NodeRecord {
+	// Index SQLite nodes by node_id
+	byID := make(map[string]*node.NodeRecord, len(dbNodes))
+	for i := range dbNodes {
+		byID[dbNodes[i].NodeID] = &dbNodes[i]
+	}
+
+	seen := make(map[string]bool, len(dbNodes))
+	for _, n := range dbNodes {
+		seen[n.NodeID] = true
+	}
+
+	// Process each membership peer
+	for _, p := range dn.Membership.AllPeers() {
+		pid := p.Info.ID
+		alive := p.Alive
+		status := "offline"
+		if alive {
+			status = "online"
+		}
+
+		if existing, ok := byID[pid]; ok {
+			// Peer exists in SQLite — override status with liveness
+			if !alive && existing.Status == "online" {
+				existing.Status = status
+			}
+			if alive && existing.Status != "online" {
+				existing.Status = status
+			}
+		} else {
+			// Peer unknown to SQLite — add as virtual node
+			virtual := node.NodeRecord{
+				NodeID:      pid,
+				Name:        pid,
+				Hostname:    p.Info.Addr,
+				Status:      status,
+				Role:        node.RoleWorker,
+				AgentVersion: "distnode",
+				Capabilities: node.DefaultCapabilities(),
+			}
+			// Extract IP from addr if possible
+			if host, _, err := net.SplitHostPort(p.Info.Addr); err == nil {
+				virtual.PublicIP = host
+			}
+			dbNodes = append(dbNodes, virtual)
+			seen[pid] = true
+		}
+	}
+
+	return dbNodes
 }
 
 // AdminListRoutes handles GET /api/admin/v1/routes

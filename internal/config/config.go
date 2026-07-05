@@ -55,6 +55,24 @@ type ManagedDomainConfig struct {
 	GatewayDomain string `yaml:"gateway_domain"`
 }
 
+// DistNodeConfig holds distributed node runtime settings (v1.9B).
+// When enabled, the node joins a cluster with its peers for cross-node
+// method calls, health monitoring, and transparent perspective switching.
+type DistNodeConfig struct {
+	Enabled bool           `yaml:"enabled"`
+	ID      string         `yaml:"id"`
+	Name    string         `yaml:"name"`
+	Addr    string         `yaml:"addr"`
+	Secret  string         `yaml:"secret"` // cluster shared secret
+	Peers   []DistNodePeer `yaml:"peers"`
+}
+
+// DistNodePeer defines a known cluster member.
+type DistNodePeer struct {
+	ID   string `yaml:"id"`
+	Addr string `yaml:"addr"`
+}
+
 // DNSConfig holds local DNS resolver settings.
 type DNSConfig struct {
 	Enabled    bool   `yaml:"enabled"`
