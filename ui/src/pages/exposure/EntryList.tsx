@@ -38,8 +38,8 @@ export default function EntryList() {
   const allItems = useMemo(() => [
     ...routes.map((r: any) => ({
       key: r.id, _t: 'route' as const, name: r.domain,
-      type: r.composition || (r.tls_enabled ? 'HTTPS' : 'HTTP'),
-      target: r.target || '—', status: r.status,
+      type: r.tls_enabled ? 'HTTPS' : 'HTTP',
+      target: r.service_id || '—', status: r.status,
       scope: r.owner_type === 'space' ? (r.space_id || r.owner_id || 'service') : 'admin',
     })),
     ...exposures.map((e: any) => ({
