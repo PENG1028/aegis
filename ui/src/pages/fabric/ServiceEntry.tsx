@@ -1,83 +1,75 @@
 // ─── Service Entry — unified inbound gateway binding ───
-// Replaces the old fragmented EntryPoints / Exposure / QuickConnect / ImportConfig tabs.
-// User selects a composition → form adapts → backend creates route/exposure automatically.
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { runtimeModeApi, compositionApi, routeApi, exposureApi } from '@/lib/api-bridge';
-import type { RuntimeModeDef, Composition, CompDef } from '@/lib/api-bridge';
-import { Card, PageHeader, StatusBadge, Btn, useToast } from '@/components/shared';
+import { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { runtimeModeApi, routeApi, exposureApi, nodeApi } from '@/lib/api-bridge';
+import type { Composition } from '@/lib/api-bridge';
+import { Card, StatusBadge, Btn, useToast } from '@/components/shared';
 import { cn } from '@/lib/utils';
 
-// ═══════════════════════════════════════════════════════════════
-// Types
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// Node helpers
+// ═══════════════════════════════════════════════════════
 
-type EntryType = 'http' | 'tcp' | 'udp';
-
-interface EntryForm {
-  composition: string;
-  domain: string;
-  port: number;
-  targetHost: string;
-  targetPort: number;
+interface NodeInfo {
+  id: string; name: string;
+  privateIP: string; publicIP: string;
+  networkID: string; region: string;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════
+function deriveLabel(n: NodeInfo, allNodes: NodeInfo[]): { label: string; color: string; forced: boolean } {
+  // Use explicit NetworkID if set
+  if (n.networkID) return { label: n.networkID, color: 'bg-blue-500/10 text-blue-400 border-blue-500/20', forced: false };
 
-function entryType(comp: Composition): EntryType {
-  const name = comp.name;
-  if (name.includes('HTTP') || name.includes('HTTPS')) return 'http';
-  if (name.includes('UDP')) return 'udp';
-  return 'tcp';
+  // Detect duplicate private IPs → force a label to disambiguate
+  const sameIP = allNodes.filter(o => o.id !== n.id && o.privateIP && o.privateIP === n.privateIP);
+  if (sameIP.length > 0 && n.privateIP) {
+    return { label: n.privateIP, color: 'bg-[#e8b830]/10 text-[#e8b830] border-[#e8b830]/20', forced: true };
+  }
+
+  // Derive from private IP prefix
+  if (n.privateIP) {
+    const parts = n.privateIP.split('.');
+    if (parts.length === 4) {
+      return { label: `${parts[0]}.${parts[1]}.x.x`, color: 'bg-a-border/10 text-a-muted border-a-border/20', forced: false };
+    }
+  }
+
+  return { label: n.region || '', color: 'bg-a-border/10 text-a-muted border-a-border/20', forced: false };
 }
 
-function defaultPort(comp: Composition): number {
-  if (comp.name.includes('HTTPS') || comp.name.includes('HTTP/3')) return 443;
-  if (comp.name.includes('HTTP')) return 80;
-  return 0;
-}
+// ═══════════════════════════════════════════════════════
+// Composition card styles
+// ═══════════════════════════════════════════════════════
 
-const COMP_CARD: Record<string, { card: string; text: string }> = {
-  available:        { card: 'bg-a-surface border-[#4cd964]/40 hover:bg-[#4cd964]/5',   text: 'text-a-fg' },
-  missing_provider: { card: 'bg-[#ff5c72]/5 border-[#ff5c72]/30',                       text: 'text-[#ff5c72]' },
-  unsupported:      { card: 'bg-a-border/10 border-a-border/20 opacity-40',              text: 'text-a-muted/50' },
+function entryType(c: Composition) { return c.name.includes('UDP') ? 'udp' : c.name.includes('HTTP') ? 'http' : 'tcp'; }
+
+const COMP_CARD: Record<string, string> = {
+  available:        'bg-a-surface border-[#4cd964]/40 hover:bg-[#4cd964]/5 text-a-fg',
+  missing_provider: 'bg-[#ff5c72]/5 border-[#ff5c72]/30 text-[#ff5c72]',
+  unsupported:      'bg-a-border/10 border-a-border/20 opacity-40 text-a-muted/50',
 };
 
-// ═══════════════════════════════════════════════════════════════
-// Composition Selector
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// Step 1: Composition selector
+// ═══════════════════════════════════════════════════════
 
 function CompSelector({ compositions, selected, onSelect }: {
-  compositions: Composition[];
-  selected: string;
-  onSelect: (name: string) => void;
+  compositions: Composition[]; selected: string; onSelect: (n: string) => void;
 }) {
-  const avail = compositions.filter(c => c.status === 'available');
-  const unavail = compositions.filter(c => c.status !== 'available');
-
   return (
     <div>
-      <div className="text-[10px] text-a-muted uppercase tracking-wider mb-2">选择服务类型</div>
-      <div className="flex items-center gap-2 flex-wrap">
-        {[...avail, ...unavail].map(comp => {
-          const st = COMP_CARD[comp.status] || COMP_CARD.unsupported;
-          const disabled = comp.status !== 'available';
+      <div className="text-xs font-medium text-a-fg mb-3">1. 选择服务类型</div>
+      <div className="flex gap-2 flex-wrap">
+        {compositions.map(comp => {
+          const ok = comp.status === 'available';
           return (
-            <button key={comp.name} disabled={disabled}
-              onClick={() => !disabled && onSelect(comp.name)}
-              className={cn(
-                'px-3 py-2 rounded-a-sm text-xs transition-colors border cursor-pointer',
-                st.card,
-                selected === comp.name && 'ring-2 ring-a-accent/50',
-                disabled && 'cursor-not-allowed',
-              )}>
-              <div className={cn('font-medium', st.text)}>{comp.name}</div>
-              <div className="text-[10px] text-a-muted mt-0.5">{comp.chain}</div>
-              {comp.status === 'missing_provider' && (
-                <div className="text-[9px] text-[#ff5c72]/70 mt-0.5">需安装中间件</div>
-              )}
+            <button key={comp.name} disabled={!ok} onClick={() => ok && onSelect(comp.name)}
+              className={cn('px-3 py-2.5 rounded-a-sm text-xs border transition-colors min-w-[130px]',
+                COMP_CARD[comp.status] || COMP_CARD.unsupported,
+                selected === comp.name && 'ring-2 ring-a-accent/50', !ok && 'cursor-not-allowed')}>
+              <div className="font-medium">{comp.name}</div>
+              <div className="text-[10px] opacity-70 mt-0.5">{comp.chain}</div>
+              {comp.status === 'missing_provider' && <div className="text-[9px] text-[#ff5c72]/70 mt-1">需安装中间件</div>}
             </button>
           );
         })}
@@ -86,197 +78,198 @@ function CompSelector({ compositions, selected, onSelect }: {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Entry Form
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// Step 2: Config form
+// ═══════════════════════════════════════════════════════
 
-function EntryForm({ comp, onSubmit, loading }: {
-  comp: Composition;
-  onSubmit: (f: EntryForm) => void;
-  loading: boolean;
+function EntryForm({ comp, nodes, onSubmit, loading }: {
+  comp: Composition; nodes: NodeInfo[]; onSubmit: (f: any) => void; loading: boolean;
 }) {
-  const [domain, setDomain] = useState('');
-  const [port, setPort] = useState(defaultPort(comp));
-  const [targetHost, setTargetHost] = useState('');
-  const [targetPort, setTargetPort] = useState(3000);
   const isHTTP = entryType(comp) === 'http';
+  const [domain, setDomain] = useState('');
+  const [internalOnly, setInternalOnly] = useState(false);
+  const [nodeId, setNodeId] = useState('');
+  const [targetHost, setTargetHost] = useState('127.0.0.1');
+  const [targetPort, setTargetPort] = useState(3000);
+  const [showPreview, setShowPreview] = useState(false);
 
-  const canSubmit = isHTTP ? (domain && targetHost && targetPort > 0) : (port > 0 && targetHost && targetPort > 0);
+  const selectedNode = nodes.find(n => n.id === nodeId);
+  const nodeLabels = useMemo(() => {
+    const m: Record<string, ReturnType<typeof deriveLabel>> = {};
+    nodes.forEach(n => { m[n.id] = deriveLabel(n, nodes); });
+    return m;
+  }, [nodes]);
+
+  const canSubmit = isHTTP ? (domain && targetHost && targetPort > 0) : (targetHost && targetPort > 0);
 
   return (
-    <div className="space-y-3 p-4 rounded-a-md border border-a-border/30 bg-a-surface/50">
-      <div className="text-xs font-medium text-a-fg">{comp.name} 配置</div>
-      <div className="grid grid-cols-2 gap-3">
-        {isHTTP ? (
-          <div>
-            <label className="text-[10px] text-a-muted block mb-1">域名</label>
-            <input value={domain} onChange={e => setDomain(e.target.value)}
-              placeholder="api.example.com"
-              className="w-full px-2.5 py-1.5 rounded-a-sm border border-a-border/50 bg-a-bg text-xs text-a-fg outline-none focus:border-a-accent/50" />
-          </div>
-        ) : (
-          <div>
-            <label className="text-[10px] text-a-muted block mb-1">入口端口</label>
-            <input type="number" value={port} onChange={e => setPort(Number(e.target.value))}
-              placeholder="5432"
-              className="w-full px-2.5 py-1.5 rounded-a-sm border border-a-border/50 bg-a-bg text-xs text-a-fg outline-none focus:border-a-accent/50" />
+    <div className="space-y-5 p-5 rounded-a-md border border-a-border/30 bg-a-surface/50">
+      <div className="text-xs font-medium text-a-fg">2. 配置 — {comp.name}</div>
+
+      {/* Node picker */}
+      <div>
+        <label className="text-[10px] text-a-muted block mb-1.5 font-medium">目标节点</label>
+        <select value={nodeId} onChange={e => { setNodeId(e.target.value); if (e.target.value) { const n = nodes.find(x => x.id === e.target.value); if (n) setTargetHost(n.privateIP || n.publicIP || '127.0.0.1'); } }}
+          className="w-full px-3 py-2 rounded-a-sm border border-a-border/50 bg-a-bg text-xs outline-none focus:border-a-accent/50">
+          <option value="">本节点 (当前)</option>
+          {nodes.map(n => {
+            const lb = nodeLabels[n.id];
+            return <option key={n.id} value={n.id}>
+              {n.name} · {n.privateIP || '—'}{n.publicIP ? ` · ${n.publicIP}` : ''}{lb.label ? ` · ${lb.label}` : ''}
+            </option>;
+          })}
+        </select>
+        {selectedNode && (
+          <div className="flex items-center gap-2 mt-1.5">
+            {selectedNode.privateIP && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                内网 {selectedNode.privateIP}
+              </span>
+            )}
+            {selectedNode.publicIP && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-a-border/10 text-a-muted border border-a-border/20">
+                公网 {selectedNode.publicIP}
+              </span>
+            )}
+            {nodeLabels[selectedNode.id]?.label && (
+              <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border', nodeLabels[selectedNode.id].color)}>
+                {nodeLabels[selectedNode.id].forced ? '⚠ 重复IP: ' : ''}{nodeLabels[selectedNode.id].label}
+              </span>
+            )}
           </div>
         )}
+      </div>
+
+      {/* Domain (HTTP only) */}
+      {isHTTP && (
         <div>
-          <label className="text-[10px] text-a-muted block mb-1">目标地址</label>
+          <label className="text-[10px] text-a-muted block mb-1.5 font-medium">域名</label>
+          <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="api.example.com"
+            className="w-full px-3 py-2 rounded-a-sm border border-a-border/50 bg-a-bg text-xs outline-none focus:border-a-accent/50" />
+          <label className="flex items-center gap-1.5 mt-1.5 text-[10px] text-a-muted cursor-pointer">
+            <input type="checkbox" checked={internalOnly} onChange={e => setInternalOnly(e.target.checked)} className="w-3 h-3" />
+            仅内部使用（集群内服务间调用，不对外暴露 DNS）
+          </label>
+        </div>
+      )}
+
+      {/* Backend address */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="text-[10px] text-a-muted block mb-1.5 font-medium">后端地址</label>
           <input value={targetHost} onChange={e => setTargetHost(e.target.value)}
-            placeholder="127.0.0.1"
-            className="w-full px-2.5 py-1.5 rounded-a-sm border border-a-border/50 bg-a-bg text-xs text-a-fg outline-none focus:border-a-accent/50" />
+            placeholder={selectedNode?.privateIP || '127.0.0.1'}
+            className="w-full px-3 py-2 rounded-a-sm border border-a-border/50 bg-a-bg text-xs outline-none focus:border-a-accent/50 font-mono" />
+          <div className="text-[9px] text-a-muted/50 mt-0.5">服务实际监听的 IP。本机用 127.0.0.1，远程用内网 IP</div>
         </div>
         <div>
-          <label className="text-[10px] text-a-muted block mb-1">目标端口</label>
+          <label className="text-[10px] text-a-muted block mb-1.5 font-medium">后端端口</label>
           <input type="number" value={targetPort} onChange={e => setTargetPort(Number(e.target.value))}
-            placeholder="3000"
-            className="w-full px-2.5 py-1.5 rounded-a-sm border border-a-border/50 bg-a-bg text-xs text-a-fg outline-none focus:border-a-accent/50" />
+            className="w-full px-3 py-2 rounded-a-sm border border-a-border/50 bg-a-bg text-xs outline-none focus:border-a-accent/50 font-mono" />
         </div>
       </div>
-      <Btn primary disabled={!canSubmit || loading}
-        onClick={() => onSubmit({ composition: comp.name, domain, port, targetHost, targetPort })}>
-        {loading ? '创建中...' : '创建入口'}
-      </Btn>
+
+      {/* Preview + Submit */}
+      <div className="flex gap-2">
+        <Btn onClick={() => setShowPreview(!showPreview)} className="text-[10px]">{showPreview ? '收起' : '预览效果'}</Btn>
+        <Btn primary disabled={!canSubmit || loading}
+          onClick={() => onSubmit({ composition: comp.name, domain, port: 0, targetHost, targetPort, nodeId, internalOnly })}>
+          {loading ? '创建中...' : '创建并 Apply'}
+        </Btn>
+      </div>
+
+      {showPreview && canSubmit && (
+        <div className="p-3 rounded-a-sm bg-a-bg border border-a-border/30 text-[10px] font-mono space-y-1">
+          <div className="text-a-muted">流量路径预览</div>
+          <div className="text-a-fg2">
+            {`客户端 → ${domain || `:0`} → ${comp.name} → ${targetHost}:${targetPort}`}
+          </div>
+          {selectedNode && (
+            <div className="text-a-muted/70">
+              {selectedNode.id ? `目标节点: ${selectedNode.name} (${selectedNode.privateIP || selectedNode.publicIP})` : '本节点'}
+              {selectedNode.id && ' — 跨节点走 Gateway Link 认证转发'}
+            </div>
+          )}
+          {internalOnly && <div className="text-[#e8b830]/80">内部域名 — 不对外暴露 DNS，仅集群内解析</div>}
+        </div>
+      )}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Entry List
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// Entry list
+// ═══════════════════════════════════════════════════════
 
-function EntryList({ routes, exposures, isLoading }: {
-  routes: any[];
-  exposures: any[];
-  isLoading: boolean;
-}) {
-  const queryClient = useQueryClient();
-  const toast = useToast();
-
-  const disableRoute = useMutation({
-    mutationFn: (id: string) => routeApi.get(id).then(() => id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['routes'] });
-      toast('已禁用');
-    },
-  });
-
-  const disableExposure = useMutation({
-    mutationFn: (id: string) => exposureApi.disable(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['exposures'] });
-      toast('已禁用');
-    },
-  });
-
-  if (isLoading) return <div className="text-sm text-a-muted py-6 text-center">加载中...</div>;
-
+function EntryList({ routes, exposures, isLoading }: { routes: any[]; exposures: any[]; isLoading: boolean }) {
+  const qc = useQueryClient(); const toast = useToast();
   const items = [
-    ...routes.map((r: any) => ({ ...r, _type: 'route' as const })),
-    ...exposures.map((e: any) => ({ ...e, _type: 'exposure' as const })),
+    ...routes.map((r: any) => ({ ...r, _t: 'route' as const })),
+    ...exposures.map((e: any) => ({ ...e, _t: 'exposure' as const })),
   ];
-
-  if (items.length === 0) {
-    return <div className="text-center py-8 text-a-muted text-sm">暂无服务入口</div>;
-  }
-
+  if (isLoading) return <div className="text-sm text-a-muted py-6 text-center">加载中...</div>;
+  if (items.length === 0) return <div className="text-center py-10 text-a-muted text-sm">暂无入口 — 选择组合能力开始创建</div>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-a-border text-a-muted text-left">
-            <th className="py-2 px-3 font-medium">入口</th>
-            <th className="py-2 px-3 font-medium">类型</th>
-            <th className="py-2 px-3 font-medium">目标</th>
-            <th className="py-2 px-3 font-medium">状态</th>
+        <thead><tr className="border-b border-a-border text-a-muted text-left">
+          <th className="py-2 px-3 font-medium">入口</th><th className="py-2 px-3 font-medium">类型</th>
+          <th className="py-2 px-3 font-medium">后端</th><th className="py-2 px-3 font-medium">状态</th>
+        </tr></thead>
+        <tbody>{items.map((item: any, i: number) => (
+          <tr key={i} className="border-b border-a-border/30 hover:bg-a-border/5">
+            <td className="py-2 px-3 font-mono text-[11px]">{item._t === 'route' ? item.domain : `:${item.port || item.entry_port || '?'}`}</td>
+            <td className="py-2 px-3 text-[10px] text-a-muted">{item._t === 'route' ? 'HTTP/HTTPS' : (item.type || 'TCP/UDP').toUpperCase()}</td>
+            <td className="py-2 px-3 font-mono text-[11px] text-a-muted">{item.target || item.target_host || '—'}{item.target_port ? `:${item.target_port}` : ''}</td>
+            <td className="py-2 px-3"><StatusBadge status={item.status === 'active' ? 'active' : 'disabled'} /></td>
           </tr>
-        </thead>
-        <tbody>
-          {items.map((item: any, i: number) => (
-            <tr key={i} className="border-b border-a-border/30 hover:bg-a-border/5">
-              <td className="py-2 px-3 font-mono text-[11px]">
-                {item._type === 'route' ? item.domain : `:${item.port || item.entry_port || '?'}`}
-              </td>
-              <td className="py-2 px-3 text-[10px] text-a-muted">
-                {item._type === 'route' ? 'HTTP/HTTPS' : (item.type || item.exposure_type || 'TCP/UDP').toUpperCase()}
-              </td>
-              <td className="py-2 px-3 font-mono text-[11px] text-a-muted">
-                {item.target || item.target_host || `${item.target_host || '?'}:${item.target_port || '?'}`}
-              </td>
-              <td className="py-2 px-3">
-                <StatusBadge status={item.status === 'active' ? 'active' : 'disabled'} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
+        ))}</tbody>
       </table>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 // Main
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
 
 export default function ServiceEntry() {
-  const toast = useToast();
-  const queryClient = useQueryClient();
+  const toast = useToast(); const qc = useQueryClient();
   const [selectedComp, setSelectedComp] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: runtimeMode } = useQuery({
-    queryKey: ['runtime-mode'],
-    queryFn: () => runtimeModeApi.get(),
-    refetchInterval: 60_000,
-  });
+  const { data: rm } = useQuery({ queryKey: ['runtime-mode'], queryFn: () => runtimeModeApi.get(), refetchInterval: 60_000 });
+  const { data: rd, isLoading: rl } = useQuery({ queryKey: ['routes'], queryFn: () => routeApi.list().catch(() => ({ routes: [] })), refetchInterval: 30_000 });
+  const { data: ed, isLoading: el } = useQuery({ queryKey: ['exposures'], queryFn: () => exposureApi.list().catch(() => ({ exposures: [] })), refetchInterval: 30_000 });
+  const { data: nd } = useQuery({ queryKey: ['nodes'], queryFn: () => nodeApi.list().catch(() => ({ nodes: [] })), refetchInterval: 120_000 });
 
-  const { data: routesData, isLoading: routesLoading } = useQuery({
-    queryKey: ['routes'],
-    queryFn: () => routeApi.list(),
-    refetchInterval: 30_000,
-  });
+  const compositions = rm?.current?.compositions || [];
+  const routes = (rd as any)?.routes || [];
+  const exposures = (ed as any)?.exposures || [];
+  const nodes: NodeInfo[] = ((nd as any)?.nodes || []).map((n: any) => ({
+    id: n.id || n.node_id, name: n.name || n.node_id || n.id,
+    privateIP: n.private_ip || '', publicIP: n.public_ip || '',
+    networkID: n.network_id || '', region: n.region || '',
+  }));
 
-  const { data: exposuresData, isLoading: expLoading } = useQuery({
-    queryKey: ['exposures'],
-    queryFn: () => exposureApi.list(),
-    refetchInterval: 30_000,
-  });
-
-  const compositions = runtimeMode?.current?.compositions || [];
-  const routes = (routesData as any)?.routes || [];
-  const exposures = (exposuresData as any)?.exposures || [];
-
-  const handleSubmit = async (form: EntryForm) => {
+  const handleSubmit = async (form: any) => {
     setSubmitting(true);
     try {
       const type = entryType(compositions.find(c => c.name === form.composition)!);
       if (type === 'http') {
-        await fetch('/api/v1/actions/bind-http-domain', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const res = await fetch('/api/v1/actions/bind-http-domain', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify({ domain: form.domain, target_host: form.targetHost, target_port: form.targetPort }),
-          credentials: 'include',
-        }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
-      } else {
-        await exposureApi.create({
-          type: type,
-          entry_port: form.port,
-          target_host: form.targetHost,
-          target_port: form.targetPort,
-          description: `${form.composition} — ${form.domain || `port ${form.port}`}`,
         });
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as any).error?.message || `HTTP ${res.status}`); }
+      } else {
+        await exposureApi.create({ type, target_host: form.targetHost, target_port: form.targetPort });
       }
-      toast('入口创建成功');
+      toast('入口创建成功，配置已自动 Apply');
       setSelectedComp('');
-      queryClient.invalidateQueries({ queryKey: ['routes'] });
-      queryClient.invalidateQueries({ queryKey: ['exposures'] });
-    } catch (e: any) {
-      toast(e.message || '创建失败', 'error');
-    } finally {
-      setSubmitting(false);
-    }
+      qc.invalidateQueries({ queryKey: ['routes'] }); qc.invalidateQueries({ queryKey: ['exposures'] });
+    } catch (e: any) { toast(e.message || '创建失败', 'error'); }
+    finally { setSubmitting(false); }
   };
 
   const selected = compositions.find(c => c.name === selectedComp);
@@ -284,13 +277,9 @@ export default function ServiceEntry() {
   return (
     <div className="space-y-5">
       <CompSelector compositions={compositions} selected={selectedComp} onSelect={setSelectedComp} />
-
-      {selected && (
-        <EntryForm comp={selected} onSubmit={handleSubmit} loading={submitting} />
-      )}
-
+      {selected && <EntryForm comp={selected} nodes={nodes} onSubmit={handleSubmit} loading={submitting} />}
       <Card title={`已有入口 (${routes.length + exposures.length})`}>
-        <EntryList routes={routes} exposures={exposures} isLoading={routesLoading || expLoading} />
+        <EntryList routes={routes} exposures={exposures} isLoading={rl || el} />
       </Card>
     </div>
   );
