@@ -12,14 +12,30 @@ import (
 
 // TransparentProxyStatus returns the availability diagnosis for transparent proxy.
 // GET /api/admin/v1/transparent/status
+//
+// Diagnosis checks:
+//  1. Platform (Linux required for iptables)
+//  2. iptables binary available
+//  3. Root/sudo access
+//  4. Gateway forward entry — derived from HTTP Route composition availability.
+//     Transparent proxy needs ANY provider with route_host + upstream_tcp capability.
+//     This is the same requirement as the "HTTP Route" binding composition.
 func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request) {
 	type check struct {
-		Name    string `json:"name"`
-		Passed  bool   `json:"passed"`
-		Detail  string `json:"detail"`
+		Name   string `json:"name"`
+		Passed bool   `json:"passed"`
+		Detail string `json:"detail"`
 	}
 
-	checks := make([]check, 0, 5)
+	type fwdTarget struct {
+		Composition string `json:"composition"`
+		ProviderID  string `json:"provider_id"`
+		Host        string `json:"host"`
+		Port        int    `json:"port"`
+		ProviderOK  bool   `json:"provider_ok"`
+	}
+
+	checks := make([]check, 0, 4)
 
 	// 1. Platform
 	isLinux := runtime.GOOS == "linux"
@@ -42,51 +58,56 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 		Detail: map[bool]string{true: "具有 root 权限", false: "iptables DNAT 需要 root"}[isRoot],
 	})
 
-	// 4. Forward target — derived from RuntimeMode
+	// 4. Gateway forward entry — search by capability, not hardcoded provider name.
+	//    Derived from HTTP Route composition = [listen_tcp, upstream_tcp, route_host].
+	//    Any provider with those capabilities can serve as the transparent proxy target.
 	states := h.ProvReg.List()
 	mode := provider.DetectRuntimeMode(states)
-	forwardHost := "127.0.0.1"
-	forwardPort := 80
-	listeners := mode.ListenerSpecsFor("caddy")
-	for _, l := range listeners {
-		if l.Purpose == "http" || l.Purpose == "internal_https" {
-			forwardPort = l.Port
-			break
+
+	var forwardTargets []fwdTarget
+	for _, p := range states {
+		if !p.HasCapability(provider.CapRouteHost) || !p.HasCapability(provider.CapUpstreamTCP) {
+			continue
+		}
+		listeners := mode.ListenerSpecsFor(p.ID)
+		for _, l := range listeners {
+			if l.Purpose == "http" || l.Purpose == "internal_https" {
+				forwardTargets = append(forwardTargets, fwdTarget{
+					Composition: "HTTP Route",
+					ProviderID:  p.ID,
+					Host:        "127.0.0.1",
+					Port:        l.Port,
+					ProviderOK:  p.Healthy(),
+				})
+				break
+			}
+		}
+	}
+
+	gatewayReady := len(forwardTargets) > 0 && forwardTargets[0].ProviderOK
+	gatewayDetail := "无 Provider 提供 route_host + upstream_tcp 能力（需要 HTTP Route 组合）"
+	if len(forwardTargets) > 0 {
+		ft := forwardTargets[0]
+		if ft.ProviderOK {
+			gatewayDetail = fmt.Sprintf("%s → %s:%d（%s 已就绪，%s 模式）", ft.Composition, ft.Host, ft.Port, ft.ProviderID, mode.Label)
+		} else {
+			gatewayDetail = fmt.Sprintf("%s → %s:%d（%s 未安装，%s 模式）", ft.Composition, ft.Host, ft.Port, ft.ProviderID, mode.Label)
 		}
 	}
 	checks = append(checks, check{
-		Name:   "Caddy 转发口",
-		Passed: true,
-		Detail: fmt.Sprintf("%s → %s:%d", mode.Label, forwardHost, forwardPort),
+		Name:   "网关转发入口",
+		Passed: gatewayReady,
+		Detail: gatewayDetail,
 	})
 
-	// 5. Provider online
-	caddyHealthy := false
-	for _, s := range states {
-		if s.ID == "caddy" && s.Healthy() {
-			caddyHealthy = true
-			break
-		}
-	}
-	checks = append(checks, check{
-		Name: "Caddy 运行中", Passed: caddyHealthy,
-		Detail: map[bool]string{true: "Caddy 已安装并运行", false: "Caddy 未安装或未运行"}[caddyHealthy],
-	})
-
-	allPassed := true
-	for _, c := range checks {
-		if !c.Passed {
-			allPassed = false
-			break
-		}
-	}
+	allPassed := isLinux && iptErr == nil && isRoot && gatewayReady
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"available":     allPassed,
-		"checks":        checks,
-		"forward_host":  forwardHost,
-		"forward_port":  forwardPort,
-		"mode":          mode.Label,
+		"available":       allPassed,
+		"checks":          checks,
+		"forward_targets": forwardTargets,
+		"composition":     "HTTP Route",
+		"mode":            mode.Label,
 	})
 }
 

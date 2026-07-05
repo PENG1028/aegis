@@ -1419,11 +1419,19 @@ export const adminApi = {
 
 // ─── Transparent Proxy (v1.8F) ───
 
+export interface TransparentForwardTarget {
+  composition: string;
+  provider_id: string;
+  host: string;
+  port: number;
+  provider_ok: boolean;
+}
+
 export interface TransparentStatus {
   available: boolean;
   checks: { name: string; passed: boolean; detail: string }[];
-  forward_host: string;
-  forward_port: number;
+  forward_targets: TransparentForwardTarget[];
+  composition: string;
   mode: string;
 }
 
