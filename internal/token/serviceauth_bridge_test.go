@@ -33,7 +33,7 @@ func TestServiceAuthTicketFallback(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mw := NewAuthMiddleware("admin-token", nil)
+	mw := NewAuthMiddleware("admin-token")
 	h := mw.Middleware(handler)
 
 	// Test 1: Ticket fallback — no Bearer, valid Ticket → should pass.
@@ -118,7 +118,7 @@ func TestServiceAuthTicketLoginBypass(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mw := NewAuthMiddleware("admin-token", nil)
+	mw := NewAuthMiddleware("admin-token")
 	h := mw.Middleware(handler)
 
 	req := httptest.NewRequest("POST", "/api/admin/v1/auth/login", nil)
@@ -143,7 +143,7 @@ func TestServiceAuthTicketMiddlewareWithoutBridge(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mw := NewAuthMiddleware("admin-token", nil)
+	mw := NewAuthMiddleware("admin-token")
 	h := mw.Middleware(handler)
 
 	// Without bridge, Ticket should be ignored → 401 as before.
@@ -169,7 +169,7 @@ func TestServiceAuthTicketDoesNotBypassAdminRoute(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mw := NewAuthMiddleware("admin-token", nil)
+	mw := NewAuthMiddleware("admin-token")
 	h := mw.Middleware(handler)
 
 	// Service ticket to admin endpoint — the fallback creates a "service"
@@ -201,7 +201,7 @@ func TestServiceAuthTicketContextPropagation(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	mw := NewAuthMiddleware("admin-token", nil)
+	mw := NewAuthMiddleware("admin-token")
 	h := mw.Middleware(handler)
 
 	req := httptest.NewRequest("GET", "/api/v1/my/routes", nil)

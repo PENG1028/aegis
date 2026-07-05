@@ -135,7 +135,6 @@ func main() {
 	listenerRepo := listener.NewRepository(db)
 	edgeRepo := edgemux.NewRepository(db)
 	nodeRepo := node.NewRepository(db)
-	tokenRepo := token.NewRepository(db)
 	logSvc := logs.NewAppService(logRepo)
 	applyLogRepo := logs.NewApplyLogRepository(db)
 	auditLogRepo := logs.NewAuditLogRepository(db)
@@ -306,7 +305,7 @@ func main() {
 		EndpointRepo:    endpointRepo,
 		GatewayLinkRepo: gwLinkRepo,
 	})
-	authMiddleware := token.NewAuthMiddleware(cfg.Server.AdminToken, tokenRepo)
+	authMiddleware := token.NewAuthMiddleware(cfg.Server.AdminToken)
 
 	dnsMgmt := dns.NewManager(
 		routeRepo,
@@ -342,7 +341,6 @@ func main() {
 		Auth:             authMiddleware,
 		Action:           actionSvc,
 		Space:            spaceSvc,
-		TokenRepo:        tokenRepo,
 		AdminAuth:        adminAuthSvc,
 		EdgeSvc:          edgeSvc,
 		ListenerSvc:      listenerSvc,

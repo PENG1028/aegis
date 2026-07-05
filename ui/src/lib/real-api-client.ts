@@ -1419,12 +1419,23 @@ export const adminApi = {
 
 // ─── Transparent Proxy (v1.8F) ───
 
+export interface TransparentStatus {
+  available: boolean;
+  checks: { name: string; passed: boolean; detail: string }[];
+  forward_host: string;
+  forward_port: number;
+  mode: string;
+}
+
 export const transparentApi = {
   listRules: (): Promise<{ rules: TransparentRule[]; count: number; message?: string }> =>
     get('/api/admin/v1/transparent/rules'),
 
   deleteRule: (id: string): Promise<{ status: string; rule_id: string }> =>
     del(`/api/admin/v1/transparent/rules/${id}`),
+
+  status: (): Promise<TransparentStatus> =>
+    get('/api/admin/v1/transparent/status'),
 };
 
 export interface TransparentRule {

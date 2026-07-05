@@ -1,14 +1,54 @@
 // ─── Transparent Proxy Settings ───
+// v1.8L-22: added availability diagnosis panel
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transparentApi } from '@/lib/api-bridge';
+import type { TransparentStatus } from '@/lib/real-api-client';
 import { Card, PageHeader, StatusBadge, Btn, useToast } from '@/components/shared';
-import { fmtBytes } from '@/lib/utils';
+import { fmtBytes, cn } from '@/lib/utils';
 import { useState } from 'react';
+
+function StatusPanel({ status }: { status: TransparentStatus | undefined }) {
+  if (!status) return null;
+
+  const allPassed = status.available;
+  const passedCount = status.checks.filter(c => c.passed).length;
+  const totalCount = status.checks.length;
+
+  return (
+    <Card title="可用性诊断" subtitle={allPassed ? '透明代理已就绪' : `${passedCount}/${totalCount} 条件满足`}>
+      <div className="space-y-2">
+        {status.checks.map((c, i) => (
+          <div key={i} className={cn(
+            'flex items-center gap-3 px-3 py-2 rounded-a-sm border text-xs',
+            c.passed ? 'bg-[#4cd964]/5 border-[#4cd964]/15' : 'bg-[#ff5c72]/5 border-[#ff5c72]/15',
+          )}>
+            <span className={cn('font-mono text-sm', c.passed ? 'text-[#4cd964]' : 'text-[#ff5c72]')}>
+              {c.passed ? '✓' : '✗'}
+            </span>
+            <span className="font-medium w-28">{c.name}</span>
+            <span className={c.passed ? 'text-a-muted' : 'text-[#ff5c72]/80'}>{c.detail}</span>
+          </div>
+        ))}
+      </div>
+      {allPassed && (
+        <div className="mt-3 text-[10px] text-a-muted">
+          转发目标：{status.mode} 模式 → {status.forward_host}:{status.forward_port}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 export default function TransparentProxyPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  const { data: status } = useQuery({
+    queryKey: ['transparent-status'],
+    queryFn: () => transparentApi.status().catch(() => null),
+    refetchInterval: 30_000,
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['transparent-rules'],
@@ -35,9 +75,11 @@ export default function TransparentProxyPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="透明代理" subtitle="IP:端口 拦截规则" />
+      <PageHeader title="透明代理" subtitle="iptables DNAT 拦截出站 TCP 流量，重定向到网关" />
 
-      <Card title={`规则列表 (${rules.length})`} subtitle="iptables DNAT 透明代理规则">
+      <StatusPanel status={status} />
+
+      <Card title={`iptables 规则 (${rules.length})`} subtitle="目标 IP:端口 → 转发到本地代理端口">
         {rules.length === 0 ? (
           <div className="text-center py-8 text-a-muted text-sm">
             <div className="text-3xl mb-3 opacity-30">🔀</div>

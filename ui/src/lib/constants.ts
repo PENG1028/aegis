@@ -52,7 +52,6 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   ],
   access: [
     { path: '/access', label: 'Scope' },
-    { path: '/access/keys', label: 'API 密钥' },
     { path: '/access/credentials', label: '凭据' },
     { path: '/access/tokens', label: '加入令牌' },
     { path: '/access/admin', label: '管理员' },
@@ -109,7 +108,6 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/audit': '/observe/audit',
   '/relay': '/observe',
   '/scopes': '/access',
-  '/api-keys': '/access/keys',
   '/credentials': '/access/credentials',
   '/exposures': '/exposure',
   '/settings': '/settings',

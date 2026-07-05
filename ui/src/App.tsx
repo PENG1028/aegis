@@ -49,7 +49,6 @@ import Acceptance from '@/pages/observe/Acceptance';
 
 // ── Access ──
 import Scopes from '@/pages/access/Scopes';
-import ApiKeys from '@/pages/access/ApiKeys';
 import Credentials from '@/pages/access/Credentials';
 import JoinTokens from '@/pages/access/JoinTokens';
 import AdminAccount from '@/pages/access/AdminAccount';
@@ -162,7 +161,6 @@ export default function App() {
                 {/* ── Workspace 7: Access / 访问控制 ── */}
                 <Route path="/access" element={<OutletLayout />}>
                   <Route index element={<Scopes />} />
-                  <Route path="keys" element={<ApiKeys />} />
                   <Route path="credentials" element={<Credentials />} />
                   <Route path="tokens" element={<JoinTokens />} />
                   <Route path="admin" element={<AdminAccount />} />

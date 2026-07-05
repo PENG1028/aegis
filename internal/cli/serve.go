@@ -33,12 +33,11 @@ func newServeCommand(cfg *config.Config, svcs *httpapi.Services) *cobra.Command 
 				addr = "127.0.0.1:7380"
 			}
 
-			// Use the pre-built auth middleware from Services (has tokenRepo)
 			var authMiddleware *token.AuthMiddleware
 			if svcs.Auth != nil {
 				authMiddleware = svcs.Auth
 			} else {
-				authMiddleware = token.NewAuthMiddleware(cfg.Server.AdminToken, nil)
+				authMiddleware = token.NewAuthMiddleware(cfg.Server.AdminToken)
 			}
 			apiMiddleware := httpapi.NewMiddleware(authMiddleware, cfg.Server.AllowedOrigins)
 
