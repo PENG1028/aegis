@@ -171,6 +171,16 @@ func AllCompositions() []CompDef {
 	}
 }
 
+// LookupCompByName returns the CompDef for a given human-readable name, or nil.
+func LookupCompByName(name string) *CompDef {
+	for _, d := range AllCompositions() {
+		if d.Name == name {
+			return &d
+		}
+	}
+	return nil
+}
+
 // LookupComp returns the CompDef for a given key, or nil if not found.
 func LookupComp(key CompKey) *CompDef {
 	for _, d := range AllCompositions() {
