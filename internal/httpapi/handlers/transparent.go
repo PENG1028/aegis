@@ -99,19 +99,22 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 					continue
 				}
 				listeners := mode.ListenerSpecsFor(p.ID)
+				// Prefer listener matching composition's transport, fall back to first
 				for _, l := range listeners {
-					if l.Purpose == "http" || l.Purpose == "https" || l.Purpose == "internal_https" || l.Protocol == "udp" {
+					if l.Protocol == def.Transport {
 						entry.ProviderID, entry.Host, entry.Port = p.ID, "127.0.0.1", l.Port
-						entry.ProviderOK = p.Healthy()
-						if p.Healthy() {
-							entry.Detail = fmt.Sprintf("%s → %s:%d（%s 已就绪）", c.Name, entry.Host, entry.Port, p.ID)
-						} else {
-							entry.Detail = fmt.Sprintf("需要 %s 提供 %s 能力（%s 未安装或未运行）", p.ID, c.Name, p.ID)
-						}
 						break
 					}
 				}
-				break
+				if entry.Port == 0 && len(listeners) > 0 {
+					entry.ProviderID, entry.Host, entry.Port = p.ID, "127.0.0.1", listeners[0].Port
+				}
+				entry.ProviderOK = p.Healthy()
+				if p.Healthy() {
+					entry.Detail = fmt.Sprintf("%s → %s:%d（%s 已就绪）", c.Name, entry.Host, entry.Port, p.ID)
+				} else {
+					entry.Detail = fmt.Sprintf("需要 %s 提供 %s 能力（%s 未安装或未运行）", p.ID, c.Name, p.ID)
+				}
 			}
 			if entry.ProviderID == "" {
 				entry.Detail = fmt.Sprintf("需要 %s 组合能力，但无 Provider 声明所需能力", c.Name)

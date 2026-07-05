@@ -114,14 +114,18 @@ func (d CompDef) Requirements() []Capability {
 // When new compositions are added to the registry (e.g. future gRPC proxy),
 // this method is the single place to declare whether they qualify.
 func (d CompDef) IsTransparentForwardTarget() bool {
-	// Compositions that route by Host header qualify as forward targets.
-	// HTTP, HTTPS, HTTP/3 — any provider that can parse the Host header
-	// and reverse-proxy to the correct backend.
+	// All compositions can serve as transparent proxy forward targets.
+	// HTTP compositions route by Host header; raw TCP/UDP forward by port;
+	// TLS passthrough routes by SNI.
 	//
-	// Note: HTTP/3 (UDP) is included here even though the current transparent
-	// proxy only intercepts TCP. When UDP interception is added later,
-	// this composition will automatically appear as a forward target.
-	return d.AppProtocol == "http"
+	// The transparent proxy status endpoint reads mode.Compositions (which
+	// already has status computed by EvalAllCompositions). Only "available"
+	// compositions appear as usable targets — the rest are shown as
+	// "provider_missing" or "unsupported" for diagnosis.
+	//
+	// When a new composition is added to the registry, it automatically
+	// appears here with zero code changes.
+	return true
 }
 
 // ============================================================================
