@@ -12,6 +12,8 @@ import { providerApi, runtimeModeApi, transparentApi } from '@/lib/api-bridge';
 import type { RuntimeModeDef, RuntimeAtom, AtomSlot, ProviderAtoms, Composition } from '@/lib/api-bridge';
 import { PageHeader, HealthDot, StatusBadge, Card, Btn, Drawer, TabBar, useToast } from '@/components/shared';
 import { cn } from '@/lib/utils';
+import AuthServices from './AuthServices';
+import AuthTopology from './AuthTopology';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -904,6 +906,8 @@ const PAGE_TABS = [
   { key: 'matrix', label: '能力矩阵' },
   { key: 'detail', label: 'Provider 详情' },
   { key: 'transparent', label: '透明代理' },
+  { key: 'auth-services', label: '服务认证' },
+  { key: 'auth-topology', label: '服务拓扑' },
 ];
 
 export default function Providers() {
@@ -1006,6 +1010,8 @@ export default function Providers() {
       )}
 
       {pageTab === 'transparent' && <TransparentProxyPanel />}
+      {pageTab === 'auth-services' && <AuthServices />}
+      {pageTab === 'auth-topology' && <AuthTopology />}
 
       {/* Cell detail drawer */}
       <CellDrawer cell={drawerCell} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
@@ -1072,22 +1078,21 @@ function TransparentProxyPanel() {
           </div>
         )}
 
-        {/* Forward targets — auto-discovered from composition registry */}
+        {/* Forward targets — same card style as composition bar, data from API */}
         {forwardTargets.length > 0 && (
-          <div className="mt-3 space-y-1.5">
-            <div className="text-[10px] text-a-muted/60">转发入口能力（{status?.mode || '—'} 模式）</div>
-            {forwardTargets.map((ft: any, i: number) => {
-              const st = ft.status === 'available' ? 'bg-[#4cd964]/5 border-[#4cd964]/15 text-[#4cd964]'
-                : ft.status === 'provider_missing' ? 'bg-[#ff5c72]/5 border-[#ff5c72]/15 text-[#ff5c72]'
-                : 'bg-a-border/5 border-a-border/20 text-a-muted';
-              const icon = ft.status === 'available' ? '✓' : ft.status === 'provider_missing' ? '✗' : '—';
-              return (
-                <div key={i} className={cn('px-2.5 py-1.5 rounded-a-sm border text-[10px]', st)}>
-                  <span className="font-medium">{ft.composition}</span>
-                  <span className="ml-2 opacity-70">{ft.detail}</span>
-                </div>
-              );
-            })}
+          <div className="mt-3">
+            <div className="text-[10px] text-a-muted/60 mb-1.5">转发入口能力（{status?.mode || '—'} 模式）</div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {forwardTargets.map((ft: any, i: number) => {
+                const cs = COMP_CARD_STYLE[ft.status] || COMP_CARD_STYLE.unsupported;
+                return (
+                  <div key={i} title={ft.detail}
+                    className={cn('px-2.5 py-1 rounded-a-sm text-[10px] font-mono border', cs.card, ft.status !== 'unsupported' ? cs.cursor : '')}>
+                    <span className={cs.text}>{ft.composition}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </Card>
