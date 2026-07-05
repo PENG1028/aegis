@@ -7,6 +7,7 @@ import (
 
 	"aegis/internal/endpoint"
 	"aegis/internal/core"
+	"aegis/internal/provider"
 	"aegis/internal/route"
 	"aegis/internal/service"
 )
@@ -56,13 +57,18 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 		ownerID = ac.SpaceID
 	}
 
-	// 4. Create service
-	svcName := fmt.Sprintf("http-%s", input.Domain)
+	// 4. Derive settings from composition registry
+	compDef := provider.LookupComp(provider.CompHTTPSRoute) // default: HTTPS
+	if compDef == nil {
+		return nil, fmt.Errorf("composition not found")
+	}
+
+	svcName := fmt.Sprintf("%s-%s", compDef.AppProtocol, input.Domain)
 	svc := &service.Service{
 		ID:               core.NewID("svc"),
 		ProjectID:        "",
 		Name:             svcName,
-		Kind:             "http",
+		Kind:             compDef.AppProtocol,
 		Env:              "prod",
 		Status:           "active",
 		SpaceID:          spaceID,
@@ -88,15 +94,16 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 		return nil, fmt.Errorf("create endpoint: %w", err)
 	}
 
-	// 6. Create route
+	// 6. Create route — fields derived from composition registry
 	rt := &route.Route{
 		ID:                 core.NewID("rt"),
 		Domain:             input.Domain,
 		PathPrefix:         "",
 		StripPrefix:        false,
 		ServiceID:          svc.ID,
-		TLSEnabled:         true,
-			GatewayLinkID:      input.GatewayLinkID,
+		Composition:        string(compDef.Key),
+		TLSEnabled:         compDef.TLSMode != "none",
+		GatewayLinkID:      input.GatewayLinkID,
 		Status:             "active",
 		SpaceID:            spaceID,
 		OwnerType:          ownerType,
