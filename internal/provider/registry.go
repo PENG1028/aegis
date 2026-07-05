@@ -108,28 +108,38 @@ func (r *Registry) ListAll() []Provider {
 	return all
 }
 
+// protocolCaps maps protocol types to required capabilities.
+// Replaces the old hardcoded provider-ID map with capability-based matching —
+// when new providers are registered, they auto-qualify for protocols they support.
+var protocolCaps = map[string][]Capability{
+	"http":     {CapListenTCP, CapUpstreamTCP, CapHTTP1, CapRouteHost},
+	"tcp":      {CapListenTCP, CapUpstreamTCP, CapRawTCP},
+	"udp":      {CapListenUDP, CapUpstreamUDP},
+	"tunnel":   {CapListenTCP, CapUpstreamTCP, CapTLSPassthrough, CapSNIPreread},
+	"internal": {CapListenTCP, CapUpstreamTCP, CapHTTP1, CapRouteHost},
+}
+
 // SelectForProtocol returns the best provider for a given protocol type.
-// This is a simple lookup — the topology planner (dimension 2) is the full
-// capability-based selector. This method is a convenience bridge for code
-// that hasn't been migrated to the topology planner yet.
+// Searches registered providers by capability — no hardcoded provider names.
 func (r *Registry) SelectForProtocol(protoType string) (Provider, error) {
-	// Map protocol types to preferred provider IDs
-	preferred := map[string]string{
-		"http":     "caddy",
-		"tcp":      "haproxy",
-		"udp":      "haproxy",
-		"tunnel":   "haproxy",
-		"internal": "caddy",
-	}
-
-	id, ok := preferred[protoType]
+	required, ok := protocolCaps[protoType]
 	if !ok {
-		id = "caddy"
+		required = protocolCaps["http"] // fallback
 	}
 
-	p := r.Get(id)
-	if p == nil {
-		return nil, fmt.Errorf("no provider available for protocol %s", protoType)
+	for _, p := range r.ListAll() {
+		state := p.State()
+		hasAll := true
+		for _, cap := range required {
+			if !state.HasCapability(cap) {
+				hasAll = false
+				break
+			}
+		}
+		if hasAll {
+			return p, nil
+		}
 	}
-	return p, nil
+
+	return nil, fmt.Errorf("no provider available for protocol %s", protoType)
 }
