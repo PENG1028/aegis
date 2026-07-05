@@ -14,6 +14,8 @@ import (
 	"aegis/internal/credential"
 	"aegis/internal/dns"
 	"aegis/internal/edgemux"
+	"aegis/internal/distnode"
+	"aegis/internal/httpapi/handlers"
 	"aegis/internal/egress"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
@@ -332,7 +334,27 @@ func main() {
 		}
 	}
 
-	httpSvcs := &httpapi.Services{
+
+	// v1.9B: Distributed Node Runtime
+	var dn *distnode.DistNode
+	if cfg.DistNode.Enabled {
+		distCfg := distnode.Config{
+			ID:     cfg.DistNode.ID,
+			Name:   cfg.DistNode.Name,
+			Addr:   cfg.DistNode.Addr,
+			Secret: cfg.DistNode.Secret,
+		}
+		for _, p := range cfg.DistNode.Peers {
+			distCfg.Peers = append(distCfg.Peers, distnode.PeerConfig{ID: p.ID, Addr: p.Addr})
+		}
+		dn = distnode.New(distCfg)
+		handlers.RegisterDistNodeHandlers(dn)
+		fmt.Fprintf(os.Stderr, "info: distnode enabled - id=%s addr=%s peers=%d\n", dn.ID, distCfg.Addr, len(distCfg.Peers))
+		go dn.Start(context.Background())
+	} else {
+		fmt.Fprintf(os.Stderr, "info: distnode disabled\n")
+	}
+httpSvcs := &httpapi.Services{
 		DB:               db,
 		Config:           cfg,
 		Project:          projectSvc,
@@ -384,6 +406,7 @@ func main() {
 		ProvReg:        provRegistry,
 		Version:        Version,
 		BuildTime:      BuildTime,
+		DistNode:        dn,
 		OnShutdown: func() {
 			fmt.Fprintf(os.Stderr, "stopping subsystems...\n")
 			tcpMgr.Shutdown()

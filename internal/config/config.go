@@ -17,6 +17,7 @@ type Config struct {
 	Server        ServerConfig        `yaml:"server"`
 	ManagedDomain ManagedDomainConfig `yaml:"managed_domain"`
 	DNS           DNSConfig           `yaml:"dns"`
+	DistNode      DistNodeConfig      `yaml:"distnode"`
 	Runtime       RuntimeConfig       `yaml:"runtime"`
 }
 
