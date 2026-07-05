@@ -103,15 +103,31 @@ export default function NewEntry() {
           <label className="text-[10px] text-a-muted block mb-1.5 font-medium">目标节点</label>
           <select value={nodeId} onChange={e => { setNodeId(e.target.value); const n = nodes.find(x => x.id===e.target.value); if (n) setTargetHost(n.privateIP||n.publicIP||'127.0.0.1'); }}
             className="w-full px-3 py-2 rounded-a-sm border border-a-border/50 bg-a-bg text-xs outline-none focus:border-a-accent/50">
-            <option value="">本节点 (当前)</option>
+            <option value="">本节点 (127.0.0.1)</option>
             {nodes.map(n => <option key={n.id} value={n.id}>{n.name} · {n.privateIP||'—'}{n.publicIP?` · ${n.publicIP}`:''}{nodeLabels[n.id]?.label?` · ${nodeLabels[n.id].label}`:''}</option>)}
           </select>
-          {selectedNode && (
-            <div className="flex items-center gap-2 mt-1.5">
-              {selectedNode.privateIP && <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">内网 {selectedNode.privateIP}</span>}
-              {selectedNode.publicIP && <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-a-border/10 text-a-muted border border-a-border/20">公网 {selectedNode.publicIP}</span>}
-              {nodeLabels[selectedNode.id]?.label && <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border', nodeLabels[selectedNode.id].color)}>{nodeLabels[selectedNode.id].forced?'⚠ 重复IP: ':''}{nodeLabels[selectedNode.id].label}</span>}
-            </div>
+          {/* Always show IP tags for current selection or default */}
+          <div className="flex items-center gap-2 mt-1.5">
+            {selectedNode ? (
+              <>
+                {selectedNode.privateIP && <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">内网 {selectedNode.privateIP}</span>}
+                {selectedNode.publicIP ? <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-a-border/10 text-a-muted border border-a-border/20">公网 {selectedNode.publicIP}</span> : <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-a-border/10 text-a-muted/50 border border-a-border/20">公网 —</span>}
+              </>
+            ) : (
+              <>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-a-border/10 text-a-muted border border-a-border/20">本机 127.0.0.1</span>
+              </>
+            )}
+            {nodeLabels[selectedNode?.id||'']?.label && (
+              <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border', nodeLabels[selectedNode.id].color)}>
+                {nodeLabels[selectedNode.id].forced ? '⚠ 重复内网IP — 需指定网络: ' : ''}{nodeLabels[selectedNode.id].label}
+              </span>
+            )}
+          </div>
+          {/* Duplicate IP detected → force network label input */}
+          {selectedNode && nodeLabels[selectedNode.id]?.forced && (
+            <input placeholder="请输入网络标识（如：阿里云-杭州）"
+              className="w-full mt-1.5 px-3 py-1.5 rounded-a-sm border border-[#e8b830]/50 bg-[#e8b830]/5 text-xs outline-none focus:border-[#e8b830]" />
           )}
         </div>
 
