@@ -25,6 +25,7 @@ import Providers from '@/pages/fabric/Providers';
 import ProvidersDetail from '@/pages/fabric/ProvidersDetail';
 import AuthServices from '@/pages/fabric/AuthServices';
 import AuthCallGraph from '@/pages/fabric/AuthCallGraph';
+import EgressGateway from '@/pages/fabric/EgressGateway';
 
 // ── Runtime ──
 import Nodes from '@/pages/runtime/Nodes';
@@ -88,6 +89,9 @@ function LegacyRedirect() {
   if (location.pathname.startsWith('/gateway-links')) {
     return <Navigate to="/fabric" replace />;
   }
+  if (location.pathname.startsWith('/settings/dns')) {
+    return <Navigate to="/fabric/egress" replace />;
+  }
   if (location.pathname.startsWith('/topology/path')) {
     return <Navigate to="/fabric/topology" replace />;
   }
@@ -128,6 +132,7 @@ export default function App() {
                 <Route path="/fabric" element={<OutletLayout />}>
                   <Route index element={<Providers />} />
                   <Route path="providers" element={<ProvidersDetail />} />
+                  <Route path="egress" element={<EgressGateway />} />
                   <Route path="auth" element={<AuthServices />} />
                   <Route path="callgraph" element={<AuthCallGraph />} />
                 </Route>

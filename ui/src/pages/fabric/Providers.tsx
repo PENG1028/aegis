@@ -7,10 +7,11 @@
 // No hand-coded data — the backend is the single source of truth.
 
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { providerApi, runtimeModeApi } from '@/lib/api-bridge';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { providerApi, runtimeModeApi, transparentApi } from '@/lib/api-bridge';
 import type { RuntimeModeDef, RuntimeAtom, AtomSlot, ProviderAtoms, Composition } from '@/lib/api-bridge';
 import { PageHeader, HealthDot, StatusBadge, Card, Btn, Drawer, TabBar, useToast } from '@/components/shared';
+import ServiceEntry from './ServiceEntry';
 import { cn } from '@/lib/utils';
 
 // ══════════════════════════════════════════════════════════════════════════════
