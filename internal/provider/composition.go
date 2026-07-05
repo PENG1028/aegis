@@ -114,11 +114,14 @@ func (d CompDef) Requirements() []Capability {
 // When new compositions are added to the registry (e.g. future gRPC proxy),
 // this method is the single place to declare whether they qualify.
 func (d CompDef) IsTransparentForwardTarget() bool {
-	// Compositions that route TCP traffic by Host header qualify as forward targets.
-	// Both plain HTTP (:80) and TLS-terminated HTTP (:443/:8443) work —
-	// transparent proxy sends directly to the provider's port, bypassing public TLS.
-	// Excludes UDP (HTTP/3 over QUIC) — iptables DNAT is TCP-only.
-	return d.AppProtocol == "http" && d.Transport == "tcp"
+	// Compositions that route by Host header qualify as forward targets.
+	// HTTP, HTTPS, HTTP/3 — any provider that can parse the Host header
+	// and reverse-proxy to the correct backend.
+	//
+	// Note: HTTP/3 (UDP) is included here even though the current transparent
+	// proxy only intercepts TCP. When UDP interception is added later,
+	// this composition will automatically appear as a forward target.
+	return d.AppProtocol == "http"
 }
 
 // ============================================================================
