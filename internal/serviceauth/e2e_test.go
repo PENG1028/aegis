@@ -30,7 +30,7 @@ func newTestServer(t *testing.T) (*core.Service, *httptest.Server, *sql.DB) {
 
 	svc, err := core.NewService(core.Dependencies{
 		Repo:        core.NewRepository(db),
-		Secrets:     &memorySecretStore{secret: make([]byte, 32)},
+		
 		NodeChecker: &allowAllChecker{},
 		LogWriter:   nil,
 		IDGen:       core.DefaultIDGen,

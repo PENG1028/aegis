@@ -92,7 +92,7 @@ func New(cfg Config) (*Client, error) {
 
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 
 	nodeHost, _ := os.Hostname()

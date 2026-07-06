@@ -41,7 +41,7 @@ func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
 
 		claims, err := VerifyTicket(ticket, pubKey)
 		if err != nil {
-			writeGuardError(w, 403, "invalid ticket")
+			writeGuardError(w, 403, "invalid ticket: "+err.Error())
 			return
 		}
 
