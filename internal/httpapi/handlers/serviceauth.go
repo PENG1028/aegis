@@ -313,6 +313,8 @@ func (h *Handlers) AdminUpsertServiceAuthGroup(w http.ResponseWriter, r *http.Re
 	if h.ServiceAuthSvc == nil { writeError(w, http.StatusNotImplemented, "N/A"); return }
 	var g serviceauth.ServiceGroup
 	if err := decodeJSON(r, &g); err != nil { writeError(w, http.StatusBadRequest, err.Error()); return }
+	g.CreatedAt = time.Now().Format(time.RFC3339)
+	g.UpdatedAt = g.CreatedAt
 	if err := h.ServiceAuthSvc.UpsertGroup(r.Context(), &g); err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
 	writeJSON(w, http.StatusCreated, g)
 }
@@ -336,6 +338,7 @@ func (h *Handlers) AdminUpsertServiceAuthPolicy(w http.ResponseWriter, r *http.R
 	if h.ServiceAuthSvc == nil { writeError(w, http.StatusNotImplemented, "N/A"); return }
 	var p serviceauth.Policy
 	if err := decodeJSON(r, &p); err != nil { writeError(w, http.StatusBadRequest, err.Error()); return }
+	p.Enabled = true
 	if err := h.ServiceAuthSvc.UpsertPolicy(r.Context(), &p); err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
 	writeJSON(w, http.StatusCreated, p)
 }
