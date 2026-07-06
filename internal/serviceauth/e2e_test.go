@@ -144,7 +144,8 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 	testB := httptest.NewServer(guarded)
 	defer testB.Close()
 
-	clusterSecret := clientB.ClusterSecret()
+	// Generate keypair for manual ticket signing in tests.
+	_, testPriv, _ := core.GenerateKeyPair()
 
 	// Test 1: No ticket → 401
 	resp, _ := http.Post(testB.URL+"/api/v1/create", "application/json", bytes.NewReader([]byte(`{}`)))
@@ -171,7 +172,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 
 	// Test 3: Valid ticket → 200
 	claims := core.NewTicket("admin-service", "project-service", "create")
-	validTicket := core.SignTicket(claims, clusterSecret)
+	validTicket := core.SignTicket(claims, testPriv)
 	req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Service-Ticket", validTicket)
@@ -187,9 +188,8 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 	}
 
 	// Test 4: Wrong key → 403
-	fakeKey := make([]byte, 32)
-	fakeKey[0] = 0xFF
-	wrongTicket := core.SignTicket(claims, fakeKey)
+	_, wrongPriv, _ := core.GenerateKeyPair()
+	wrongTicket := core.SignTicket(claims, wrongPriv)
 	req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Service-Ticket", wrongTicket)
@@ -210,7 +210,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 		TargetAPI:     "create",
 		ExpiresAt:     time.Now().Add(-1 * time.Hour).Unix(),
 	}
-	expiredTicket := core.SignTicket(expiredClaims, clusterSecret)
+	expiredTicket := core.SignTicket(expiredClaims, testPriv)
 	req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Service-Ticket", expiredTicket)
@@ -226,7 +226,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 
 	// Test 6: Ticket for wrong target service → 403
 		otherClaims := core.NewTicket("admin-service", "other-service", "create")
-		otherTicket := core.SignTicket(otherClaims, clusterSecret)
+		otherTicket := core.SignTicket(otherClaims, testPriv)
 		req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Service-Ticket", otherTicket)
@@ -242,7 +242,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 
 		// Test 7: Ticket for wrong API → 403
 		wrongAPIClaims := core.NewTicket("admin-service", "project-service", "delete")
-		wrongAPITicket := core.SignTicket(wrongAPIClaims, clusterSecret)
+		wrongAPITicket := core.SignTicket(wrongAPIClaims, testPriv)
 		req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Service-Ticket", wrongAPITicket)
@@ -294,9 +294,9 @@ func TestE2E_BlockServicePreventsCalls(t *testing.T) {
 	testB := httptest.NewServer(guarded)
 	defer testB.Close()
 
-	clusterSecret := clientB.ClusterSecret()
+	_, testPriv, _ := core.GenerateKeyPair()
 	claims := core.NewTicket("admin-service", "project-service", "create")
-	validTicket := core.SignTicket(claims, clusterSecret)
+	validTicket := core.SignTicket(claims, testPriv)
 
 	// Pre-block: should pass.
 	req, _ := http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
@@ -374,8 +374,8 @@ func (c *allowAllChecker) FindByIP(ip string) (*core.NodeInfo, error) {
 func runTestMigrations(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for i, m := range []string{
-		`CREATE TABLE IF NOT EXISTS svc_auth_services (id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL DEFAULT 0, node_host TEXT NOT NULL DEFAULT '', apis_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'active', last_seen TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')`,
-		`CREATE INDEX IF NOT EXISTS idx_svc_auth_svc_identity ON svc_auth_services(name, host, port)`,
+		`CREATE TABLE IF NOT EXISTS svc_auth_services (id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL DEFAULT 0, node_host TEXT NOT NULL DEFAULT '', apis_json TEXT NOT NULL DEFAULT '[]', public_key TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', last_seen TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_svc_auth_name_unique ON svc_auth_services(name)`,
 		`CREATE TABLE IF NOT EXISTS svc_auth_call_logs (id TEXT PRIMARY KEY, caller_service TEXT NOT NULL DEFAULT '', target_service TEXT NOT NULL DEFAULT '', target_api TEXT NOT NULL DEFAULT '', caller_host TEXT NOT NULL DEFAULT '', target_host TEXT NOT NULL DEFAULT '', allowed INTEGER NOT NULL DEFAULT 1, latency_ms INTEGER NOT NULL DEFAULT 0, error_msg TEXT NOT NULL DEFAULT '', called_at TEXT NOT NULL DEFAULT '')`,
 		`CREATE TABLE IF NOT EXISTS svc_auth_blocklist (id TEXT PRIMARY KEY, service_id TEXT, api_name TEXT NOT NULL DEFAULT '*', reason TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')`,
 	} {

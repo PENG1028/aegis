@@ -22,6 +22,7 @@ package serviceauth
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -50,16 +51,17 @@ type Client struct {
 	gatewayURL string
 	serviceID  string
 
-	clusterSecret []byte
-	instances     map[string][]ServiceInstance
-	// apis maps service_name → []APIDef. This is populated from the Register
-	// response (flat API list keyed by the owning service name).
-	apis      map[string][]APIDef
-	blocklist []BlocklistEntry
-	blVersion int64
+	privateKey string              // Ed25519 private key (base64, stored locally)
+	publicKey  string              // Ed25519 public key (base64, sent to server)
+	publicKeys map[string]string   // name → public_key (synced)
+	instances  map[string][]ServiceInstance
+	apis       map[string][]APIDef
+	blocklist  []BlocklistEntry
+	blVersion  int64
 	catVersion int64
-	localHost string
-	nodeHost  string
+	localHost  string
+	nodeHost   string
+	keyDir     string // dir for storing private key
 
 	httpClient *http.Client
 	ctx        context.Context
@@ -101,8 +103,10 @@ func New(cfg Config) (*Client, error) {
 		httpClient: httpClient,
 		instances:  make(map[string][]ServiceInstance),
 		apis:       make(map[string][]APIDef),
+		publicKeys: make(map[string]string),
 		localHost:  detectLocalIP(),
 		nodeHost:   nodeHost,
+		keyDir:     keyDir(),
 		ctx:        ctx,
 		cancel:     cancel,
 	}
@@ -112,6 +116,14 @@ func New(cfg Config) (*Client, error) {
 
 // Register joins the cluster and starts background sync.
 func (c *Client) Register(ctx context.Context) error {
+	// Load or generate Ed25519 key pair.
+	pubKey, privKey, err := c.loadOrGenerateKeyPair()
+	if err != nil {
+		return fmt.Errorf("register: keys: %w", err)
+	}
+	c.publicKey = pubKey
+	c.privateKey = privKey
+
 	apis := c.cfg.APIs
 	if apis == nil {
 		apis = []APIDef{}
@@ -123,6 +135,7 @@ func (c *Client) Register(ctx context.Context) error {
 		Port:        c.cfg.ServicePort,
 		NodeHost:    c.nodeHost,
 		APIs:        apis,
+		PublicKey:   pubKey,
 	}
 
 	data, _ := json.Marshal(reqBody)
@@ -146,28 +159,18 @@ func (c *Client) Register(ctx context.Context) error {
 		return fmt.Errorf("register: decode: %w", err)
 	}
 
-	secret, err := base64.StdEncoding.DecodeString(regResp.ClusterSecret)
-	if err != nil {
-		return fmt.Errorf("register: decode secret: %w", err)
-	}
-
 	c.mu.Lock()
 	c.serviceID = regResp.ServiceID
-	c.clusterSecret = secret
 	c.blVersion = regResp.BlVersion
 	c.catVersion = regResp.CatVersion
 	c.blocklist = regResp.Blocklist
-
-	// Index instances by service name.
+	for k, v := range regResp.PublicKeys {
+		c.publicKeys[k] = v
+	}
 	for _, inst := range regResp.Instances {
 		c.instances[inst.Name] = append(c.instances[inst.Name], inst)
 	}
-	// Index APIs by service name. The Register response returns APIs flat;
-	// we store them keyed by the service name derived from the instance list.
 	for _, api := range regResp.APIs {
-		// Try to associate each API with its owning service by matching
-		// against our instance list. If we can't determine the owner,
-		// store under empty key as a fallback.
 		owner := c.findAPIOwner(api)
 		c.apis[owner] = append(c.apis[owner], api)
 	}
@@ -257,11 +260,11 @@ func (c *Client) ServiceID() string {
 	return c.serviceID
 }
 
-// ClusterSecret returns the raw cluster secret bytes used for ticket signing.
-func (c *Client) ClusterSecret() []byte {
+// PublicKey returns this service's Ed25519 public key.
+func (c *Client) PublicKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.clusterSecret
+	return c.publicKey
 }
 
 // ============================================================================
@@ -312,11 +315,11 @@ func (c *Client) resolveTarget(targetService, targetAPI, method string) (url, ef
 
 func (c *Client) generateTicket(targetService, targetAPI string) string {
 	c.mu.RLock()
-	secret := c.clusterSecret
+	privKey := c.privateKey
 	c.mu.RUnlock()
 
 	claims := NewTicket(c.cfg.ServiceName, targetService, targetAPI)
-	return SignTicket(claims, secret)
+	return SignTicket(claims, privKey)
 }
 
 func (c *Client) reportCall(targetService, targetAPI string, allowed bool, latencyMs int) {
@@ -348,6 +351,57 @@ func (c *Client) reportCall(targetService, targetAPI string, allowed bool, laten
 // findAPIOwner attempts to determine which service owns an API definition.
 // In the Register response, APIs come back flat. We heuristically match
 // by path prefix against known instances.
+// ─── Keypair management ───
+
+func keyDir() string {
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return ".aegis/keys"
+	}
+	return dir + "/.aegis/keys"
+}
+
+func (c *Client) keyPath() string {
+	return c.keyDir + "/" + c.cfg.ServiceName + ".key"
+}
+
+func (c *Client) loadOrGenerateKeyPair() (pubKey, privKey string, err error) {
+	os.MkdirAll(c.keyDir, 0700)
+
+	// Try loading existing key.
+	if data, err := os.ReadFile(c.keyPath()); err == nil && len(data) > 0 {
+		privKey = string(data)
+		pub, genErr := ed25519PrivateToPublic(privKey)
+		if genErr == nil {
+			return pub, privKey, nil
+		}
+		log.Printf("[serviceauth] corrupt key, regenerating: %v", genErr)
+	}
+
+	// Generate new key pair.
+	pub, priv, err := GenerateKeyPair()
+	if err != nil {
+		return "", "", err
+	}
+	if err := os.WriteFile(c.keyPath(), []byte(priv), 0600); err != nil {
+		return "", "", fmt.Errorf("save key: %w", err)
+	}
+	log.Printf("[serviceauth] generated new Ed25519 key for %s", c.cfg.ServiceName)
+	return pub, priv, nil
+}
+
+func ed25519PrivateToPublic(privKeyB64 string) (string, error) {
+	privBytes, err := base64.StdEncoding.DecodeString(privKeyB64)
+	if err != nil {
+		return "", err
+	}
+	priv := ed25519.PrivateKey(privBytes)
+	pub := priv.Public().(ed25519.PublicKey)
+	return base64.StdEncoding.EncodeToString(pub), nil
+}
+
+// ─── Internal helpers ───
+
 func (c *Client) findAPIOwner(api APIDef) string {
 	// Fallback: most APIs belong to the registering service.
 	if api.Path != "" {
@@ -406,9 +460,12 @@ func (c *Client) doSync() {
 	c.blVersion = syncResp.BlVersion
 	c.catVersion = syncResp.CatVersion
 
-	// Merge blocklist: server sends full replacement on version change.
+	// Merge blocklist + public keys.
 	if len(syncResp.Blocklist) > 0 {
 		c.blocklist = syncResp.Blocklist
+	}
+	for k, v := range syncResp.PublicKeys {
+		c.publicKeys[k] = v
 	}
 
 	// Deduplicate new instances by (name, host, port).

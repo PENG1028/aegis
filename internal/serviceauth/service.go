@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -124,22 +125,15 @@ func (s *Service) signingKey() []byte {
 
 // Register processes a service registration request.
 func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP string) (*RegisterResponse, error) {
-	// ⓪ Input validation — prevent malformed names from breaking ticket format
-	// or causing DB issues.
 	if err := validateRegisterRequest(req); err != nil {
 		return nil, err
 	}
 
-	// ① Cluster check.
 	if !s.isInCluster(clientIP) {
 		return nil, ErrNotInCluster
 	}
 
-	// ② Build service record.
-	apisJSON, err := json.Marshal(req.APIs)
-	if err != nil {
-		return nil, fmt.Errorf("register: marshal apis: %w", err)
-	}
+	apisJSON, _ := json.Marshal(req.APIs)
 	now := time.Now()
 	rec := &ServiceRecord{
 		ID:        s.deps.IDGen(),
@@ -148,6 +142,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		Port:      req.Port,
 		NodeHost:  req.NodeHost,
 		APIsJSON:  string(apisJSON),
+		PublicKey: req.PublicKey,
 		Status:    "active",
 		LastSeen:  now,
 		CreatedAt: now,
@@ -158,20 +153,9 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		return nil, fmt.Errorf("register: %w", err)
 	}
 
-	// Fetch the actual DB record (Upsert may update an existing row whose ID we don't know).
-	actual, err := s.deps.Repo.FindByNameAndHostPort(req.ServiceName, req.Host, req.Port)
-	if err == nil && actual != nil {
-		rec = actual
-	}
-
 	s.catVersion.Add(1)
 
-	// ③ Collect response data.
-	allActive, err := s.deps.Repo.ListActive()
-	if err != nil {
-		allActive = []ServiceRecord{} // degraded: return empty catalog
-	}
-
+	allActive, _ := s.deps.Repo.ListActive()
 	instances := make([]ServiceInstance, 0, len(allActive))
 	allAPIs := make([]APIDef, 0)
 	for _, svc := range allActive {
@@ -187,20 +171,22 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		}
 	}
 
-	blocklist, err := s.deps.Repo.GetBlocklist()
-	if err != nil {
-		blocklist = []BlocklistEntry{} // degraded
+	publicKeys, _ := s.deps.Repo.ListPublicKeys()
+
+	blocklist, _ := s.deps.Repo.GetBlocklist()
+	if blocklist == nil {
+		blocklist = []BlocklistEntry{}
 	}
 
 	return &RegisterResponse{
-		ServiceID:     rec.ID,
-		ClusterSecret: s.ClusterSecretB64(),
-		Instances:     instances,
-		APIs:          allAPIs,
-		Blocklist:     blocklist,
-		BlVersion:     s.blVersion.Load(),
-		CatVersion:    s.catVersion.Load(),
-		SyncInterval:  30,
+		ServiceID:    rec.ID,
+		Instances:    instances,
+		PublicKeys:   publicKeys,
+		APIs:         allAPIs,
+		Blocklist:    blocklist,
+		BlVersion:    s.blVersion.Load(),
+		CatVersion:   s.catVersion.Load(),
+		SyncInterval: 30,
 	}, nil
 }
 
@@ -243,6 +229,9 @@ func (s *Service) Sync(ctx context.Context, blVersion, catVersion int64) (*SyncR
 					NodeHost: svc.NodeHost,
 				})
 			}
+		}
+		if pks, err := s.deps.Repo.ListPublicKeys(); err == nil {
+			resp.PublicKeys = pks
 		}
 	}
 
@@ -526,27 +515,45 @@ func containsReserved(s string) bool {
 // Bridge: Ticket → ActionContext (for Aegis integration)
 // ============================================================================
 
-// VerifyTicketAndGetSpace validates a service ticket and returns the caller's
-// service name (which doubles as the space ID in Aegis bridging). Returns an
-// error if the ticket is invalid, expired, or the service is blocked.
+// VerifyTicketAndGetSpace validates a service ticket using Ed25519 and the
+// caller's public key from the repository. Returns the caller's service name.
 func (s *Service) VerifyTicketAndGetSpace(ticketStr string) (serviceName string, err error) {
-	claims, err := VerifyTicket(ticketStr, s.signingKey())
-	if err != nil {
-		return "", fmt.Errorf("verify ticket: %w", err)
+	// Quick decode to get caller name before full verification.
+	claims, err := VerifyTicket(ticketStr, "") // won't pass; we just need caller name
+	// Full verification with public key lookup.
+	allKeys, keyErr := s.deps.Repo.ListPublicKeys()
+	if keyErr != nil {
+		return "", fmt.Errorf("verify ticket: lookup public keys: %w", keyErr)
 	}
+	// Decode again properly
+	ticketDecoded, decodeErr := base64.StdEncoding.DecodeString(ticketStr)
+	if decodeErr != nil {
+		return "", fmt.Errorf("verify ticket: %w", ErrTicketInvalid)
+	}
+	parts := strings.SplitN(string(ticketDecoded), ":", 5)
+	if len(parts) < 1 {
+		return "", fmt.Errorf("verify ticket: %w", ErrTicketInvalid)
+	}
+	callerName := parts[0]
 
-	// Check the caller service exists and is active.
-	instances, err := s.deps.Repo.FindByName(claims.CallerService)
-	if err != nil || len(instances) == 0 {
+	pubKey, ok := allKeys[callerName]
+	if !ok {
 		return "", ErrServiceNotFound
 	}
+
+	claims, verifyErr := VerifyTicket(ticketStr, pubKey)
+	if verifyErr != nil {
+		return "", fmt.Errorf("verify ticket: %w", verifyErr)
+	}
+
+	instances, _ := s.deps.Repo.FindByName(callerName)
 	for _, inst := range instances {
 		if inst.Status == "blocked" {
 			return "", ErrServiceBlocked
 		}
 	}
-
-	return claims.CallerService, nil
+	_ = claims
+	return callerName, nil
 }
 
 // LookupServiceByName returns the first active instance of a named service.

@@ -197,6 +197,11 @@ func AllMigrations() []Migration {
 			Name:    "add_certificates",
 			UpSQL:   migration036,
 		},
+		{
+			Version: "037",
+			Name:    "serviceauth_v2_keys",
+			UpSQL:   migration037,
+		},
 	}
 }
 
@@ -1130,4 +1135,10 @@ CREATE TABLE IF NOT EXISTS certificates (
 );
 CREATE INDEX IF NOT EXISTS idx_certificates_domains ON certificates(domains);
 CREATE INDEX IF NOT EXISTS idx_certificates_not_after ON certificates(not_after);
+`
+
+// migration037 adds public_key + unique name constraint for ServiceAuth v2.
+const migration037 = `
+ALTER TABLE svc_auth_services ADD COLUMN public_key TEXT NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_svc_auth_name_unique ON svc_auth_services(name);
 `

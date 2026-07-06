@@ -2,8 +2,10 @@ package serviceauth
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 type contextKey string
@@ -11,14 +13,8 @@ type contextKey string
 const ctxKeyCaller contextKey = "serviceauth-caller"
 
 // Guard returns HTTP middleware that verifies every request carries a valid
-// cluster ticket. Verification is local — zero network calls.
-//
-//	http.HandleFunc("POST /api/v1/projects", client.Guard("createProject", projectHandler))
-//
-// The apiName must match the APIDef.Name registered by this service. The Guard
-// verifies that the ticket was issued FOR this service AND for this specific
-// API, preventing cross-target ticket reuse. Pass "" to skip the API check
-// (backward compatibility, not recommended).
+// service ticket signed with the caller's Ed25519 private key. Verification is
+// local — zero network calls.
 func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ticket := r.Header.Get("X-Service-Ticket")
@@ -27,11 +23,23 @@ func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
 			return
 		}
 
+		// Extract caller name from ticket to look up public key.
+		callerName := callerNameFromTicket(ticket)
+		if callerName == "" {
+			writeGuardError(w, 403, "malformed ticket")
+			return
+		}
+
 		c.mu.RLock()
-		secret := c.clusterSecret
+		pubKey := c.publicKeys[callerName]
 		c.mu.RUnlock()
 
-		claims, err := VerifyTicket(ticket, secret)
+		if pubKey == "" {
+			writeGuardError(w, 403, "unknown caller: "+callerName)
+			return
+		}
+
+		claims, err := VerifyTicket(ticket, pubKey)
 		if err != nil {
 			writeGuardError(w, 403, "invalid ticket")
 			return
@@ -55,8 +63,6 @@ func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
 			return
 		}
 
-		// Note: X-Caller-Host is informational only — the true caller identity
-		// is claims.CallerService, which was verified by HMAC.
 		caller := CallerInfo{
 			ServiceName: claims.CallerService,
 			CallerHost:  r.Header.Get("X-Caller-Host"),
@@ -74,10 +80,20 @@ func CallerFromContext(ctx context.Context) CallerInfo {
 	return CallerInfo{}
 }
 
+// callerNameFromTicket extracts the caller service name from a ticket without verification.
+func callerNameFromTicket(ticketStr string) string {
+	decoded, err := base64.StdEncoding.DecodeString(ticketStr)
+	if err != nil {
+		return ""
+	}
+	parts := strings.SplitN(string(decoded), ":", 5)
+	if len(parts) < 1 {
+		return ""
+	}
+	return parts[0]
+}
+
 // isBlocked checks whether a service+API combination is blocked.
-// Returns the reason string if blocked, or "" if allowed.
-// Rules: service-level block (api_name="*") blocks all APIs; per-API block
-// only blocks that specific API for that service.
 func (c *Client) isBlocked(callerName, apiName string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
