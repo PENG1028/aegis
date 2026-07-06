@@ -16,7 +16,7 @@ import (
 	"aegis/internal/edgemux"
 	"aegis/internal/distnode"
 	"aegis/internal/httpapi/handlers"
-	"aegis/internal/acme"
+	"aegis/internal/infra"
 	"aegis/internal/certstore"
 	"aegis/internal/egress"
 	"aegis/internal/endpoint"
@@ -222,7 +222,7 @@ func main() {
 	certStoreSvc := certstore.NewService(certRepo, certDir)
 
 	// ── ACME Manager (v1.9C) ──
-	acmeMgr := acme.NewManager(certStoreSvc, cfg.Proxy.Email, cfg.Runtime.DataDir+"/acme", "")
+	acmeMgr := infra.NewACMEManager(certStoreSvc, cfg.Proxy.Email, cfg.Runtime.DataDir+"/acme", "")
 
 	// --- v1.8L: Topology Planner (dimension 2) + Workflow orchestrator ---
 	topoPlanner := topology.NewPlanner(nil, topology.Dependencies{
