@@ -15,16 +15,17 @@ import "time"
 // ============================================================================
 
 // ServiceRecord represents a registered service instance.
-// Name + Host + Port form the natural key — same service on different hosts
-// or ports are distinct instances.
+// Name is the unique logical identity — upsert by name, not by name+host+port.
+// Host/Port/NodeHost are locators that change on restart/migration.
 type ServiceRecord struct {
 	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Host      string    `json:"host"`
-	Port      int       `json:"port"`
-	NodeHost  string    `json:"node_host"` // os.Hostname() of the machine
+	Name      string    `json:"name"`      // unique logical identity (immutable)
+	Host      string    `json:"host"`      // current IP (locator, may change)
+	Port      int       `json:"port"`      // current port (locator, may change)
+	NodeHost  string    `json:"node_host"` // os.Hostname()
 	APIsJSON  string    `json:"apis_json"` // JSON array of APIDef
-	Status    string    `json:"status"`    // "active" | "blocked"
+	PublicKey string    `json:"public_key"` // Ed25519 public key (base64)
+	Status    string    `json:"status"`    // "active" | "blocked" | "inactive"
 	LastSeen  time.Time `json:"last_seen"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -73,18 +74,19 @@ type RegisterRequest struct {
 	Port        int      `json:"port"`
 	NodeHost    string   `json:"node_host"`
 	APIs        []APIDef `json:"apis"`
+	PublicKey   string   `json:"public_key"` // Ed25519 public key (base64)
 }
 
 // RegisterResponse is returned after successful registration.
 type RegisterResponse struct {
 	ServiceID     string            `json:"service_id"`
-	ClusterSecret string            `json:"cluster_secret"` // base64-encoded
 	Instances     []ServiceInstance `json:"instances"`      // all known instances
+	PublicKeys    map[string]string `json:"public_keys"`    // name → public_key
 	APIs          []APIDef          `json:"apis"`           // APIs of all services
 	Blocklist     []BlocklistEntry  `json:"blocklist"`
 	BlVersion     int64             `json:"bl_version"`
 	CatVersion    int64             `json:"cat_version"`
-	SyncInterval  int              `json:"sync_interval"` // seconds
+	SyncInterval  int               `json:"sync_interval"` // seconds
 }
 
 // ServiceInstance is a lightweight view of a service endpoint.
@@ -95,13 +97,18 @@ type ServiceInstance struct {
 	NodeHost string `json:"node_host"`
 }
 
+// KeyPair is an Ed25519 key pair for service identity.
+type KeyPair struct {
+	PublicKey  string `json:"public_key"`  // base64
+	PrivateKey string `json:"private_key"` // base64; only returned once
+}
+
 // SyncResponse is returned by the sync endpoint.
-// Uses version-based change detection — when nothing changed the response
-// is nearly empty.
 type SyncResponse struct {
 	Blocklist    []BlocklistEntry   `json:"blocklist,omitempty"`
 	BlVersion    int64              `json:"bl_version"`
 	NewInstances []ServiceInstance  `json:"new_instances,omitempty"`
+	PublicKeys   map[string]string  `json:"public_keys,omitempty"`   // name → public_key
 	RemovedIDs   []string           `json:"removed_ids,omitempty"`
 	CatVersion   int64              `json:"cat_version"`
 	NotModified  bool               `json:"not_modified"`
@@ -153,4 +160,13 @@ type TicketClaims struct {
 	TargetService string `json:"target"`
 	TargetAPI     string `json:"api"`
 	ExpiresAt     int64  `json:"exp"`
+}
+
+// GenerateKeyPair creates a new Ed25519 key pair, returning base64-encoded strings.
+func GenerateKeyPair() (pubKey, privKey string, err error) {
+	pub, priv, err := ed25519GenerateKey()
+	if err != nil {
+		return "", "", err
+	}
+	return pub, priv, nil
 }

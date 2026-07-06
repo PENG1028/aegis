@@ -24,17 +24,16 @@ func NewRepository(db *sql.DB) *Repository {
 // Service records
 // ============================================================================
 
-// UpsertService inserts a new service instance or refreshes last_seen for an
-// existing one. A service is identified by (name, host, port) — different
-// host/port with the same name is a separate instance (multi-node).
+// UpsertService inserts or updates a service by its unique name.
+// Host/Port/NodeHost are locators that change on restart/migration.
 func (r *Repository) UpsertService(s *ServiceRecord) error {
 	result, err := r.DB.Exec(
 		`UPDATE svc_auth_services
-		 SET node_host=?, apis_json=?, status=?, last_seen=?, updated_at=?
-		 WHERE name=? AND host=? AND port=?`,
-		s.NodeHost, s.APIsJSON, s.Status,
+		 SET host=?, port=?, node_host=?, apis_json=?, public_key=?, status=?, last_seen=?, updated_at=?
+		 WHERE name=?`,
+		s.Host, s.Port, s.NodeHost, s.APIsJSON, s.PublicKey, s.Status,
 		s.LastSeen.Format(time.RFC3339), s.UpdatedAt.Format(time.RFC3339),
-		s.Name, s.Host, s.Port,
+		s.Name,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert service: update: %w", err)
@@ -44,27 +43,17 @@ func (r *Repository) UpsertService(s *ServiceRecord) error {
 		return nil
 	}
 
-	// New instance.
+	// New service.
 	_, err = r.DB.Exec(
-		`INSERT INTO svc_auth_services (id, name, host, port, node_host, apis_json, status, last_seen, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.Host, s.Port, s.NodeHost, s.APIsJSON, s.Status,
-		s.LastSeen.Format(time.RFC3339),
-		s.CreatedAt.Format(time.RFC3339),
-		s.UpdatedAt.Format(time.RFC3339),
+		`INSERT INTO svc_auth_services (id, name, host, port, node_host, apis_json, public_key, status, last_seen, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.Host, s.Port, s.NodeHost, s.APIsJSON, s.PublicKey, s.Status,
+		s.LastSeen.Format(time.RFC3339), s.CreatedAt.Format(time.RFC3339), s.UpdatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert service: insert: %w", err)
 	}
 	return nil
-}
-
-// FindByNameAndHostPort returns the unique service record matching name+host+port, or nil.
-func (r *Repository) FindByNameAndHostPort(name, host string, port int) (*ServiceRecord, error) {
-	row := r.DB.QueryRow(
-		`SELECT id, name, host, port, node_host, apis_json, status, last_seen, created_at, updated_at
-		 FROM svc_auth_services WHERE name=? AND host=? AND port=?`, name, host, port)
-	return scanService(row)
 }
 
 // FindByName returns all instances registered under the given service name.
@@ -134,6 +123,38 @@ func (r *Repository) UpdateLastSeen(id string, t time.Time) error {
 func (r *Repository) DeleteService(id string) error {
 	_, err := r.DB.Exec(`DELETE FROM svc_auth_services WHERE id=?`, id)
 	return err
+}
+
+// DeleteStale removes services that haven't been seen since the given time.
+func (r *Repository) DeleteStale(before time.Time) (int, error) {
+	result, err := r.DB.Exec(
+		`DELETE FROM svc_auth_services WHERE last_seen < ?`,
+		before.Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}
+
+// ListPublicKeys returns a map of service name → Ed25519 public key for all active services.
+func (r *Repository) ListPublicKeys() (map[string]string, error) {
+	rows, err := r.DB.Query(
+		`SELECT name, public_key FROM svc_auth_services WHERE status='active' AND public_key != ''`)
+	if err != nil {
+		return nil, fmt.Errorf("list public keys: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]string)
+	for rows.Next() {
+		var name, key string
+		if err := rows.Scan(&name, &key); err != nil {
+			return nil, err
+		}
+		out[name] = key
+	}
+	return out, rows.Err()
 }
 
 // ============================================================================
@@ -283,7 +304,7 @@ func scanService(row *sql.Row) (*ServiceRecord, error) {
 	var s ServiceRecord
 	var lastSeen, createdAt, updatedAt string
 	err := row.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.NodeHost, &s.APIsJSON,
-		&s.Status, &lastSeen, &createdAt, &updatedAt)
+		&s.PublicKey, &s.Status, &lastSeen, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -302,7 +323,7 @@ func scanServices(rows *sql.Rows) ([]ServiceRecord, error) {
 		var s ServiceRecord
 		var lastSeen, createdAt, updatedAt string
 		if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.NodeHost, &s.APIsJSON,
-			&s.Status, &lastSeen, &createdAt, &updatedAt); err != nil {
+			&s.PublicKey, &s.Status, &lastSeen, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan service: %w", err)
 		}
 		s.LastSeen, _ = time.Parse(time.RFC3339, lastSeen)

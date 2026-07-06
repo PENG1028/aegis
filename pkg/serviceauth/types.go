@@ -19,13 +19,14 @@ type RegisterRequest struct {
 	Port        int      `json:"port"`
 	NodeHost    string   `json:"node_host"`
 	APIs        []APIDef `json:"apis"`
+	PublicKey   string   `json:"public_key"` // Ed25519 public key (base64)
 }
 
 // RegisterResponse is returned after successful registration.
 type RegisterResponse struct {
 	ServiceID     string            `json:"service_id"`
-	ClusterSecret string            `json:"cluster_secret"`
 	Instances     []ServiceInstance `json:"instances"`
+	PublicKeys    map[string]string `json:"public_keys"` // name → public_key
 	APIs          []APIDef          `json:"apis"`
 	Blocklist     []BlocklistEntry  `json:"blocklist"`
 	BlVersion     int64             `json:"bl_version"`
@@ -55,6 +56,7 @@ type SyncResponse struct {
 	Blocklist    []BlocklistEntry  `json:"blocklist,omitempty"`
 	BlVersion    int64             `json:"bl_version"`
 	NewInstances []ServiceInstance `json:"new_instances,omitempty"`
+	PublicKeys   map[string]string `json:"public_keys,omitempty"` // name → public_key
 	RemovedIDs   []string          `json:"removed_ids,omitempty"`
 	CatVersion   int64             `json:"cat_version"`
 	NotModified  bool              `json:"not_modified"`

@@ -1,19 +1,26 @@
 package serviceauth
 
 import (
-	"crypto/rand"
 	"testing"
 	"time"
 )
 
+func genKeyPair(t *testing.T) (pub, priv string) {
+	t.Helper()
+	pub, priv, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+	return pub, priv
+}
+
 func TestSignAndVerify(t *testing.T) {
-	key := make([]byte, 32)
-	rand.Read(key)
+	pub, priv := genKeyPair(t)
 
 	claims := NewTicket("svc-a", "svc-b", "createProject")
-	ticket := SignTicket(claims, key)
+	ticket := SignTicket(claims, priv)
 
-	verified, err := VerifyTicket(ticket, key)
+	verified, err := VerifyTicket(ticket, pub)
 	if err != nil {
 		t.Fatalf("VerifyTicket failed: %v", err)
 	}
@@ -29,57 +36,50 @@ func TestSignAndVerify(t *testing.T) {
 }
 
 func TestVerifyWrongKey(t *testing.T) {
-	key1 := make([]byte, 32)
-	key2 := make([]byte, 32)
-	rand.Read(key1)
-	rand.Read(key2)
+	_, priv1 := genKeyPair(t)
+	pub2, _ := genKeyPair(t)
 
 	claims := NewTicket("a", "b", "c")
-	ticket := SignTicket(claims, key1)
+	ticket := SignTicket(claims, priv1)
 
-	_, err := VerifyTicket(ticket, key2)
+	_, err := VerifyTicket(ticket, pub2)
 	if err == nil {
 		t.Fatal("expected error with wrong key, got nil")
 	}
 }
 
 func TestVerifyExpired(t *testing.T) {
-	key := make([]byte, 32)
-	rand.Read(key)
+	pub, priv := genKeyPair(t)
 
 	claims := TicketClaims{
 		CallerService: "a",
 		TargetService: "b",
 		TargetAPI:     "c",
-		ExpiresAt:     time.Now().Add(-1 * time.Hour).Unix(), // expired
+		ExpiresAt:     time.Now().Add(-1 * time.Hour).Unix(),
 	}
-	ticket := SignTicket(claims, key)
+	ticket := SignTicket(claims, priv)
 
-	_, err := VerifyTicket(ticket, key)
+	_, err := VerifyTicket(ticket, pub)
 	if err == nil {
 		t.Fatal("expected error for expired ticket, got nil")
 	}
 }
 
 func TestVerifyTampered(t *testing.T) {
-	key := make([]byte, 32)
-	rand.Read(key)
+	pub, priv := genKeyPair(t)
 
 	claims := NewTicket("a", "b", "c")
-	ticket := SignTicket(claims, key)
+	ticket := SignTicket(claims, priv)
 
-	// Tamper by appending garbage.
 	tampered := ticket + "garbage"
-	_, err := VerifyTicket(tampered, key)
+	_, err := VerifyTicket(tampered, pub)
 	if err == nil {
 		t.Fatal("expected error for tampered ticket, got nil")
 	}
 }
 
 func TestSignTicketRoundTrip(t *testing.T) {
-	// Test with various service names and API names.
-	key := make([]byte, 32)
-	rand.Read(key)
+	pub, priv := genKeyPair(t)
 
 	tests := []struct {
 		caller string
@@ -94,8 +94,8 @@ func TestSignTicketRoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		claims := NewTicket(tt.caller, tt.target, tt.api)
-		ticket := SignTicket(claims, key)
-		verified, err := VerifyTicket(ticket, key)
+		ticket := SignTicket(claims, priv)
+		verified, err := VerifyTicket(ticket, pub)
 		if err != nil {
 			t.Errorf("round-trip %+v: %v", tt, err)
 			continue

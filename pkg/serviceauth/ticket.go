@@ -1,10 +1,9 @@
 package serviceauth
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -31,27 +30,34 @@ func NewTicket(callerService, targetService, targetAPI string) TicketClaims {
 	}
 }
 
-// SignTicket produces a self-contained ticket string.
-// Algorithm: base64(caller:target:api:expiry:hex_hmac_sha256)
-func SignTicket(claims TicketClaims, key []byte) string {
-	payload := fmt.Sprintf("%s:%s:%s:%d",
-		claims.CallerService,
-		claims.TargetService,
-		claims.TargetAPI,
-		claims.ExpiresAt,
-	)
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(payload))
-	sig := hex.EncodeToString(mac.Sum(nil))
+// GenerateKeyPair creates a new Ed25519 key pair (base64-encoded).
+func GenerateKeyPair() (pubKey, privKey string, err error) {
+	pub, priv, genErr := ed25519.GenerateKey(rand.Reader)
+	if genErr != nil {
+		return "", "", fmt.Errorf("generate ed25519 key: %w", genErr)
+	}
+	return base64.StdEncoding.EncodeToString(pub),
+		base64.StdEncoding.EncodeToString(priv),
+		nil
+}
 
-	raw := payload + ":" + sig
+// SignTicket produces a self-contained Ed25519-signed ticket.
+// Format: base64(caller:target:api:expiry:base64_signature)
+func SignTicket(claims TicketClaims, privateKeyB64 string) string {
+	payload := fmt.Sprintf("%s:%s:%s:%d",
+		claims.CallerService, claims.TargetService, claims.TargetAPI, claims.ExpiresAt)
+
+	privBytes, _ := base64.StdEncoding.DecodeString(privateKeyB64)
+	sig := ed25519.Sign(privBytes, []byte(payload))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
+	raw := payload + ":" + sigB64
 	return base64.StdEncoding.EncodeToString([]byte(raw))
 }
 
-// VerifyTicket decodes and validates a ticket string.
-// Returns the claims on success, or an error describing why verification failed.
-// This is a pure local function — no network, no database.
-func VerifyTicket(ticketStr string, key []byte) (*TicketClaims, error) {
+// VerifyTicket decodes and validates an Ed25519-signed ticket locally.
+// publicKeyB64 is the caller's Ed25519 public key from the sync cache.
+func VerifyTicket(ticketStr, publicKeyB64 string) (*TicketClaims, error) {
 	decoded, err := base64.StdEncoding.DecodeString(ticketStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid ticket encoding")
@@ -67,18 +73,22 @@ func VerifyTicket(ticketStr string, key []byte) (*TicketClaims, error) {
 		TargetService: parts[1],
 		TargetAPI:     parts[2],
 	}
-
 	if _, err := fmt.Sscanf(parts[3], "%d", &claims.ExpiresAt); err != nil {
 		return nil, fmt.Errorf("unreadable expiry")
 	}
 
-	// Recompute signature.
 	payload := strings.Join(parts[:4], ":")
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(payload))
-	expectedSig := hex.EncodeToString(mac.Sum(nil))
+	sig, err := base64.StdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return nil, fmt.Errorf("invalid signature encoding")
+	}
 
-	if !hmac.Equal([]byte(parts[4]), []byte(expectedSig)) {
+	pubKey, err := base64.StdEncoding.DecodeString(publicKeyB64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid public key")
+	}
+
+	if !ed25519.Verify(pubKey, []byte(payload), sig) {
 		return nil, fmt.Errorf("signature mismatch")
 	}
 
