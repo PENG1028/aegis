@@ -1470,6 +1470,25 @@ export const adminApi = {
   getAuthCallLogs: (since?: string, limit?: number): Promise<any> =>
     get(`/api/admin/v1/service-auth/call-logs?since=${encodeURIComponent(since || new Date(Date.now() - 86400000).toISOString())}&limit=${limit || 100}`),
 
+  // ── Service Auth Groups + Policies (v1.9D) ──
+  listAuthGroups: (): Promise<{ groups: any[]; count: number }> =>
+    get('/api/admin/v1/service-auth/groups'),
+
+  upsertAuthGroup: (group: any): Promise<any> =>
+    post('/api/admin/v1/service-auth/groups', group),
+
+  deleteAuthGroup: (id: string): Promise<any> =>
+    del(`/api/admin/v1/service-auth/groups/${id}`),
+
+  listAuthPolicies: (): Promise<{ policies: any[]; count: number }> =>
+    get('/api/admin/v1/service-auth/policies'),
+
+  upsertAuthPolicy: (policy: any): Promise<any> =>
+    post('/api/admin/v1/service-auth/policies', policy),
+
+  deleteAuthPolicy: (id: string): Promise<any> =>
+    del(`/api/admin/v1/service-auth/policies/${id}`),
+
   // ── Egress Gateway (v1.9A-5) ──
   listEgressRules: (): Promise<{ rules: any[]; count: number }> =>
     get('/api/admin/v1/egress/rules'),
