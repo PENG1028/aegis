@@ -243,6 +243,7 @@ func haproxyCapabilities() []Capability {
 		CapHTTP1,
 		CapRawTCP,
 		// L7 operational
+		CapLoadCert,
 		CapHealthCheck,
 		CapHotReload,
 		CapValidateConfig,

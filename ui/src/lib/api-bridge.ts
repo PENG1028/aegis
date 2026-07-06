@@ -51,5 +51,10 @@ export {
   compositionApi,
   routeApi,
   distnodeApi,
+  certApi,
+  acmeApi,
+  infraApi,
 } from './real-api-client';
+export type { InfraItem } from './real-api-client';
+export type { CertificateItem } from './real-api-client';
 export type { RuntimeModeDef, RuntimeModeRole, RuntimeModeBinding, RuntimeAtom, AtomSlot, ProviderAtoms, Composition, CompDef } from './real-api-client';

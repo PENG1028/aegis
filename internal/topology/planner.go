@@ -3,6 +3,7 @@ package topology
 import (
 	"fmt"
 
+	"aegis/internal/certstore"
 	"aegis/internal/endpoint"
 	gatewaylink "aegis/internal/gateway"
 	"aegis/internal/provider"
@@ -37,6 +38,7 @@ type Dependencies struct {
 	GwLinkRepo       *gatewaylink.LinkRepository
 	SafetySvc        *safety.Service
 	MasterKey        *secrets.MasterKey
+	CertStore        *certstore.Service // v1.9C: resolve CertID → file paths
 }
 
 // ============================================================================
@@ -108,7 +110,7 @@ func (p *Planner) collectIntents() ([]RouteIntent, []string, error) {
 			continue
 		}
 
-		intents = append(intents, RouteIntent{
+		ri := RouteIntent{
 			Domain:      rt.Domain,
 			Port:        compDef.Port,
 			Transport:   compDef.Transport,
@@ -121,7 +123,16 @@ func (p *Planner) collectIntents() ([]RouteIntent, []string, error) {
 			MaintenanceMessage: rt.MaintenanceMessage,
 			gatewayLinkID:      rt.GatewayLinkID,
 			serviceID:          rt.ServiceID,
-		})
+			CertID:             certIDStr(rt.CertID),
+		}
+		// Resolve cert paths from certstore for custom certs
+		if rt.CertID != nil && *rt.CertID != "" && p.deps.CertStore != nil {
+			if cp, kp, err := p.deps.CertStore.GetPaths(*rt.CertID); err == nil {
+				ri.CertPath = cp
+				ri.KeyPath = kp
+			}
+		}
+		intents = append(intents, ri)
 	}
 
 	return intents, warnings, nil
@@ -334,4 +345,11 @@ func providerIDs(states []provider.ProviderState) []string {
 		ids[i] = s.ID
 	}
 	return ids
+}
+
+func certIDStr(certID *string) string {
+	if certID == nil {
+		return ""
+	}
+	return *certID
 }

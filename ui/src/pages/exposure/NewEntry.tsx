@@ -2,8 +2,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { runtimeModeApi, exposureApi, nodeApi } from '@/lib/api-bridge';
-import type { Composition } from '@/lib/api-bridge';
+import { runtimeModeApi, exposureApi, nodeApi, certApi } from '@/lib/api-bridge';
+import type { Composition, CertificateItem } from '@/lib/api-bridge';
 import { Btn, useToast } from '@/components/shared';
 import { cn } from '@/lib/utils';
 
@@ -28,11 +28,19 @@ export default function NewEntry() {
   const [targetHost, setTargetHost] = useState('127.0.0.1');
   const [targetPort, setTargetPort] = useState(3000);
   const [submitting, setSubmitting] = useState(false);
+  const [certMode, setCertMode] = useState<'auto' | 'manual'>('auto');
+  const [certId, setCertId] = useState('');
 
   const { data: rm } = useQuery({ queryKey: ['runtime-mode'], queryFn: () => runtimeModeApi.get(), refetchInterval: 60_000 });
   const { data: nd } = useQuery({ queryKey: ['nodes'], queryFn: () => nodeApi.list().catch(() => ({ nodes: [] })), refetchInterval: 120_000 });
+  const { data: certData } = useQuery({ queryKey: ['certificates'], queryFn: () => certApi.list(), refetchInterval: 60_000 });
 
   const compositions = rm?.current?.compositions || [];
+  const certs: CertificateItem[] = (certData as any)?.certificates || [];
+  // Auto-cert availability: provider with CapAutoCert + this is an HTTPS composition
+  const selectedComp = compositions.find((c: Composition) => c.name === comp);
+  const hasAutoCert = selectedComp?.status === 'available';
+
   const nodes: NodeInfo[] = ((nd as any)?.nodes || []).map((n: any) => ({
     id: n.id||n.node_id, name: n.name||n.node_id||n.id, privateIP: n.private_ip||'', publicIP: n.public_ip||'', networkID: n.network_id||'', region: n.region||'',
   }));
@@ -50,7 +58,7 @@ export default function NewEntry() {
     try {
       if (isHTTP) {
         const res = await fetch('/api/v1/actions/bind-http-domain', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
-          body: JSON.stringify({ domain, target_host: targetHost, target_port: targetPort }) });
+          body: JSON.stringify({ domain, target_host: targetHost, target_port: targetPort, cert_id: certMode === 'manual' ? certId : '' }) });
         if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error((e as any).error?.message||`HTTP ${res.status}`); }
       } else {
         await exposureApi.create({ type: entryType(selected!), target_host: targetHost, target_port: targetPort });
@@ -137,6 +145,76 @@ export default function NewEntry() {
             <label className="flex items-center gap-1.5 mt-1.5 text-[10px] text-a-muted cursor-pointer">
               <input type="checkbox" checked={internalOnly} onChange={e => setInternalOnly(e.target.checked)} className="w-3 h-3" />仅内部使用（集群内服务间调用）
             </label>
+          </div>
+        )}
+
+        {/* TLS Certificate selection */}
+        {isHTTP && selectedComp?.name?.includes('HTTPS') && (
+          <div>
+            <label className="text-[10px] text-a-muted block mb-1.5 font-medium">TLS 证书</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setCertMode('auto'); setCertId(''); }}
+                className={cn('px-3 py-1.5 rounded-a-sm text-xs border transition-colors cursor-pointer',
+                  certMode === 'auto' ? 'bg-a-accent/10 border-a-accent/50 text-a-accent' : 'bg-a-bg border-a-border/30 text-a-muted hover:border-a-border/50',
+                  !hasAutoCert && 'opacity-50 cursor-not-allowed')}
+                disabled={!hasAutoCert}
+                title={hasAutoCert ? 'Provider 自动申请 Let\'s Encrypt 证书' : '当前 Provider 不支持自动签发，需手动上传或选择已有证书'}
+              >
+                {hasAutoCert ? '自动 (Let\'s Encrypt)' : '自动 — 不可用'}
+              </button>
+              <button
+                onClick={() => setCertMode('manual')}
+                className={cn('px-3 py-1.5 rounded-a-sm text-xs border transition-colors cursor-pointer',
+                  certMode === 'manual' ? 'bg-a-accent/10 border-a-accent/50 text-a-accent' : 'bg-a-bg border-a-border/30 text-a-muted hover:border-a-border/50')}
+              >
+                手动指定
+              </button>
+            </div>
+            {certMode === 'manual' && (
+              <>
+                <select value={certId} onChange={e => setCertId(e.target.value)}
+                  className="w-full mt-2 px-3 py-2 rounded-a-sm border border-a-border/50 bg-a-bg text-xs outline-none focus:border-a-accent/50">
+                  <option value="">选择证书...</option>
+                  {certs.map((c: CertificateItem) => {
+                    let domains = c.domains;
+                    try { domains = JSON.parse(c.domains).join(', '); } catch {}
+                    const expDate = new Date(c.not_after).toLocaleDateString('zh-CN');
+                    return (
+                      <option key={c.id} value={c.id}>{domains} · 到期 {expDate}</option>
+                    );
+                  })}
+                </select>
+                {/* Selected cert preview */}
+                {certId && (() => {
+                  const selected = certs.find(c => c.id === certId);
+                  if (!selected) return null;
+                  let domains = selected.domains; try { domains = JSON.parse(selected.domains).join(', '); } catch {}
+                  const es = (notAfter: string) => {
+                    const d = new Date(notAfter); const days = Math.floor((d.getTime() - Date.now()) / 86400000);
+                    if (days < 0) return { label: '已过期', cls: 'text-[#ff5c72]' };
+                    if (days <= 30) return { label: `${days} 天后过期`, cls: 'text-[#e8b830]' };
+                    return { label: '有效', cls: 'text-[#4cd964]' };
+                  };
+                  const s = es(selected.not_after);
+                  return (
+                    <div className="flex items-center gap-2 mt-1.5 text-[10px] bg-a-border/5 border border-a-border/20 rounded-a-sm px-2 py-1">
+                      <span className="text-a-fg font-mono">{domains}</span>
+                      <span className="text-a-border">·</span>
+                      <span className={s.cls}>{s.label}</span>
+                      <span className="text-a-border">·</span>
+                      <span className="text-a-muted">{selected.issuer.split(',')[0]?.replace('CN=', '') || selected.issuer}</span>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+            {certMode === 'manual' && certs.length === 0 && (
+              <div className="mt-1.5 text-[10px] text-a-muted bg-a-border/5 border border-a-border/20 rounded-a-sm px-2 py-1.5">
+                暂无可用证书 ·
+                <a href="/access/certificates" className="text-a-accent hover:underline ml-0.5">前往证书管理 →</a>
+              </div>
+            )}
           </div>
         )}
 

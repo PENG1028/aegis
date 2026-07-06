@@ -57,6 +57,7 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   access: [
     { path: '/access', label: 'Scope' },
     { path: '/access/credentials', label: '凭据' },
+    { path: '/access/certificates', label: 'TLS 证书' },
     { path: '/access/tokens', label: '加入令牌' },
     { path: '/access/admin', label: '管理员' },
   ],

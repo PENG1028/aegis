@@ -47,6 +47,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		TransparentMgr:  svcs.TransparentMgr,
 		ProvReg:         svcs.ProvReg, // v1.8L-19 — provider registry for install/uninstall/config handlers
 		EgressSvc:       svcs.EgressSvc,     // v1.9A-5 — egress rule engine
+		CertStore:       svcs.CertStore,     // v1.9C — TLS certificate store
+		ACMEMgr:         svcs.ACMEMgr,       // v1.9C — ACME auto-cert manager
 		Version:         svcs.Version,
 		BuildTime:       svcs.BuildTime,
 	}
@@ -357,13 +359,26 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("GET /api/admin/v1/service-auth/call-logs", h.AdminServiceAuthCallLogs)
 	}
 
-		// v1.9A-5 Egress Gateway — allow/block rules
+		// v1.9A-5 Egress Gateway — allow/block rules + global toggle
 	if svcs.EgressSvc != nil {
 		mux.HandleFunc("GET /api/admin/v1/egress/rules", h.AdminListEgressRules)
 		mux.HandleFunc("POST /api/admin/v1/egress/rules", h.AdminCreateEgressRule)
 		mux.HandleFunc("PUT /api/admin/v1/egress/rules/{id}", h.AdminUpdateEgressRule)
 		mux.HandleFunc("DELETE /api/admin/v1/egress/rules/{id}", h.AdminDeleteEgressRule)
 		mux.HandleFunc("GET /api/admin/v1/egress/check", h.AdminEgressCheck)
+		mux.HandleFunc("POST /api/admin/v1/egress/toggle", h.AdminEgressToggle)
+		mux.HandleFunc("GET /api/admin/v1/egress/status", h.AdminEgressStatus)
+	}
+
+		// v1.9C Certificate store — user-uploaded TLS certificates
+	if svcs.CertStore != nil {
+		mux.HandleFunc("GET /api/admin/v1/certificates", h.AdminListCertificates)
+		mux.HandleFunc("POST /api/admin/v1/certificates", h.AdminUploadCertificate)
+		mux.HandleFunc("DELETE /api/admin/v1/certificates/{id}", h.AdminDeleteCertificate)
+		// ACME endpoints
+		mux.HandleFunc("POST /api/admin/v1/acme/obtain", h.AdminACMEObtain)
+		mux.HandleFunc("GET /api/admin/v1/acme/status", h.AdminACMEStatus)
+		mux.HandleFunc("GET /api/admin/v1/infra/status", h.AdminInfraStatus)
 	}
 
 	// v1.8J Embedded UI — catch-all for SPA routes not matching any API path.

@@ -18,6 +18,7 @@ type BindHTTPDomainInput struct {
 	TargetHost    string `json:"target_host"`
 	TargetPort    int    `json:"target_port"`
 	GatewayLinkID string `json:"gateway_link_id,omitempty"`
+	CertID        string `json:"cert_id,omitempty"` // certstore ID for custom TLS cert
 }
 
 // BindHTTPDomain binds an HTTP domain to a backend target.
@@ -104,6 +105,7 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 		Composition:        string(compDef.Key),
 		TLSEnabled:         compDef.TLSMode != "none",
 		GatewayLinkID:      input.GatewayLinkID,
+		CertID:             certIDPtr(input.CertID),
 		Status:             "active",
 		SpaceID:            spaceID,
 		OwnerType:          ownerType,
@@ -168,4 +170,11 @@ func createServiceDirect(ctx context.Context, svcSvc *service.AppService, s *ser
 // createRouteDirect creates a route directly via repo (bypasses duplicate path check with ownership).
 func createRouteDirect(ctx context.Context, rtSvc *route.AppService, rt *route.Route) error {
 	return rtSvc.CreateRouteDirect(rt)
+}
+
+func certIDPtr(id string) *string {
+	if id == "" {
+		return nil
+	}
+	return &id
 }

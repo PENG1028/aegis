@@ -105,6 +105,13 @@ func (p *CaddyProvider) renderCaddyfile(plan Plan) []byte {
 		}
 
 		buf.WriteString(fmt.Sprintf("%s {\n", sanitizeCaddyValue(siteAddr)))
+		// Emit tls directive if any route in this domain has a custom cert
+		for _, rr := range routes {
+			if rr.CertPath != "" {
+				buf.WriteString(fmt.Sprintf("    tls %s %s\n", rr.CertPath, rr.KeyPath))
+				break
+			}
+		}
 		hasDomainFallback := false
 
 		for _, r := range routes {
@@ -149,6 +156,10 @@ func (p *CaddyProvider) renderCaddyfile(plan Plan) []byte {
 // renderSingleRoute renders a simple domain-only site block with a single reverse_proxy.
 func renderSingleRoute(buf *bytes.Buffer, route RouteSpec, siteAddr string) {
 	buf.WriteString(fmt.Sprintf("%s {\n", sanitizeCaddyValue(siteAddr)))
+	// Emit tls directive if custom cert is specified
+	if route.CertPath != "" {
+		buf.WriteString(fmt.Sprintf("    tls %s %s\n", route.CertPath, route.KeyPath))
+	}
 	buf.WriteString("    encode gzip\n")
 	writeReverseProxy(buf, sanitizeCaddyValue(route.Upstream.Target), route.ExtraHeaders, "    ")
 	buf.WriteString("}\n")
