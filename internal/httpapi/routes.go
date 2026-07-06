@@ -357,6 +357,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("POST /api/admin/v1/service-auth/blocklist/{id}/unblock", h.AdminUnblockServiceAuth)
 		mux.HandleFunc("GET /api/admin/v1/service-auth/topology", h.AdminServiceAuthTopology)
 		mux.HandleFunc("GET /api/admin/v1/service-auth/call-logs", h.AdminServiceAuthCallLogs)
+		mux.HandleFunc("POST /api/admin/v1/service-auth/services/{name}/rebind", h.AdminRebindService)
 	}
 
 		// v1.9A-5 Egress Gateway — allow/block rules + global toggle

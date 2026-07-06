@@ -260,11 +260,19 @@ func (c *Client) ServiceID() string {
 	return c.serviceID
 }
 
-// PublicKey returns this service's Ed25519 public key.
+// PublicKey returns this service's Ed25519 public key (base64).
 func (c *Client) PublicKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.publicKey
+}
+
+// PrivateKey returns this service's Ed25519 private key (base64).
+// Only used in tests. Never expose in production.
+func (c *Client) PrivateKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.privateKey
 }
 
 // ============================================================================
