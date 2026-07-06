@@ -25,7 +25,6 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   ],
   fabric: [
     { path: '/fabric', label: '能力矩阵' },
-    { path: '/fabric/providers', label: 'Provider 详情' },
     { path: '/fabric/egress', label: '出口网关' },
     { path: '/fabric/auth', label: '服务认证' },
     { path: '/fabric/callgraph', label: '调用拓扑' },
