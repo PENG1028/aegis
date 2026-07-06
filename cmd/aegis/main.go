@@ -337,6 +337,13 @@ func main() {
 		cfg.DNS.RefreshSec,
 	)
 	dnsMgmt.Resolver.SetAllowlistChecker(egressRuleChecker)
+	// Dnsmasq integration: write config to /etc/dnsmasq.d/ for independent DNS serving.
+	// Falls back to in-process UDP server if dnsmasq is not installed.
+	dnsMgmt.Dnsmasq = &dns.DnsmasqConfig{
+		ConfigPath: cfg.Runtime.DataDir + "/dnsmasq/aegis.conf",
+		Upstream:   cfg.DNS.Upstream,
+		ReloadCmd:  "systemctl reload dnsmasq",
+	}
 	if cfg.DNS.Enabled {
 		if err := dnsMgmt.Enable(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: dns resolver start failed: %v\n", err)

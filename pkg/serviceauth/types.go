@@ -27,6 +27,8 @@ type RegisterResponse struct {
 	ServiceID     string            `json:"service_id"`
 	Instances     []ServiceInstance `json:"instances"`
 	PublicKeys    map[string]string `json:"public_keys"` // name → public_key
+	Groups        []ServiceGroup    `json:"groups,omitempty"`
+	Policies      []Policy          `json:"policies,omitempty"`
 	APIs          []APIDef          `json:"apis"`
 	Blocklist     []BlocklistEntry  `json:"blocklist"`
 	BlVersion     int64             `json:"bl_version"`
@@ -51,12 +53,33 @@ type BlocklistEntry struct {
 	Version   int64  `json:"version"`
 }
 
+// ServiceGroup is a named collection of services.
+type ServiceGroup struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Members     []string `json:"members"`
+}
+
+// Policy is an access control rule.
+type Policy struct {
+	ID            string `json:"id"`
+	Subject       string `json:"subject"`
+	TargetService string `json:"target_service"`
+	Action        string `json:"action"`
+	Effect        string `json:"effect"`
+	Priority      int    `json:"priority"`
+	Enabled       bool   `json:"enabled"`
+}
+
 // SyncResponse is returned by the sync endpoint.
 type SyncResponse struct {
 	Blocklist    []BlocklistEntry  `json:"blocklist,omitempty"`
 	BlVersion    int64             `json:"bl_version"`
 	NewInstances []ServiceInstance `json:"new_instances,omitempty"`
 	PublicKeys   map[string]string `json:"public_keys,omitempty"` // name → public_key
+	Groups       []ServiceGroup    `json:"groups,omitempty"`
+	Policies     []Policy          `json:"policies,omitempty"`
 	RemovedIDs   []string          `json:"removed_ids,omitempty"`
 	CatVersion   int64             `json:"cat_version"`
 	NotModified  bool              `json:"not_modified"`

@@ -2,7 +2,6 @@ package dns
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -10,9 +9,10 @@ import (
 
 // Manager coordinates the DNS resolver, reachability checker, and server lifecycle.
 type Manager struct {
-	Resolver      *Resolver
-	Server        *Server
-	Reachability  *Reachability
+	Resolver     *Resolver
+	Server       *Server      // udp server (legacy fallback)
+	Reachability *Reachability
+	Dnsmasq      *DnsmasqConfig // dnsmasq integration (v1.9D)
 
 	cfgListen   string
 	cfgUpstream string
@@ -94,20 +94,36 @@ func (m *Manager) Enable() error {
 			case <-m.ctx.Done():
 				return
 			case <-ticker.C:
-				// Re-read current node
-				// (nodeRepo reachability checker already refreshes itself)
 				if err := m.Resolver.Refresh(); err != nil {
 					log.Printf("[dns] periodic refresh failed: %v", err)
+				}
+				// Re-render dnsmasq config on each refresh.
+				if m.Dnsmasq != nil && m.Dnsmasq.ConfigPath != "" {
+					if err := m.Dnsmasq.Render(m.Resolver.Table()); err != nil {
+						log.Printf("[dns] dnsmasq refresh: %v", err)
+					} else {
+						m.Dnsmasq.Reload()
+					}
 				}
 			}
 		}
 	}()
 
-	// 4. Start DNS server
+	// 4. Render dnsmasq config (if configured) — replaces in-process UDP server.
+	if m.Dnsmasq != nil && m.Dnsmasq.ConfigPath != "" {
+		entries := m.Resolver.Table()
+		if err := m.Dnsmasq.Render(entries); err != nil {
+			log.Printf("[dns] dnsmasq render: %v", err)
+		} else if err := m.Dnsmasq.Reload(); err != nil {
+			log.Printf("[dns] dnsmasq reload: %v (install: apt install dnsmasq)", err)
+		} else {
+			log.Printf("[dns] dnsmasq config written + reloaded: %s", m.Dnsmasq.ConfigPath)
+		}
+	}
+
+	// 5. Start legacy UDP server as fallback.
 	if err := m.Server.Start(); err != nil {
-		m.cancel()
-		m.wg.Wait()
-		return fmt.Errorf("start dns server: %w", err)
+		log.Printf("[dns] udp server start failed (non-fatal): %v", err)
 	}
 
 	m.active = true

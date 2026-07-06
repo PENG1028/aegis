@@ -362,3 +362,65 @@ func DefaultIDGen() string {
 	}
 	return "svc_" + hex.EncodeToString(b)
 }
+
+// ─── Groups ───
+
+func (r *Repository) ListGroups() ([]ServiceGroup, error) {
+	rows, err := r.DB.Query(`SELECT id, name, description, created_at, updated_at FROM svc_auth_groups ORDER BY name`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var groups []ServiceGroup
+	for rows.Next() {
+		var g ServiceGroup
+		var ca, ua string
+		rows.Scan(&g.ID, &g.Name, &g.Description, &ca, &ua)
+		g.CreatedAt, g.UpdatedAt = ca, ua
+		mRows, _ := r.DB.Query(`SELECT service_name FROM svc_auth_group_members WHERE group_id = ?`, g.ID)
+		if mRows != nil { defer mRows.Close(); for mRows.Next() { var m string; mRows.Scan(&m); g.Members = append(g.Members, m) } }
+		groups = append(groups, g)
+	}
+	return groups, nil
+}
+
+func (r *Repository) UpsertGroup(g *ServiceGroup) error {
+	r.DB.Exec(`INSERT OR REPLACE INTO svc_auth_groups (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		g.ID, g.Name, g.Description, g.CreatedAt, g.UpdatedAt)
+	r.DB.Exec(`DELETE FROM svc_auth_group_members WHERE group_id = ?`, g.ID)
+	for _, m := range g.Members {
+		r.DB.Exec(`INSERT INTO svc_auth_group_members (group_id, service_name) VALUES (?, ?)`, g.ID, m)
+	}
+	return nil
+}
+
+func (r *Repository) DeleteGroup(id string) error {
+	_, err := r.DB.Exec(`DELETE FROM svc_auth_groups WHERE id = ?`, id)
+	return err
+}
+
+// ─── Policies ───
+
+func (r *Repository) ListPolicies() ([]Policy, error) {
+	rows, err := r.DB.Query(`SELECT id, subject, target_service, action, effect, priority, enabled FROM svc_auth_policies WHERE enabled = 1 ORDER BY priority`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var out []Policy
+	for rows.Next() {
+		var p Policy; var en int
+		rows.Scan(&p.ID, &p.Subject, &p.TargetService, &p.Action, &p.Effect, &p.Priority, &en)
+		p.Enabled = en == 1; out = append(out, p)
+	}
+	return out, nil
+}
+
+func (r *Repository) UpsertPolicy(p *Policy) error {
+	en := 0; if p.Enabled { en = 1 }
+	_, err := r.DB.Exec(
+		`INSERT OR REPLACE INTO svc_auth_policies (id, subject, target_service, action, effect, priority, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Subject, p.TargetService, p.Action, p.Effect, p.Priority, en, time.Now().Format(time.RFC3339))
+	return err
+}
+
+func (r *Repository) DeletePolicy(id string) error {
+	_, err := r.DB.Exec(`DELETE FROM svc_auth_policies WHERE id = ?`, id)
+	return err
+}
