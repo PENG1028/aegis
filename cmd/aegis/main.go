@@ -300,7 +300,7 @@ func main() {
 	serviceAuthRepo := serviceauth.NewRepository(db)
 	serviceAuthSvc, err := serviceauth.NewService(serviceauth.Dependencies{
 		Repo:        serviceAuthRepo,
-		Secrets:     serviceauthaegis.NewSecretStoreAdapter(masterKey, "./data/sa_secret.enc", "./data/sa_secret.nonce"),
+		
 		NodeChecker: serviceauthaegis.NewNodeCheckerAdapter(nodeRepo),
 		LogWriter:   serviceauthaegis.NewLogWriterAdapter(logSvc),
 		IDGen:       func() string { return core.NewID("sa") },

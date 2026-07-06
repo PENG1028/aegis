@@ -40,7 +40,7 @@ func main() {
 	// ② Dependencies — all pure stdlib implementations.
 	svc, err := serviceauth.NewService(serviceauth.Dependencies{
 		Repo:        serviceauth.NewRepository(db),
-		Secrets:     newFileSecretStore("./cluster_secret.key"),
+		
 		NodeChecker: newCIDRChecker(parseCIDRs(*allowedCIDR)),
 		LogWriter:   newDBLogWriter(db),
 		IDGen:       serviceauth.DefaultIDGen,

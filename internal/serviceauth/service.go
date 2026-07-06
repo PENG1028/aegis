@@ -2,11 +2,8 @@ package serviceauth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -16,14 +13,6 @@ import (
 // All fields are interfaces or concrete types defined in this package so
 // the core has zero imports of Aegis (or any other project) packages.
 // ============================================================================
-
-// SecretStore persists the cluster-wide shared secret.
-type SecretStore interface {
-	// Load returns the stored secret, or an error if none exists yet.
-	Load() ([]byte, error)
-	// Save persists the secret. Called once on first startup.
-	Save(secret []byte) error
-}
 
 // NodeChecker decides whether an IP address belongs to the trusted cluster.
 type NodeChecker interface {
@@ -46,11 +35,10 @@ type LogRecorder interface {
 // Dependencies holds every external dependency of the Service.
 type Dependencies struct {
 	Repo        *Repository
-	Secrets     SecretStore
 	NodeChecker NodeChecker // may be nil — falls back to private-IP check
 	LogWriter   LogRecorder // may be nil — logs are silently dropped
 	IDGen       func() string
-	MasterKey   []byte // 32-byte key for ticket signing; if nil, cluster_secret is used
+	MasterKey   []byte // deprecated: Ed25519 keypairs replace cluster secret signing
 }
 
 // ============================================================================
@@ -63,13 +51,11 @@ type Dependencies struct {
 type Service struct {
 	deps Dependencies
 
-	clusterSecret []byte       // shared HMAC key, distributed to all services
-	blVersion     atomic.Int64 // monotonic blocklist version
-	catVersion    atomic.Int64 // monotonic catalog version
-	mu            sync.RWMutex // guards clusterSecret lazy-init
+	blVersion  atomic.Int64 // monotonic blocklist version
+	catVersion atomic.Int64 // monotonic catalog version
 }
 
-// NewService creates a Service, loading or generating the cluster secret.
+// NewService creates a Service. No shared secret — Ed25519 keypairs are per-service.
 func NewService(deps Dependencies) (*Service, error) {
 	if deps.Repo == nil {
 		return nil, fmt.Errorf("serviceauth: Repo is required")
@@ -77,44 +63,12 @@ func NewService(deps Dependencies) (*Service, error) {
 	if deps.IDGen == nil {
 		deps.IDGen = DefaultIDGen
 	}
-	if deps.Secrets == nil {
-		return nil, fmt.Errorf("serviceauth: Secrets is required")
-	}
 
 	svc := &Service{deps: deps}
-
-	// Load existing cluster secret or generate a new one.
-	secret, err := deps.Secrets.Load()
-	if err != nil || len(secret) == 0 {
-		secret = make([]byte, 32)
-		if _, err := rand.Read(secret); err != nil {
-			return nil, fmt.Errorf("generate cluster secret: %w", err)
-		}
-		if err := deps.Secrets.Save(secret); err != nil {
-			return nil, fmt.Errorf("save cluster secret: %w", err)
-		}
-	}
-	svc.clusterSecret = secret
-
-	// Restore version counters from DB.
 	if v, err := deps.Repo.GetBlocklistVersion(); err == nil {
 		svc.blVersion.Store(v)
 	}
-
 	return svc, nil
-}
-
-// ClusterSecret returns a base64 copy of the shared HMAC key.
-func (s *Service) ClusterSecretB64() string {
-	return base64.StdEncoding.EncodeToString(s.clusterSecret)
-}
-
-// signingKey returns the key used for ticket signatures.
-func (s *Service) signingKey() []byte {
-	if len(s.deps.MasterKey) >= 32 {
-		return s.deps.MasterKey
-	}
-	return s.clusterSecret
 }
 
 // ============================================================================
