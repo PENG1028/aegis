@@ -1,158 +1,250 @@
-# VPS 部署测试计划
+# ServiceAuth E2E 测试方案
 
-## 前置条件
+## VPS 登录
 
-```bash
-# Server A (<SERVER_A_IP>): 面板 + 网关
-ssh ubuntu@<SERVER_A_IP>
-
-# Server B (<SERVER_B_IP>): 远程节点
-ssh ubuntu@<SERVER_B_IP>
-
-# 端口规则: 只有 80 TCP + 443 TCP/UDP 对外开放
-# 跨机测试前必须验证连通性
+```
+Server A (面板+网关): ssh ubuntu@<SERVER_A_IP>
+Server B (后端服务):   ssh ubuntu@<SERVER_B_IP>
+端口: 仅 80 TCP + 443 TCP/UDP 对外开放
+Aegis API: 127.0.0.1:7380
 ```
 
-## Phase 1: ServiceAuth 基础功能
+## 测试边界
 
-### 1.1 部署新版本
+**测什么：** 多服务注册 → 身份稳定 → Ed25519 验票 → 服务组隔离 → 重启恢复 → 跨节点调用
+**不测什么：** DNS dnsmasq（需额外配置）、透明代理 iptables（需 root）、用户 JWT 签发（业务层）
+
+## 场景：4 个真实服务模拟一套开发基础设施
+
+参考 aetherion (OAuth2 认证服务) 和 depotkit (Docker 基础设施管理) 的实际服务结构：
+
+```
+服务拓扑:
+  ┌─────────────┐     ticket      ┌──────────────┐
+  │ depotly      │ ─────────────→ │ aegis         │
+  │ (基础设施)    │                │ (面板+认证中心) │
+  │ :8081        │                │ :7380          │
+  └──────┬───────┘                └──────┬─────────┘
+         │ ticket                        │ ticket
+         ↓                               ↓
+  ┌─────────────┐                 ┌──────────────┐
+  │ aetherion    │                 │ storage-svc   │
+  │ (用户认证)    │                 │ (存储代理)     │
+  │ :8082        │                 │ :8083         │
+  └─────────────┘                 └──────────────┘
+         │ ticket                        │ ticket
+         └───────────┬───────────────────┘
+                     ↓
+              ┌──────────────┐
+              │ monitor-svc   │  ← 被所有服务调，收集健康状态
+              │ :8084         │
+              └──────────────┘
+
+服务组:
+  core-services = {depotly, aetherion}     → 可以互相调 + 调 aegis
+  storage-group = {storage-svc}            → 隔离的数据层
+  monitor-group = {monitor-svc}            → 监控层
+
+策略:
+  core-services → * → allow
+  storage-group → storage-svc → allow
+  core-services → storage-svc → deny       ← 基础设施不能直接碰存储
+  * → monitor-svc → allow                   ← 所有人都能上报健康
+```
+
+## Phase 1: 部署 Aegis + 验证基础设施
+
+### 1.1 部署 Aegis 到两台 VPS
 ```bash
+# Server A
 cd /path/to/aegis
-make deploy-server-a   # 面板节点
-make deploy-server-b   # 远程节点
+make deploy-server-a
+
+# Server B  
+make deploy-server-b
 ```
 
-### 1.2 验证 ServiceAuth 启动
+### 1.2 验证 Aegis 启动 + ServiceAuth 端点
 ```bash
-curl -s http://127.0.0.1:7380/api/healthz  # 返回 200
-# 检查日志: serviceauth 初始化
-sudo journalctl -u aegis --no-pager -n 20 | grep serviceauth
+ssh ubuntu@<SERVER_A_IP> "curl -s http://127.0.0.1:7380/api/healthz"
+# → "OK"
+
+ssh ubuntu@<SERVER_A_IP> "curl -s http://127.0.0.1:7380/api/admin/v1/service-auth/services"
+# → {"services": []}
 ```
 
-### 1.3 手动注册测试服务
+### 1.3 安装基础设施依赖
 ```bash
-# 生成 Ed25519 密钥对
-openssl genpkey -algorithm Ed25519 -out test_priv.pem
-openssl pkey -in test_priv.pem -pubout -out test_pub.pem
+ssh ubuntu@<SERVER_A_IP> "sudo apt install -y certbot iptables dnsmasq"
+ssh ubuntu@<SERVER_B_IP> "sudo apt install -y certbot iptables dnsmasq"
 
-# 注册
-curl -X POST http://127.0.0.1:7380/api/service-auth/v1/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "service_name": "test-service",
-    "host": "127.0.0.1",
-    "port": 9999,
-    "node_host": "server-a",
-    "pubkey": "<base64-encoded public key>",
-    "apis": [{"name":"health","path":"/health","method":"GET"}]
-  }'
-
-# 预期: 200 + service_id + instances + public_keys
-```
-
-### 1.4 验证注册成功
-```bash
-# 列出所有服务
-curl -s http://127.0.0.1:7380/api/admin/v1/service-auth/services \
-  -H "Cookie: aegis_admin_session=<session_token>"
-
-# 检查数据库
-ssh ubuntu@<SERVER_A_IP> "sqlite3 /var/lib/aegis/aegis.db 'SELECT name,host,port,public_key FROM svc_auth_services'"
-```
-
-### 1.5 跨节点注册
-```bash
-# Server B 上注册服务，验证 Server A 能发现
-ssh ubuntu@<SERVER_B_IP> "curl -X POST http://127.0.0.1:7380/api/service-auth/v1/register ..."
-# 在 Server A 验证能看到 Server B 的服务
-```
-
-## Phase 2: 出口网关 + 透明代理
-
-### 2.1 验证 DNS 解析器（需要 dnsmasq）
-```bash
-# 安装 dnsmasq
-ssh ubuntu@<SERVER_A_IP> "sudo apt install -y dnsmasq"
-# 检查状态
-curl -s http://127.0.0.1:7380/api/admin/v1/dns/status
-# 预期: running=true
-```
-
-### 2.2 验证透明代理（需要 iptables + root）
-```bash
-# 检查透明代理状态
-curl -s http://127.0.0.1:7380/api/admin/v1/transparent/status
-# 预期: available=true (Linux)
-# 检查 iptables 规则
-ssh ubuntu@<SERVER_A_IP> "sudo iptables -t nat -L OUTPUT"
-```
-
-### 2.3 验证基础设施检测
-```bash
 curl -s http://127.0.0.1:7380/api/admin/v1/infra/status
-# 预期: certbot, iptables, dnsmasq 全部就绪
+# → certbot ✓, iptables ✓, dnsmasq ✓
 ```
 
-## Phase 3: 完整端到端流程
+## Phase 2: 服务注册 + 身份稳定性
 
-### 3.1 创建路由 + 绑定证书
+### 2.1 测试服务启动脚本
+```go
+// test-services/main.go — 引用 aegis/pkg/serviceauth SDK
+package main
+
+import (
+	"context" "flag" "fmt" "log" "net/http"
+	"aegis/pkg/serviceauth"
+)
+
+func main() {
+	name := flag.String("name", "test-svc", "service name")
+	port := flag.Int("port", 8080, "listen port")
+	aegisURL := flag.String("aegis", "http://127.0.0.1:7380", "Aegis URL")
+	flag.Parse()
+
+	client, _ := serviceauth.New(serviceauth.Config{
+		ServiceName: *name, ServicePort: *port, AegisURL: *aegisURL,
+		APIs: []serviceauth.APIDef{
+			{Name: "health", Path: "/health", Method: "GET"},
+			{Name: "ping", Path: "/ping", Method: "POST"},
+		},
+	})
+	client.Register(context.Background())
+	defer client.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"ok","service":"` + *name + `"}`))
+	})
+	mux.Handle("POST /ping", client.Guard("ping", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		caller := serviceauth.CallerFromContext(r.Context())
+		w.Write([]byte(`{"pong":true,"from":"` + caller.ServiceName + `"}`))
+	})))
+	log.Fatal(http.ListenAndServe(":"+fmt.Sprint(*port), mux))
+}
+```
+
+### 2.2 启动 4 个服务
 ```bash
-# 1. 上传证书
-curl -X POST http://127.0.0.1:7380/api/admin/v1/certificates \
+# Server A
+go run . -name=depotly -port=8081 &
+go run . -name=aetherion -port=8082 &
+go run . -name=storage-svc -port=8083 &
+
+# Server B (跨节点)
+go run . -name=monitor-svc -port=8084 -aegis=http://<SERVER_A_IP>:7380 &
+```
+
+### 2.3 验证注册
+```bash
+curl -s http://127.0.0.1:7380/api/admin/v1/service-auth/services | jq '.services | length'
+# → 4
+
+# 每个服务不同的 Ed25519 公钥
+ssh ubuntu@<SERVER_A_IP> "sqlite3 /var/lib/aegis/aegis.db 'SELECT name, substr(public_key,1,20) FROM svc_auth_services'"
+# → 4 行，4 个不同的 public_key
+```
+
+### 2.4 身份稳定性测试
+```bash
+# 重启后 identity 不变
+kill $(pgrep -f "name=aetherion")
+go run . -name=aetherion -port=8082 &
+# → 同一个 name，service_id 不变
+
+# 换端口后 identity 不变
+kill $(pgrep -f "name=depotly")
+go run . -name=depotly -port=9091 &
+# → name 仍为 "depotly"，port 更新为 9091
+```
+
+## Phase 3: 验票 + 服务间调用
+
+### 3.1 有效 ticket
+```bash
+# depotly 调 aetherion（SDK 自动签 Ed25519 ticket）
+curl -X POST http://127.0.0.1:8082/ping \
+  -H "X-Service-Ticket: $(go run sign.go -caller=depotly -target=aetherion -api=ping)"
+# → {"pong":true,"from":"depotly"}
+```
+
+### 3.2 无/假/错/过期 ticket
+```bash
+# 无 ticket → 401
+# 假 ticket → 403  
+# 错误密钥 → 403
+# 过期 ticket → 403
+```
+
+### 3.3 跨节点调用
+```bash
+# Server A → Server B 的 monitor-svc
+# 需要 GatewayLink 或直连 Server B:7380
+curl -s http://<SERVER_B_IP>:7380/api/admin/v1/service-auth/services
+```
+
+## Phase 4: 服务组 + 策略
+
+### 4.1 创建服务组
+```bash
+curl -X POST http://127.0.0.1:7380/api/admin/v1/service-auth/groups \
   -H "Content-Type: application/json" \
-  -d '{"cert_pem":"...", "key_pem":"...", "note":"test"}'
+  -d '{"name":"core-services","members":["depotly","aetherion"]}'
 
-# 2. 创建 HTTPS 路由
-curl -X POST http://127.0.0.1:7380/api/v1/actions/bind-http-domain \
+curl -X POST http://127.0.0.1:7380/api/admin/v1/service-auth/groups \
   -H "Content-Type: application/json" \
-  -d '{"domain":"test.example.com", "target_host":"127.0.0.1", "target_port":3000}'
-
-# 3. 验证 Caddyfile 包含正确配置
-ssh ubuntu@<SERVER_A_IP> "cat /etc/caddy/Caddyfile"
+  -d '{"name":"storage-group","members":["storage-svc"]}'
 ```
 
-### 3.2 跨节点 Gateway Link + ServiceAuth
+### 4.2 创建策略
 ```bash
-# 1. 创建 Gateway Link (Server A → Server B)
-# 2. 在 Server B 注册服务
-# 3. 在 Server A 创建路由指向 Server B 的服务
-# 4. 通过 Server A 的 Caddy 访问 Server B 的服务 → 验票通过
+# core-services → * → allow
+curl -X POST .../policies -d '{"subject":"core-services","target_service":"*","effect":"allow"}'
+# core-services → storage-svc → deny（隔离）
+curl -X POST .../policies -d '{"subject":"core-services","target_service":"storage-svc","effect":"deny"}'
 ```
 
-## Phase 4: 容灾测试
-
-### 4.1 Aegis 重启
+### 4.3 验证隔离
 ```bash
-# 停止 Aegis
-ssh ubuntu@<SERVER_A_IP> "sudo systemctl stop aegis"
-# 验证 Caddy 仍正常（配置已在磁盘）
-curl -s -o /dev/null -w '%{http_code}' http://<SERVER_A_IP>/
-# 启动 Aegis
-ssh ubuntu@<SERVER_A_IP> "sudo systemctl start aegis"
-# 验证服务恢复
+# depotly（core-services）调 storage-svc → 403
+# storage-svc 调 monitor-svc → 200（默认 allow）
 ```
 
-### 4.2 iptables 恢复
+## Phase 5: 容灾
+
+### 5.1 Aegis 重启 → 验票继续
 ```bash
-# 停止 Aegis（iptables 规则残留）
-ssh ubuntu@<SERVER_A_IP> "sudo systemctl stop aegis"
-ssh ubuntu@<SERVER_A_IP> "sudo iptables -t nat -L OUTPUT | grep aegis"
-# 预期: 规则仍在
-# 启动 Aegis → CleanupStaleRules 清理 → 重建
-ssh ubuntu@<SERVER_A_IP> "sudo systemctl start aegis"
+sudo systemctl restart aegis
+# SDK 本地公钥+私钥缓存仍在 → ticket 签发/验证不受影响
 ```
 
-## 验证清单
+### 5.2 Rebind
+```bash
+curl -X POST .../services/depotly/rebind -d '{"new_name":"depotly-v2"}'
+# → 新密钥对，旧密钥立即失效 → 403
+```
 
-| 测试项 | 预期结果 | 实际 |
-|--------|---------|------|
-| Service 注册 | 200 + service_id | |
-| 同节点验票 | 200 | |
-| 跨节点验票 | 200 | |
-| DNS 解析器 | running=true | |
-| 透明代理 | available=true | |
-| 基础设施检测 | 3/3 就绪 | |
-| 证书上传 | 201 | |
-| 路由创建 | 200 + Caddyfile 包含 tls | |
-| Aegis 停止 → Caddy 正常 | 200 | |
-| Aegis 重启 → iptables 恢复 | 规则重建 | |
+## 验收清单 (17 项)
+
+| # | 测试项 | 预期 |
+|---|--------|------|
+| 1 | 4 服务全部注册 | count=4 |
+| 2 | 不同 Ed25519 公钥 | 4 个不同的 public_key |
+| 3 | 重启后身份不变 | 同 service_id |
+| 4 | 换端口身份不变 | 同 name, port 更新 |
+| 5 | 有效 ticket → 200 | pong from depotly |
+| 6 | 无 ticket → 401 | |
+| 7 | 假 ticket → 403 | |
+| 8 | 错误密钥 → 403 | |
+| 9 | 过期 ticket → 403 | |
+| 10 | 跨节点调用 | A → B 成功 |
+| 11 | 服务组创建 | 2 groups |
+| 12 | 策略 deny 生效 | core → storage = 403 |
+| 13 | 策略 allow 生效 | storage → monitor = 200 |
+| 14 | default deny | 无策略 → 403 |
+| 15 | Aegis 重启后验票继续 | 200 |
+| 16 | Rebind 旧密钥失效 | 403 |
+| 17 | 重注册 last_seen 更新 | |
+
+## 不在此次范围
+- 透明代理 iptables + DNS dnsmasq（Phase 2 单独测）
+- 用户 JWT / API Key（业务层）
+- 性能压测 / 多节点 distnode
