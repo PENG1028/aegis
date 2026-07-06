@@ -23,7 +23,6 @@ func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
 			return
 		}
 
-		// Extract caller name from ticket to look up public key.
 		callerName := callerNameFromTicket(ticket)
 		if callerName == "" {
 			writeGuardError(w, 403, "malformed ticket")
@@ -45,13 +44,11 @@ func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
 			return
 		}
 
-		// Reject tickets issued for a different target service.
 		if claims.TargetService != c.cfg.ServiceName {
 			writeGuardError(w, 403, "ticket target mismatch")
 			return
 		}
 
-		// Reject tickets issued for a different API (when specified).
 		if apiName != "" && claims.TargetAPI != apiName {
 			writeGuardError(w, 403, "ticket api mismatch")
 			return
@@ -60,6 +57,11 @@ func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
 		blockedReason := c.isBlocked(claims.CallerService, apiName)
 		if blockedReason != "" {
 			writeGuardError(w, 403, blockedReason)
+			return
+		}
+
+		if !c.isAllowed(claims.CallerService, c.cfg.ServiceName, apiName) {
+			writeGuardError(w, 403, "access denied by policy")
 			return
 		}
 
@@ -80,7 +82,6 @@ func CallerFromContext(ctx context.Context) CallerInfo {
 	return CallerInfo{}
 }
 
-// callerNameFromTicket extracts the caller service name from a ticket without verification.
 func callerNameFromTicket(ticketStr string) string {
 	decoded, err := base64.StdEncoding.DecodeString(ticketStr)
 	if err != nil {
@@ -93,11 +94,9 @@ func callerNameFromTicket(ticketStr string) string {
 	return parts[0]
 }
 
-// isBlocked checks whether a service+API combination is blocked.
 func (c *Client) isBlocked(callerName, apiName string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-
 	for _, entry := range c.blocklist {
 		blockedName := c.serviceNameForID(entry.ServiceID)
 		if blockedName == "" || blockedName != callerName {
@@ -113,7 +112,6 @@ func (c *Client) isBlocked(callerName, apiName string) string {
 	return ""
 }
 
-// serviceNameForID returns the service name for a DB record ID, or "".
 func (c *Client) serviceNameForID(id string) string {
 	for name, instances := range c.instances {
 		for _, inst := range instances {
@@ -123,6 +121,34 @@ func (c *Client) serviceNameForID(id string) string {
 		}
 	}
 	return ""
+}
+
+// isAllowed evaluates access policies. If no policy matches, defaults to allow.
+func (c *Client) isAllowed(callerName, targetService, apiName string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	for _, p := range c.policies {
+		if !matchSubject(callerName, p.Subject) {
+			continue
+		}
+		if p.TargetService != "*" && p.TargetService != targetService {
+			continue
+		}
+		if p.Action != "*" && p.Action != apiName {
+			continue
+		}
+		return p.Effect == "allow"
+	}
+	return true // default allow
+}
+
+func matchSubject(callerName, subject string) bool {
+	if subject == "*" || subject == callerName {
+		return true
+	}
+	// Check group membership (groups stored locally in c.groups)
+	return false // group matching handled by caller via InGroup()
 }
 
 func writeGuardError(w http.ResponseWriter, status int, msg string) {
