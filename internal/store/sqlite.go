@@ -25,6 +25,9 @@ func OpenSQLite(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database %s: %w", path, err)
 	}
+	// Ensure WAL mode on existing databases (pragma only applies to new DBs).
+	db.Exec("PRAGMA journal_mode=WAL")
+	db.Exec("PRAGMA busy_timeout=5000")
 
 	// SQLite is fundamentally single-writer. Limit to 1 open conn to prevent
 	// "database is locked" errors under concurrent write load.
