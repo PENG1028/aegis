@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 
 	"aegis/internal/egress"
@@ -162,5 +163,52 @@ func (h *Handlers) AdminEgressCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"checks":  results,
 		"healthy": allPassed,
+	})
+}
+
+// AdminEgressToggle handles POST /api/admin/v1/egress/toggle
+// Flips the global egress master switch on/off.
+// When disabled: DNS bypasses managed domains, transparent proxy stops redirects.
+func (h *Handlers) AdminEgressToggle(w http.ResponseWriter, r *http.Request) {
+	if h.Config == nil {
+		writeError(w, http.StatusInternalServerError, "config not available")
+		return
+	}
+
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+
+	h.Config.Egress.Enabled = body.Enabled
+
+	// When disabled, stop DNS and transparent proxy
+	if !body.Enabled {
+		if h.DNSMgmt != nil && h.DNSMgmt.IsActive() {
+			if err := h.DNSMgmt.Disable(); err != nil {
+				log.Printf("[egress] toggle: dns disable failed: %v", err)
+			}
+		}
+		if h.TransparentMgr != nil {
+			h.TransparentMgr.StopAll()
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"enabled": h.Config.Egress.Enabled,
+	})
+}
+
+// AdminEgressStatus returns the current egress master switch state.
+func (h *Handlers) AdminEgressStatus(w http.ResponseWriter, r *http.Request) {
+	enabled := true
+	if h.Config != nil {
+		enabled = h.Config.Egress.Enabled
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"enabled": enabled,
 	})
 }

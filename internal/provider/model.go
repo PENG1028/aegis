@@ -172,6 +172,11 @@ type RouteSpec struct {
 	// Upstream target
 	Upstream UpstreamSpec `json:"upstream"`
 
+	// TLS custom certificate (certstore ID). Empty = use provider's auto-cert mechanism.
+	CertID   string `json:"cert_id,omitempty"`
+	CertPath string `json:"cert_path,omitempty"` // resolved filesystem path to PEM cert (set by planner)
+	KeyPath  string `json:"key_path,omitempty"`  // resolved filesystem path to PEM key (set by planner)
+
 	// Operational flags
 	MaintenanceEnabled bool              `json:"maintenance_enabled,omitempty"`
 	MaintenanceMessage string            `json:"maintenance_message,omitempty"`

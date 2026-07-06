@@ -44,6 +44,37 @@ export class ApiError extends Error {
 
 // ─── Base fetch wrapper ───
 
+async function uploadFile<T>(path: string, formData: FormData): Promise<T> {
+  const url = apiUrl(path);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      credentials: API_CONFIG.credentials,
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const err = await res.json() as { error?: string };
+        if (err.error) msg = err.error;
+      } catch { /* ignore */ }
+      throw new ApiError(msg, res.status);
+    }
+    return await res.json() as T;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof ApiError) throw err;
+    if ((err as Error).name === 'AbortError') throw new ApiError('请求超时', 408);
+    throw new ApiError((err as Error).message || '网络错误', 0);
+  }
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -1454,6 +1485,12 @@ export const adminApi = {
 
   checkEgress: (): Promise<{ checks: any[]; healthy: boolean }> =>
     get('/api/admin/v1/egress/check'),
+
+  toggleEgress: (enabled: boolean): Promise<{ enabled: boolean }> =>
+    post('/api/admin/v1/egress/toggle', { enabled }),
+
+  egressStatus: (): Promise<{ enabled: boolean }> =>
+    get('/api/admin/v1/egress/status'),
 };
 
 // ─── Transparent Proxy (v1.8F) ───
@@ -1642,4 +1679,58 @@ export const distnodeApi = {
 
   aggregate: (path: string): Promise<{results: AggregatedNodeResult[]; total: number}> =>
     get('/api/admin/v1/distnode/aggregate?path=' + encodeURIComponent(path)),
+};
+
+// ─── TLS Certificates (v1.9C) ───
+
+export interface CertificateItem {
+  id: string;
+  domains: string;      // JSON array string
+  issuer: string;
+  not_before: string;
+  not_after: string;
+  cert_path: string;
+  key_path: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const certApi = {
+  list: (): Promise<{ certificates: CertificateItem[]; count: number }> =>
+    get('/api/admin/v1/certificates'),
+
+  uploadText: (cert_pem: string, key_pem: string, note?: string): Promise<CertificateItem> =>
+    post('/api/admin/v1/certificates', { cert_pem, key_pem, note }),
+
+  delete: (id: string): Promise<{ status: string; id: string }> =>
+    del(`/api/admin/v1/certificates/${id}`),
+};
+
+// ─── ACME (v1.9C) ───
+
+export const acmeApi = {
+  status: (): Promise<{ available: boolean; message: string }> =>
+    get('/api/admin/v1/acme/status'),
+
+  obtain: (domains: string[]): Promise<{ cert_id: string; status: string }> =>
+    post('/api/admin/v1/acme/obtain', { domains }),
+};
+
+// ─── Infrastructure Status (v1.9C) ───
+
+export interface InfraItem {
+  name: string;
+  label: string;
+  category: string;
+  installed: boolean;
+  version: string;
+  path: string;
+  available: boolean;
+  message: string;
+}
+
+export const infraApi = {
+  status: (): Promise<{ items: InfraItem[] }> =>
+    get('/api/admin/v1/infra/status'),
 };

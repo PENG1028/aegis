@@ -49,8 +49,9 @@ func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
 			return
 		}
 
-		if c.isBlocked(claims.CallerService) {
-			writeGuardError(w, 403, "caller is blocked")
+		blockedReason := c.isBlocked(claims.CallerService, apiName)
+		if blockedReason != "" {
+			writeGuardError(w, 403, blockedReason)
 			return
 		}
 
@@ -73,23 +74,27 @@ func CallerFromContext(ctx context.Context) CallerInfo {
 	return CallerInfo{}
 }
 
-// isBlocked checks whether a service (by name) appears in the blocklist.
-// The blocklist stores service DB IDs; we match by correlating with the
-// instances map to find the service name for a given ID.
-func (c *Client) isBlocked(callerName string) bool {
+// isBlocked checks whether a service+API combination is blocked.
+// Returns the reason string if blocked, or "" if allowed.
+// Rules: service-level block (api_name="*") blocks all APIs; per-API block
+// only blocks that specific API for that service.
+func (c *Client) isBlocked(callerName, apiName string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	for _, entry := range c.blocklist {
 		blockedName := c.serviceNameForID(entry.ServiceID)
-		if blockedName == "" {
+		if blockedName == "" || blockedName != callerName {
 			continue
 		}
-		if blockedName == callerName && entry.APIName == "*" {
-			return true
+		if entry.APIName == "*" {
+			return "caller is blocked (service-level)"
+		}
+		if apiName != "" && entry.APIName == apiName {
+			return "caller is blocked (API-level): " + apiName
 		}
 	}
-	return false
+	return ""
 }
 
 // serviceNameForID returns the service name for a DB record ID, or "".

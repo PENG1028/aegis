@@ -5,6 +5,8 @@ import (
 	"log"
 	"net"
 	"sync"
+
+	"aegis/internal/infra"
 )
 
 // Manager manages transparent interception rules + proxy lifecycle.
@@ -157,6 +159,27 @@ func (m *Manager) StopRedirect(ruleID string) error {
 	delete(m.proxies, ruleID)
 	delete(m.rulesByID, ruleID)
 	return nil
+}
+
+// InfraStatus delegates to the centralized infra package.
+func (m *Manager) InfraStatus() infra.Status {
+	return infra.DetectIPTables()
+}
+
+// StopAll stops all active redirect rules and removes all iptables rules.
+func (m *Manager) StopAll() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for id := range m.proxies {
+		if err := m.iptables.removeRule(id); err != nil {
+			log.Printf("[transparent] stopall iptables %s: %v", id, err)
+		}
+		m.proxies[id].Stop()
+	}
+	m.proxies = make(map[string]*TransparentProxy)
+	m.rulesByID = make(map[string]RedirectRule)
+	log.Printf("[transparent] stopall: all rules stopped")
 }
 
 // ListStatus returns full status for all active redirect rules.

@@ -266,6 +266,7 @@ func caddyCapabilities() []Capability {
 		CapRoutePath,
 		// L7 operational
 		CapAutoCert,
+		CapLoadCert,
 		CapHealthCheck,
 		CapLoadBalance,
 		CapRateLimit,

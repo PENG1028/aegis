@@ -171,6 +171,13 @@ const (
 	// Supported by: Caddy (built-in, best-in-class). Nginx + certbot (external).
 	CapAutoCert Capability = "auto_cert"
 
+	// CapLoadCert — can load and use user-provided TLS certificate files (PEM)
+	// at runtime. The provider accepts cert+key file paths in its configuration
+	// and serves them for TLS termination. Orthogonal to CapAutoCert — a provider
+	// can support both (Caddy), one (HAProxy：load only), or neither.
+	// Supported by: Caddy (tls <cert> <key>), HAProxy (ssl crt), Nginx (ssl_certificate).
+	CapLoadCert Capability = "load_cert"
+
 	// CapHealthCheck — can actively health-check upstream backends (TCP connect,
 	// HTTP GET, gRPC health) and stop forwarding to unhealthy ones.
 	CapHealthCheck Capability = "health_check"
@@ -277,6 +284,7 @@ func AllCapabilities() []CapabilityDef {
 
 		// L7 — Operational
 		{Key: "auto_cert", Layer: "L7", Label: "自动证书", Description: "通过 ACME 自动获取和续期 TLS 证书"},
+		{Key: "load_cert", Layer: "L7", Label: "自定义证书", Description: "加载用户提供的 PEM 证书文件用于 TLS 终结"},
 		{Key: "health_check", Layer: "L7", Label: "健康检查", Description: "主动探测上游后端健康状态并摘除故障节点"},
 		{Key: "load_balance", Layer: "L7", Label: "负载均衡", Description: "在多个上游后端之间分配请求"},
 		{Key: "rate_limit", Layer: "L7", Label: "速率限制", Description: "基于客户端/IP/路由限制请求速率"},
@@ -299,7 +307,7 @@ func TheoreticalMaxCapabilities(gt GatewayType) []Capability {
 			CapALPNMatch, CapProtoDetect, CapOCSPStapling,
 			CapHTTP1, CapHTTP2, CapHTTP3, CapWebSocket, CapGRPC, CapSSE,
 			CapRouteHost, CapRoutePath,
-			CapAutoCert, CapHealthCheck, CapLoadBalance, CapRateLimit, CapHotReload, CapValidateConfig,
+			CapAutoCert, CapLoadCert, CapHealthCheck, CapLoadBalance, CapRateLimit, CapHotReload, CapValidateConfig,
 		}
 	case TypeSNIPass:
 		// HAProxy-like: TLS SNI + TCP stream + some HTTP
@@ -309,7 +317,7 @@ func TheoreticalMaxCapabilities(gt GatewayType) []Capability {
 			CapTLSPassthrough, CapTLSTerminate, CapMTLSTerminate,
 			CapSNIPreread, CapALPNMatch, CapProtoDetect, CapOCSPStapling,
 			CapHTTP1, CapHTTP2, CapRawTCP,
-			CapRouteHost, CapHealthCheck, CapLoadBalance, CapRateLimit, CapHotReload, CapValidateConfig,
+			CapRouteHost, CapLoadCert, CapHealthCheck, CapLoadBalance, CapRateLimit, CapHotReload, CapValidateConfig,
 		}
 	case TypeTCPForward:
 		return []Capability{

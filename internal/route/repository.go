@@ -16,31 +16,72 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{DB: db}
 }
 
-const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, created_at, updated_at`
+const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at`
+
+// scanRoute scans a single row into a Route. Handles nullable columns.
+func scanRoute(scanner interface{ Scan(...interface{}) error }) (*Route, error) {
+	var rt Route
+	var createdAt, updatedAt string
+	var pathPrefix, certID, gatewayLinkID sql.NullString
+	var tlsVal, maintVal, stripVal int
+	var maintMsg sql.NullString
+
+	err := scanner.Scan(
+		&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal,
+		&rt.Status, &maintVal, &maintMsg,
+		&rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID,
+		&gatewayLinkID, &certID, &createdAt, &updatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	rt.PathPrefix = pathPrefix.String
+	rt.GatewayLinkID = gatewayLinkID.String
+	if certID.Valid {
+		id := certID.String
+		rt.CertID = &id
+	}
+	rt.StripPrefix = stripVal == 1
+	rt.TLSEnabled = tlsVal == 1
+	rt.MaintenanceEnabled = maintVal == 1
+	rt.MaintenanceMessage = maintMsg.String
+	rt.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	rt.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	return &rt, nil
+}
+
+func scanRoutes(rows *sql.Rows) ([]Route, error) {
+	var routes []Route
+	for rows.Next() {
+		rt, err := scanRoute(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan route: %w", err)
+		}
+		routes = append(routes, *rt)
+	}
+	return routes, rows.Err()
+}
 
 // Create inserts a new route.
 func (r *Repository) Create(rt *Route) error {
 	tlsVal := 0
-	if rt.TLSEnabled {
-		tlsVal = 1
-	}
+	if rt.TLSEnabled { tlsVal = 1 }
 	maintVal := 0
-	if rt.MaintenanceEnabled {
-		maintVal = 1
-	}
+	if rt.MaintenanceEnabled { maintVal = 1 }
 	stripVal := 0
-	if rt.StripPrefix {
-		stripVal = 1
-	}
+	if rt.StripPrefix { stripVal = 1 }
+
+	certID := ""
+	if rt.CertID != nil { certID = *rt.CertID }
 
 	_, err := r.DB.Exec(
-		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rt.ID, rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal, rt.Status, maintVal, rt.MaintenanceMessage,
+		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		rt.ID, rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal,
+		rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
-		rt.GatewayLinkID,
-			rt.CreatedAt.Format(time.RFC3339),
-		rt.UpdatedAt.Format(time.RFC3339),
+		rt.GatewayLinkID, certID,
+		rt.CreatedAt.Format(time.RFC3339), rt.UpdatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
 		return fmt.Errorf("insert route: %w", err)
@@ -61,63 +102,27 @@ func (r *Repository) FindAll() ([]Route, error) {
 
 // FindByID returns a route by ID.
 func (r *Repository) FindByID(id string) (*Route, error) {
-	var rt Route
-	var createdAt, updatedAt string
-	var pathPrefix sql.NullString
-	var tlsVal, maintVal, stripVal int
-	var maintMsg sql.NullString
-	err := r.DB.QueryRow(
-		`SELECT `+routeSelectCols+` FROM routes WHERE id = ?`, id,
-	).Scan(&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &rt.GatewayLinkID, &createdAt, &updatedAt)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("query route by id: %w", err)
+	row := r.DB.QueryRow(`SELECT `+routeSelectCols+` FROM routes WHERE id = ?`, id)
+	rt, err := scanRoute(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
 	}
-	rt.PathPrefix = pathPrefix.String
-	rt.StripPrefix = stripVal == 1
-	rt.TLSEnabled = tlsVal == 1
-	rt.MaintenanceEnabled = maintVal == 1
-	rt.MaintenanceMessage = maintMsg.String
-	rt.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	rt.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-	return &rt, nil
+	return rt, err
 }
 
 // FindByDomain returns all routes for a domain, longest path first.
 func (r *Repository) FindByDomain(domain string) (*Route, error) {
-	var rt Route
-	var createdAt, updatedAt string
-	var pathPrefix sql.NullString
-	var tlsVal, maintVal, stripVal int
-	var maintMsg sql.NullString
-	err := r.DB.QueryRow(
-		`SELECT `+routeSelectCols+` FROM routes WHERE domain = ? AND (path_prefix IS NULL OR path_prefix = '') LIMIT 1`, domain,
-	).Scan(&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &rt.GatewayLinkID, &createdAt, &updatedAt)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("query route by domain: %w", err)
+	row := r.DB.QueryRow(
+		`SELECT `+routeSelectCols+` FROM routes WHERE domain = ? AND (path_prefix IS NULL OR path_prefix = '') LIMIT 1`, domain)
+	rt, err := scanRoute(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
 	}
-	rt.PathPrefix = pathPrefix.String
-	rt.StripPrefix = stripVal == 1
-	rt.TLSEnabled = tlsVal == 1
-	rt.MaintenanceEnabled = maintVal == 1
-	rt.MaintenanceMessage = maintMsg.String
-	rt.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	rt.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-	return &rt, nil
+	return rt, err
 }
 
 // FindByDomainAndPath finds a route by domain and path_prefix.
 func (r *Repository) FindByDomainAndPath(domain, pathPrefix string) (*Route, error) {
-	var rt Route
-	var createdAt, updatedAt string
-	var dbPathPrefix sql.NullString
-	var tlsVal, maintVal, stripVal int
-	var maintMsg sql.NullString
 	var row *sql.Row
 	if pathPrefix == "" {
 		row = r.DB.QueryRow(
@@ -126,21 +131,11 @@ func (r *Repository) FindByDomainAndPath(domain, pathPrefix string) (*Route, err
 		row = r.DB.QueryRow(
 			`SELECT `+routeSelectCols+` FROM routes WHERE domain = ? AND path_prefix = ?`, domain, pathPrefix)
 	}
-	err := row.Scan(&rt.ID, &rt.Domain, &dbPathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &rt.GatewayLinkID, &createdAt, &updatedAt)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("query route by domain+path: %w", err)
+	rt, err := scanRoute(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
 	}
-	rt.PathPrefix = dbPathPrefix.String
-	rt.StripPrefix = stripVal == 1
-	rt.TLSEnabled = tlsVal == 1
-	rt.MaintenanceEnabled = maintVal == 1
-	rt.MaintenanceMessage = maintMsg.String
-	rt.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	rt.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-	return &rt, nil
+	return rt, err
 }
 
 // FindByServiceID returns all routes for a service.
@@ -204,23 +199,21 @@ func (r *Repository) CheckDuplicatePath(domain, pathPrefix, excludeID string) er
 // Update updates a route.
 func (r *Repository) Update(rt *Route) error {
 	tlsVal := 0
-	if rt.TLSEnabled {
-		tlsVal = 1
-	}
+	if rt.TLSEnabled { tlsVal = 1 }
 	maintVal := 0
-	if rt.MaintenanceEnabled {
-		maintVal = 1
-	}
+	if rt.MaintenanceEnabled { maintVal = 1 }
 	stripVal := 0
-	if rt.StripPrefix {
-		stripVal = 1
-	}
+	if rt.StripPrefix { stripVal = 1 }
+
+	certID := ""
+	if rt.CertID != nil { certID = *rt.CertID }
 
 	_, err := r.DB.Exec(
-		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, gateway_link_id=?, updated_at=? WHERE id=?`,
-		rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal, rt.Status, maintVal, rt.MaintenanceMessage,
+		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, gateway_link_id=?, cert_id=?, updated_at=? WHERE id=?`,
+		rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal,
+		rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
-		rt.GatewayLinkID,
+		rt.GatewayLinkID, certID,
 		rt.UpdatedAt.Format(time.RFC3339), rt.ID,
 	)
 	if err != nil {
@@ -236,27 +229,4 @@ func (r *Repository) Delete(id string) error {
 		return fmt.Errorf("delete route: %w", err)
 	}
 	return nil
-}
-
-func scanRoutes(rows *sql.Rows) ([]Route, error) {
-	var routes []Route
-	for rows.Next() {
-		var rt Route
-		var createdAt, updatedAt string
-		var pathPrefix sql.NullString
-		var tlsVal, maintVal, stripVal int
-		var maintMsg sql.NullString
-		if err := rows.Scan(&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal, &rt.Status, &maintVal, &maintMsg, &rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID, &rt.GatewayLinkID, &createdAt, &updatedAt); err != nil {
-			return nil, fmt.Errorf("scan route: %w", err)
-		}
-		rt.PathPrefix = pathPrefix.String
-		rt.StripPrefix = stripVal == 1
-		rt.TLSEnabled = tlsVal == 1
-		rt.MaintenanceEnabled = maintVal == 1
-		rt.MaintenanceMessage = maintMsg.String
-		rt.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		rt.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-		routes = append(routes, rt)
-	}
-	return routes, rows.Err()
 }

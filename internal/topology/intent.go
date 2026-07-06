@@ -89,6 +89,12 @@ type RouteIntent struct {
 
 	// ─── Internal fields (set by Planner, not part of public API) ───
 
+	// CertID is the certstore certificate ID for custom TLS cert.
+	// Empty = use provider's auto-cert mechanism (CapAutoCert).
+	CertID   string `json:"cert_id,omitempty"`
+	CertPath string `json:"cert_path,omitempty"` // resolved filesystem path to PEM cert
+	KeyPath  string `json:"key_path,omitempty"`  // resolved filesystem path to PEM key
+
 	// gatewayLinkID is the cross-machine link to resolve (internal use).
 	gatewayLinkID string
 

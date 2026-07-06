@@ -25,6 +25,7 @@ type Route struct {
 	OwnerID            string    `json:"owner_id"`           // space_id when owner_type=space
 	CreatedByTokenID   string    `json:"created_by_token_id"`
 	GatewayLinkID      string    `json:"gateway_link_id,omitempty"` // v1.7AB
+	CertID             *string   `json:"cert_id,omitempty"`          // v1.9C — custom TLS certificate reference
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }

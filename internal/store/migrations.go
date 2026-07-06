@@ -192,6 +192,11 @@ func AllMigrations() []Migration {
 			Name:    "add_service_auth_tables",
 			UpSQL:   migration035,
 		},
+		{
+			Version: "036",
+			Name:    "add_certificates",
+			UpSQL:   migration036,
+		},
 	}
 }
 
@@ -1105,4 +1110,24 @@ CREATE TABLE IF NOT EXISTS svc_auth_blocklist (
     created_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_blocklist_svc ON svc_auth_blocklist(service_id);
+`
+
+// migration036 adds the certificates table + routes.cert_id column.
+const migration036 = `
+ALTER TABLE routes ADD COLUMN cert_id TEXT DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS certificates (
+	id TEXT PRIMARY KEY,
+	domains TEXT NOT NULL DEFAULT '[]',
+	issuer TEXT NOT NULL DEFAULT '',
+	not_before TEXT NOT NULL DEFAULT '',
+	not_after TEXT NOT NULL DEFAULT '',
+	cert_path TEXT NOT NULL DEFAULT '',
+	key_path TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_certificates_domains ON certificates(domains);
+CREATE INDEX IF NOT EXISTS idx_certificates_not_after ON certificates(not_after);
 `

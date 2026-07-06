@@ -56,6 +56,7 @@ import Scopes from '@/pages/access/Scopes';
 import Credentials from '@/pages/access/Credentials';
 import JoinTokens from '@/pages/access/JoinTokens';
 import AdminAccount from '@/pages/access/AdminAccount';
+import Certificates from '@/pages/access/Certificates';
 
 // ── Settings ──
 import AdvancedSettings from '@/pages/settings/Advanced';
@@ -168,6 +169,7 @@ export default function App() {
                 <Route path="/access" element={<OutletLayout />}>
                   <Route index element={<Scopes />} />
                   <Route path="credentials" element={<Credentials />} />
+                  <Route path="certificates" element={<Certificates />} />
                   <Route path="tokens" element={<JoinTokens />} />
                   <Route path="admin" element={<AdminAccount />} />
                 </Route>

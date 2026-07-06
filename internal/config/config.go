@@ -17,8 +17,14 @@ type Config struct {
 	Server        ServerConfig        `yaml:"server"`
 	ManagedDomain ManagedDomainConfig `yaml:"managed_domain"`
 	DNS           DNSConfig           `yaml:"dns"`
+	Egress        EgressConfig        `yaml:"egress"`
 	DistNode      DistNodeConfig      `yaml:"distnode"`
 	Runtime       RuntimeConfig       `yaml:"runtime"`
+}
+
+// EgressConfig holds egress gateway settings.
+type EgressConfig struct {
+	Enabled bool `yaml:"enabled"` // global egress master switch
 }
 
 // ProxyConfig holds proxy adapter settings.
@@ -122,6 +128,9 @@ func DefaultConfig() *Config {
 			Upstream:   "1.1.1.1:53",
 			RefreshSec: 30,
 		},
+		Egress: EgressConfig{
+			Enabled: true,
+		},
 		ManagedDomain: ManagedDomainConfig{
 			GatewayDomain: "",
 		},
@@ -162,6 +171,9 @@ func ProductionConfig() *Config {
 			ListenAddr: ":53",
 			Upstream:   "1.1.1.1:53",
 			RefreshSec: 30,
+		},
+		Egress: EgressConfig{
+			Enabled: true,
 		},
 		ManagedDomain: ManagedDomainConfig{
 			GatewayDomain: "",
