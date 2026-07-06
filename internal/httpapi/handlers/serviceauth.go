@@ -299,3 +299,49 @@ func (h *Handlers) AdminRebindService(w http.ResponseWriter, r *http.Request) {
 		"private_key": kp.PrivateKey,
 	})
 }
+
+// ─── Groups ───
+
+func (h *Handlers) AdminListServiceAuthGroups(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil { writeError(w, http.StatusNotImplemented, "N/A"); return }
+	groups, err := h.ServiceAuthSvc.ListGroups(r.Context())
+	if err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	writeJSON(w, http.StatusOK, map[string]interface{}{"groups": groups, "count": len(groups)})
+}
+
+func (h *Handlers) AdminUpsertServiceAuthGroup(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil { writeError(w, http.StatusNotImplemented, "N/A"); return }
+	var g serviceauth.ServiceGroup
+	if err := decodeJSON(r, &g); err != nil { writeError(w, http.StatusBadRequest, err.Error()); return }
+	if err := h.ServiceAuthSvc.UpsertGroup(r.Context(), &g); err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	writeJSON(w, http.StatusCreated, g)
+}
+
+func (h *Handlers) AdminDeleteServiceAuthGroup(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil { writeError(w, http.StatusNotImplemented, "N/A"); return }
+	if err := h.ServiceAuthSvc.DeleteGroup(r.Context(), r.PathValue("id")); err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// ─── Policies ───
+
+func (h *Handlers) AdminListServiceAuthPolicies(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil { writeError(w, http.StatusNotImplemented, "N/A"); return }
+	policies, err := h.ServiceAuthSvc.ListPolicies(r.Context())
+	if err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	writeJSON(w, http.StatusOK, map[string]interface{}{"policies": policies, "count": len(policies)})
+}
+
+func (h *Handlers) AdminUpsertServiceAuthPolicy(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil { writeError(w, http.StatusNotImplemented, "N/A"); return }
+	var p serviceauth.Policy
+	if err := decodeJSON(r, &p); err != nil { writeError(w, http.StatusBadRequest, err.Error()); return }
+	if err := h.ServiceAuthSvc.UpsertPolicy(r.Context(), &p); err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func (h *Handlers) AdminDeleteServiceAuthPolicy(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil { writeError(w, http.StatusNotImplemented, "N/A"); return }
+	if err := h.ServiceAuthSvc.DeletePolicy(r.Context(), r.PathValue("id")); err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}

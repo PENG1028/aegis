@@ -19,6 +19,7 @@ export default function AuthServices() {
   const [blockTarget, setBlockTarget] = useState<ServiceRecord | null>(null);
   const [blockReason, setBlockReason] = useState('');
   const [showBlockModal, setShowBlockModal] = useState(false);
+  const [tab, setTab] = useState<'services' | 'groups' | 'policies'>('services');
 
   // ── Data ──
 
@@ -42,6 +43,44 @@ export default function AuthServices() {
     queryKey: ['auth-topology-preview'],
     queryFn: () => adminApi.getAuthTopology('1h'),
     refetchInterval: 60_000,
+  });
+
+  // ── Groups + Policies (v1.9D) ──
+  const { data: groupsData } = useQuery({
+    queryKey: ['auth-groups'], queryFn: () => adminApi.listAuthGroups(), refetchInterval: 30_000,
+  });
+  const groups: any[] = groupsData?.groups || [];
+
+  const { data: policiesData } = useQuery({
+    queryKey: ['auth-policies'], queryFn: () => adminApi.listAuthPolicies(), refetchInterval: 30_000,
+  });
+  const policies: any[] = policiesData?.policies || [];
+
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [groupForm, setGroupForm] = useState({ name: '', description: '', members: '' });
+
+  const upsertGroup = useMutation({
+    mutationFn: (g: any) => adminApi.upsertAuthGroup(g),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['auth-groups'] }); toast('服务组已保存'); setShowGroupModal(false); },
+    onError: (e: any) => toast(e.message, 'error'),
+  });
+  const deleteGroup = useMutation({
+    mutationFn: (id: string) => adminApi.deleteAuthGroup(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['auth-groups'] }); toast('已删除'); },
+    onError: (e: any) => toast(e.message, 'error'),
+  });
+
+  const [policyForm, setPolicyForm] = useState({ subject: '', target_service: '', action: '*', effect: 'allow' });
+  const upsertPolicy = useMutation({
+    mutationFn: (p: any) => adminApi.upsertAuthPolicy(p),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['auth-policies'] }); toast('策略已保存'); setShowPolicyModal(false); },
+    onError: (e: any) => toast(e.message, 'error'),
+  });
+  const deletePolicy = useMutation({
+    mutationFn: (id: string) => adminApi.deleteAuthPolicy(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['auth-policies'] }); toast('已删除'); },
+    onError: (e: any) => toast(e.message, 'error'),
   });
 
   // ── Mutations ──
@@ -91,6 +130,19 @@ export default function AuthServices() {
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="服务认证 · Service Auth" subtitle={`${activeCount} 在线 · ${blockedCount} 已封锁 · ${todayCalls} 调用/24h`} />
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-a-border/30 pb-0">
+        {(['services', 'groups', 'policies'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={cn('px-3 py-1.5 text-xs border-b-2 transition-colors cursor-pointer',
+              tab === t ? 'border-a-accent text-a-accent font-medium' : 'border-transparent text-a-muted hover:text-a-fg')}>
+            {{services: '服务', groups: '服务组', policies: '策略'}[t]}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'services' && (<>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -167,6 +219,79 @@ export default function AuthServices() {
           setShowBlockModal(true);
         }} onUnblock={() => unblockSvc.mutate(selected.id)} />}
       </Drawer>
+
+      {/* End services tab */}
+      </>)}
+
+      {tab === 'groups' && (
+        <Card title="服务组" subtitle="将服务分组以便在策略中引用">
+          <div className="mb-3 flex items-center gap-2">
+            <Btn primary onClick={() => { setGroupForm({ name: '', description: '', members: '' }); setShowGroupModal(true); }} className="text-xs">新建服务组</Btn>
+            <span className="text-[10px] text-a-muted ml-auto">{groups.length} 个组</span>
+          </div>
+          {groups.length === 0 ? <EmptyState title="暂无服务组" /> : (
+            <div className="space-y-2">
+              {groups.map((g: any) => (
+                <div key={g.id} className="flex items-center gap-3 px-3 py-2 rounded-a-sm border border-a-border/20 bg-a-surface text-xs">
+                  <span className="font-medium text-a-fg w-32">{g.name}</span>
+                  <span className="text-a-muted flex-1">{g.description || '—'}</span>
+                  <span className="text-[10px] text-a-muted">{g.members?.length || 0} 个成员</span>
+                  <Btn onClick={() => deleteGroup.mutate(g.id)} className="text-[9px]" danger>删除</Btn>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {tab === 'policies' && (
+        <Card title="权限策略" subtitle="基于服务+操作的控制规则，无匹配时默认允许">
+          <div className="mb-3 flex items-center gap-2">
+            <Btn primary onClick={() => { setPolicyForm({ subject: '', target_service: '', action: '*', effect: 'allow' }); setShowPolicyModal(true); }} className="text-xs">新建策略</Btn>
+            <span className="text-[10px] text-a-muted ml-auto">{policies.length} 条</span>
+          </div>
+          {policies.length === 0 ? <EmptyState title="暂无策略" /> : (
+            <div className="overflow-x-auto"><table className="w-full text-xs">
+              <thead><tr className="border-b border-a-border/30 text-a-muted text-left"><th className="py-1.5 pr-2">主体</th><th className="py-1.5 px-2">目标</th><th className="py-1.5 px-2">操作</th><th className="py-1.5 px-2">效果</th><th className="py-1.5 pl-2"></th></tr></thead>
+              <tbody>{policies.map((p: any) => (
+                <tr key={p.id} className="border-b border-a-border/20">
+                  <td className="py-1.5 pr-2 font-mono text-[11px] text-a-fg">{p.subject}</td>
+                  <td className="py-1.5 px-2 text-a-muted">{p.target_service}</td>
+                  <td className="py-1.5 px-2 text-a-muted">{p.action}</td>
+                  <td className="py-1.5 px-2"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium', p.effect === 'allow' ? 'bg-[#4cd964]/10 text-[#4cd964]' : 'bg-[#ff5c72]/10 text-[#ff5c72]')}>{p.effect}</span></td>
+                  <td className="py-1.5 pl-2"><Btn onClick={() => deletePolicy.mutate(p.id)} className="text-[9px]" danger>删除</Btn></td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          )}
+        </Card>
+      )}
+
+      {/* Group modal */}
+      {showGroupModal && (
+        <Modal onClose={() => setShowGroupModal(false)} title="服务组"
+          footer={<div className="flex gap-2 justify-end"><Btn onClick={() => setShowGroupModal(false)} className="text-xs">取消</Btn><Btn primary onClick={() => upsertGroup.mutate({...groupForm, members: groupForm.members.split(',').map((s: string) => s.trim()).filter(Boolean)})} className="text-xs">保存</Btn></div>}>
+          <div className="space-y-3 text-xs">
+            <input value={groupForm.name} onChange={e => setGroupForm({...groupForm, name: e.target.value})} placeholder="组名（如 storage-group）" className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg" />
+            <input value={groupForm.description} onChange={e => setGroupForm({...groupForm, description: e.target.value})} placeholder="描述（可选）" className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg" />
+            <input value={groupForm.members} onChange={e => setGroupForm({...groupForm, members: e.target.value})} placeholder="成员（逗号分隔，如 B, C, D）" className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg" />
+          </div>
+        </Modal>
+      )}
+
+      {/* Policy modal */}
+      {showPolicyModal && (
+        <Modal onClose={() => setShowPolicyModal(false)} title="权限策略"
+          footer={<div className="flex gap-2 justify-end"><Btn onClick={() => setShowPolicyModal(false)} className="text-xs">取消</Btn><Btn primary onClick={() => upsertPolicy.mutate(policyForm)} className="text-xs">保存</Btn></div>}>
+          <div className="space-y-3 text-xs">
+            <input value={policyForm.subject} onChange={e => setPolicyForm({...policyForm, subject: e.target.value})} placeholder="主体（服务名 / 组名 / *）" className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg" />
+            <input value={policyForm.target_service} onChange={e => setPolicyForm({...policyForm, target_service: e.target.value})} placeholder="目标服务（服务名 / *）" className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg" />
+            <select value={policyForm.effect} onChange={e => setPolicyForm({...policyForm, effect: e.target.value})} className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg">
+              <option value="allow">allow（允许）</option><option value="deny">deny（拒绝）</option>
+            </select>
+          </div>
+        </Modal>
+      )}
 
       {showBlockModal && (
         <Modal
