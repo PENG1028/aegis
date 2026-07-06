@@ -37,7 +37,7 @@ import (
 	"aegis/internal/space"
 	"aegis/internal/token"
 	"aegis/internal/trace"
-	"aegis/internal/acme"
+	"aegis/internal/infra"
 	"aegis/internal/certstore"
 	"aegis/internal/transparent"
 )
@@ -82,7 +82,7 @@ type Services struct {
 	RelayHTTPHandler http.Handler           // v1.8B relay dispatch
 	DNSMgmt         *dns.Manager            // v1.8E DNS resolver
 	CertStore       *certstore.Service       // v1.9C TLS certificate store
-	ACMEMgr         *acme.Manager            // v1.9C ACME auto-cert manager
+	ACMEMgr         *infra.ACMEManager            // v1.9C ACME auto-cert manager
 	TransparentMgr  *transparent.Manager    // v1.8H transparent IP:port proxy
 	CredentialSvc   *credential.Service     // v1.8K encrypted connection strings
 	ServiceAuthSvc  *serviceauth.Service    // v1.9A

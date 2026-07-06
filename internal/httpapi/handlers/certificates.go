@@ -4,9 +4,8 @@ import (
 	"io"
 	"net/http"
 
-	"aegis/internal/acme"
-	"aegis/internal/infra"
 	"aegis/internal/certstore"
+	"aegis/internal/infra"
 )
 
 // ─── Certificate handlers ───
@@ -124,7 +123,7 @@ func (h *Handlers) AdminACMEObtain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	certID, err := h.ACMEMgr.Obtain(r.Context(), acme.ObtainRequest{Domains: body.Domains})
+	certID, err := h.ACMEMgr.Obtain(r.Context(), infra.ObtainRequest{Domains: body.Domains})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
