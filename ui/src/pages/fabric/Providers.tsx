@@ -1007,22 +1007,32 @@ export default function Providers() {
 
       {pageTab === 'detail' && (
         <div className="space-y-5">
-          {/* Service overview — Aegis services + their deps */}
+          {/* Summary bar */}
+          <SummaryBar
+            providers={providers}
+            infra={infraItems}
+            dnsRunning={(dnsStatus as any)?.running}
+            tpAvailable={(tpStatus as any)?.available}
+            acmeAvailable={(acmeStatus as any)?.available}
+          />
+
+          {/* 1. Gateway capability matrix — collapsible layers */}
+          {isLoading ? <Card title="流量网关能力"><div className="text-sm text-a-muted py-12 text-center">加载中...</div></Card>
+          : providers.length > 0 ? (
+            <CollapsibleMatrix providers={providers} universe={universe} />
+          ) : <Card title="流量网关能力"><div className="text-center py-12 text-sm text-a-muted">没有检测到 Provider · 运行 <code className="text-a-accent">aegis doctor</code> 诊断</div></Card>
+          }
+
+          {/* 2. Infrastructure dependencies */}
+          <InfraTable items={infraItems} />
+
+          {/* 3. Aegis services */}
           <ServiceOverview
             dns={dnsStatus as any}
             tp={tpStatus as any}
             acme={acmeStatus as any}
             infra={infraItems}
           />
-
-          {/* Provider cards */}
-          {isLoading ? <Card title="流量网关"><div className="text-sm text-a-muted py-12 text-center">加载中...</div></Card>
-          : providers.length > 0 ? (
-            <Card title="流量网关" subtitle="Caddy / HAProxy — 点击展开完整能力清单">
-              <div className="space-y-2">{providers.map(p => <ProviderCard key={p.id} provider={p} universe={universe} />)}</div>
-            </Card>
-          ) : <Card title="流量网关"><div className="text-center py-12 text-sm text-a-muted">没有检测到 Provider · 运行 <code className="text-a-accent">aegis doctor</code> 诊断</div></Card>
-          }
         </div>
       )}
 
@@ -1060,6 +1070,151 @@ function DepRow({ ok, detail }: { ok: boolean; detail: string }) {
   );
 }
 
+function SummaryBar({ providers, infra, dnsRunning, tpAvailable, acmeAvailable }: {
+  providers: ProviderState[]; infra: InfraItem[]; dnsRunning?: boolean; tpAvailable?: boolean; acmeAvailable?: boolean;
+}) {
+  const gwOk = providers.filter(p => p.installed).length;
+  const infraOk = infra.filter(i => i.available).length;
+  const svcOk = [dnsRunning, tpAvailable, acmeAvailable].filter(Boolean).length;
+  return (
+    <div className="grid grid-cols-3 gap-3 text-center">
+      <div className={cn('rounded-a-sm border px-3 py-2', gwOk > 0 ? 'bg-[#4cd964]/5 border-[#4cd964]/15' : 'bg-[#ff5c72]/3 border-[#ff5c72]/15')}>
+        <div className={cn('text-lg font-bold', gwOk > 0 ? 'text-[#4cd964]' : 'text-[#ff5c72]')}>{gwOk}/{providers.length}</div>
+        <div className="text-[10px] text-a-muted">流量网关</div>
+      </div>
+      <div className={cn('rounded-a-sm border px-3 py-2', infraOk > 0 ? 'bg-[#4cd964]/5 border-[#4cd964]/15' : 'bg-a-border/5 border-a-border/20')}>
+        <div className={cn('text-lg font-bold', infraOk > 0 ? 'text-[#4cd964]' : 'text-a-muted')}>{infraOk}/{infra.length || 3}</div>
+        <div className="text-[10px] text-a-muted">基础设施</div>
+      </div>
+      <div className={cn('rounded-a-sm border px-3 py-2', svcOk > 0 ? 'bg-[#4cd964]/5 border-[#4cd964]/15' : 'bg-a-border/5 border-a-border/20')}>
+        <div className={cn('text-lg font-bold', svcOk > 0 ? 'text-[#4cd964]' : 'text-a-muted')}>{svcOk}/3</div>
+        <div className="text-[10px] text-a-muted">Aegis 服务</div>
+      </div>
+    </div>
+  );
+}
+
+function CollapsibleMatrix({ providers, universe }: { providers: ProviderState[]; universe: CapabilityDef[] }) {
+  const [openLayers, setOpenLayers] = useState<Set<string>>(new Set(['L7']));
+  const toggleLayer = (l: string) => {
+    const next = new Set(openLayers);
+    next.has(l) ? next.delete(l) : next.add(l);
+    setOpenLayers(next);
+  };
+
+  const layers = new Map<string, CapabilityDef[]>();
+  for (const c of universe) { const list = layers.get(c.layer) || []; list.push(c); layers.set(c.layer, list); }
+  const layerOrder = ['L3', 'L4', 'L5', 'L6', 'L7'];
+  const LAYER_LABELS: Record<string, string> = { L3: '网络层', L4: '传输层', L5: '会话层 (TLS)', L6: '表示层', L7: '应用层' };
+  const LAYER_COLORS: Record<string, string> = {
+    L3: 'border-l-purple-500/40 bg-purple-500/3', L4: 'border-l-blue-500/40 bg-blue-500/3',
+    L5: 'border-l-teal-500/40 bg-teal-500/3', L6: 'border-l-amber-500/40 bg-amber-500/3',
+    L7: 'border-l-green-500/40 bg-green-500/3',
+  };
+
+  const stats = providers.map(p => ({
+    id: p.id, name: p.name, installed: p.installed,
+    native: universe.filter(c => p.capabilities?.includes(c.key)).length,
+    theoretical: universe.filter(c => !p.capabilities?.includes(c.key) && p.theoretical_capabilities?.includes(c.key)).length,
+    total: universe.length,
+  }));
+
+  return (
+    <Card title="流量网关能力" subtitle={`${universe.length} 项能力 × ${providers.length} 个 Provider`}>
+      {/* Provider bars */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        {stats.map(s => (
+          <div key={s.id} className={cn('p-3 rounded-a-sm border', s.installed ? 'bg-a-surface border-a-border' : 'bg-[#ff5c72]/3 border-[#ff5c72]/20')}>
+            <div className="flex items-center gap-2 mb-1.5">
+              <HealthDot status={s.installed ? 'healthy' : 'failed'} />
+              <span className={cn('text-xs font-semibold', s.installed ? 'text-a-fg' : 'text-[#ff5c72]')}>{s.name}</span>
+              <span className={cn('text-[10px] font-mono ml-auto', s.installed ? 'text-a-muted' : 'text-[#ff5c72]/60')}>{s.native}/{s.total}</span>
+            </div>
+            <CapBar native={s.native} theoretical={s.theoretical} unsupported={s.total - s.native - s.theoretical} total={s.total} />
+          </div>
+        ))}
+      </div>
+
+      {/* Collapsible layers */}
+      {layerOrder.map(layer => {
+        const caps = layers.get(layer);
+        if (!caps?.length) return null;
+        const isOpen = openLayers.has(layer);
+        return (
+          <div key={layer} className="mb-1">
+            <button onClick={() => toggleLayer(layer)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-a-border/10 rounded transition-colors cursor-pointer">
+              <span className="text-[10px] text-a-muted">{isOpen ? '▼' : '▶'}</span>
+              <span className={cn('px-1 py-0.5 rounded text-[10px] font-medium', LAYER_COLORS[layer])}>{layer}</span>
+              <span className="text-a-muted">{LAYER_LABELS[layer]}</span>
+              <span className="text-a-muted/50 ml-auto">{caps.length} 项</span>
+            </button>
+            {isOpen && (
+              <table className="w-full text-xs">
+                <tbody>
+                  {caps.map(cap => (
+                    <tr key={cap.key} className="border-b border-a-border/20">
+                      <td className="py-1.5 px-2 pl-8">
+                        <div className="text-a-fg text-[11px]">{cap.label}</div>
+                        <div className="text-[10px] text-a-muted">{cap.key}</div>
+                      </td>
+                      {providers.map(p => {
+                        const s = getCapStatus(p, cap.key);
+                        return (
+                          <td key={p.id} className={cn('text-center py-1.5 px-2 w-16', !p.installed && 'opacity-50')}>
+                            {s === 'native' && <span className="text-[#4cd964] font-bold">✓</span>}
+                            {s === 'theoretical' && <span className="text-[#e8b830] font-bold">△</span>}
+                            {s === 'unsupported' && <span className="text-a-muted">—</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
+function InfraTable({ items }: { items: InfraItem[] }) {
+  if (!items.length) return null;
+  return (
+    <Card title="基础设施" subtitle="外部依赖 — 安装检测、版本、可用性">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-a-border/30 text-a-muted text-left">
+              <th className="py-1.5 pr-2 font-medium">工具</th>
+              <th className="py-1.5 px-2 font-medium">用途</th>
+              <th className="py-1.5 px-2 font-medium">版本</th>
+              <th className="py-1.5 pl-2 font-medium">状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(item => (
+              <tr key={item.name} className="border-b border-a-border/20 hover:bg-a-border/10">
+                <td className="py-1.5 pr-2 font-mono text-a-fg text-[11px]">{item.name}</td>
+                <td className="py-1.5 px-2 text-a-muted text-[11px]">{item.label}</td>
+                <td className="py-1.5 px-2 font-mono text-[10px] text-a-muted">{item.version || '—'}</td>
+                <td className="py-1.5 pl-2">
+                  <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium',
+                    item.available ? 'bg-[#4cd964]/10 text-[#4cd964]' : 'bg-[#ff5c72]/10 text-[#ff5c72]')}>
+                    {item.available ? '就绪' : item.message || '不可用'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 function ServiceOverview({ dns, tp, acme, infra }: { dns: any; tp: any; acme: any; infra: InfraItem[] }) {
   const dnsRunning = dns?.running;
   const dnsDetail = dnsRunning ? `${dns?.listen_addr || ':5353'} → ${dns?.upstream || '1.1.1.1:53'}` : '已停止';
@@ -1069,13 +1224,12 @@ function ServiceOverview({ dns, tp, acme, infra }: { dns: any; tp: any; acme: an
   const acmeOk = (acme as any)?.available;
   const acmeDetail = (acme as any)?.message || '—';
 
-  // Find matching infra deps
   const dnsInfra = infra.find(i => i.name === 'dnsmasq');
   const tpInfra = infra.find(i => i.name === 'iptables');
   const acmeInfra = infra.find(i => i.name === 'certbot');
 
   return (
-    <Card title="服务状态" subtitle="Aegis 出口服务及其系统依赖">
+    <Card title="Aegis 服务" subtitle="出口服务状态及其依赖">
       <div className="space-y-2">
         <ServiceRow label="DNS 解析器" ok={!!dnsRunning} detail={dnsDetail}>
           {dnsInfra && <DepRow ok={dnsInfra.available} detail={dnsInfra.message} />}
