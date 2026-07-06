@@ -56,6 +56,8 @@ type Client struct {
 	publicKeys map[string]string   // name → public_key (synced)
 	instances  map[string][]ServiceInstance
 	apis       map[string][]APIDef
+	groups     []ServiceGroup
+	policies   []Policy
 	blocklist  []BlocklistEntry
 	blVersion  int64
 	catVersion int64
@@ -170,6 +172,8 @@ func (c *Client) Register(ctx context.Context) error {
 	for _, inst := range regResp.Instances {
 		c.instances[inst.Name] = append(c.instances[inst.Name], inst)
 	}
+	c.groups = regResp.Groups
+	c.policies = regResp.Policies
 	for _, api := range regResp.APIs {
 		owner := c.findAPIOwner(api)
 		c.apis[owner] = append(c.apis[owner], api)
@@ -267,12 +271,34 @@ func (c *Client) PublicKey() string {
 	return c.publicKey
 }
 
-// PrivateKey returns this service's Ed25519 private key (base64).
-// Only used in tests. Never expose in production.
+// PrivateKey returns this service's Ed25519 private key (base64). Test use only.
 func (c *Client) PrivateKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.privateKey
+}
+
+// InGroup returns true if the named service belongs to the group. Local lookup.
+func (c *Client) InGroup(serviceName, groupName string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, g := range c.groups {
+		if g.Name != groupName { continue }
+		for _, m := range g.Members {
+			if m == serviceName { return true }
+		}
+	}
+	return false
+}
+
+// ListGroupMembers returns all service names in a group. Local lookup.
+func (c *Client) ListGroupMembers(groupName string) []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, g := range c.groups {
+		if g.Name == groupName { return g.Members }
+	}
+	return nil
 }
 
 // ============================================================================
@@ -474,6 +500,12 @@ func (c *Client) doSync() {
 	}
 	for k, v := range syncResp.PublicKeys {
 		c.publicKeys[k] = v
+	}
+	if len(syncResp.Groups) > 0 {
+		c.groups = syncResp.Groups
+	}
+	if len(syncResp.Policies) > 0 {
+		c.policies = syncResp.Policies
 	}
 
 	// Deduplicate new instances by (name, host, port).

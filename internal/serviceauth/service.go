@@ -172,6 +172,8 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 	}
 
 	publicKeys, _ := s.deps.Repo.ListPublicKeys()
+	groups, _ := s.deps.Repo.ListGroups()
+	policies, _ := s.deps.Repo.ListPolicies()
 
 	blocklist, _ := s.deps.Repo.GetBlocklist()
 	if blocklist == nil {
@@ -182,6 +184,8 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		ServiceID:    rec.ID,
 		Instances:    instances,
 		PublicKeys:   publicKeys,
+		Groups:       groups,
+		Policies:     policies,
 		APIs:         allAPIs,
 		Blocklist:    blocklist,
 		BlVersion:    s.blVersion.Load(),
@@ -232,6 +236,12 @@ func (s *Service) Sync(ctx context.Context, blVersion, catVersion int64) (*SyncR
 		}
 		if pks, err := s.deps.Repo.ListPublicKeys(); err == nil {
 			resp.PublicKeys = pks
+		}
+		if groups, err := s.deps.Repo.ListGroups(); err == nil {
+			resp.Groups = groups
+		}
+		if policies, err := s.deps.Repo.ListPolicies(); err == nil {
+			resp.Policies = policies
 		}
 	}
 
@@ -591,6 +601,93 @@ func (s *Service) Rebind(ctx context.Context, oldName, newName string) (*KeyPair
 		PublicKey:  pubKey,
 		PrivateKey: privKey,
 	}, nil
+}
+
+// ─── Groups ───
+
+func (s *Service) ListGroups(ctx context.Context) ([]ServiceGroup, error) {
+	return s.deps.Repo.ListGroups()
+}
+
+func (s *Service) UpsertGroup(ctx context.Context, g *ServiceGroup) error {
+	if g.ID == "" { g.ID = s.deps.IDGen() }
+	if err := s.deps.Repo.UpsertGroup(g); err != nil { return err }
+	s.catVersion.Add(1)
+	return nil
+}
+
+func (s *Service) DeleteGroup(ctx context.Context, id string) error {
+	if err := s.deps.Repo.DeleteGroup(id); err != nil { return err }
+	s.catVersion.Add(1)
+	return nil
+}
+
+// ─── Policies ───
+
+func (s *Service) ListPolicies(ctx context.Context) ([]Policy, error) {
+	return s.deps.Repo.ListPolicies()
+}
+
+func (s *Service) UpsertPolicy(ctx context.Context, p *Policy) error {
+	if p.ID == "" { p.ID = s.deps.IDGen() }
+	if err := s.deps.Repo.UpsertPolicy(p); err != nil { return err }
+	s.catVersion.Add(1)
+	return nil
+}
+
+func (s *Service) DeletePolicy(ctx context.Context, id string) error {
+	if err := s.deps.Repo.DeletePolicy(id); err != nil { return err }
+	s.catVersion.Add(1)
+	return nil
+}
+
+// ─── Policy Engine ───
+
+// EvaluatePolicy checks whether a caller is allowed to perform an action on a target.
+// Returns true if allowed, false if denied. Unmatched → defaultPolicy applies.
+func EvaluatePolicy(callerName string, groups []ServiceGroup, policies []Policy, targetService, action, defaultPolicy string) bool {
+	// Check if caller matches any policy subject.
+	for _, p := range policies {
+		if !matchSubject(callerName, p.Subject, groups) { continue }
+		if p.TargetService != "*" && p.TargetService != targetService { continue }
+		if p.Action != "*" && p.Action != action { continue }
+		if p.Effect == "deny" { return false }
+		return true
+	}
+	// No policy matched — apply default.
+	return defaultPolicy == "allow"
+}
+
+func matchSubject(callerName, subject string, groups []ServiceGroup) bool {
+	if subject == "*" { return true }
+	if subject == callerName { return true }
+	for _, g := range groups {
+		if g.Name == subject {
+			for _, m := range g.Members {
+				if m == callerName { return true }
+			}
+		}
+	}
+	return false
+}
+
+// InGroup returns true if the service is a member of the named group.
+func InGroup(serviceName string, groups []ServiceGroup, groupName string) bool {
+	for _, g := range groups {
+		if g.Name != groupName { continue }
+		for _, m := range g.Members {
+			if m == serviceName { return true }
+		}
+	}
+	return false
+}
+
+// ListGroupMembers returns all members of the named group.
+func ListGroupMembers(groups []ServiceGroup, groupName string) []string {
+	for _, g := range groups {
+		if g.Name == groupName { return g.Members }
+	}
+	return nil
 }
 
 // LookupServiceByName returns the first active instance of a named service.

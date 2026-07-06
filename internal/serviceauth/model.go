@@ -82,6 +82,8 @@ type RegisterResponse struct {
 	ServiceID     string            `json:"service_id"`
 	Instances     []ServiceInstance `json:"instances"`      // all known instances
 	PublicKeys    map[string]string `json:"public_keys"`    // name → public_key
+	Groups        []ServiceGroup    `json:"groups,omitempty"`
+	Policies      []Policy          `json:"policies,omitempty"`
 	APIs          []APIDef          `json:"apis"`           // APIs of all services
 	Blocklist     []BlocklistEntry  `json:"blocklist"`
 	BlVersion     int64             `json:"bl_version"`
@@ -103,12 +105,35 @@ type KeyPair struct {
 	PrivateKey string `json:"private_key"` // base64; only returned once
 }
 
+// ServiceGroup is a named collection of services for access control.
+type ServiceGroup struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Members     []string `json:"members"`
+	CreatedAt   string   `json:"created_at"`
+	UpdatedAt   string   `json:"updated_at"`
+}
+
+// Policy is an access control rule.
+type Policy struct {
+	ID            string `json:"id"`
+	Subject       string `json:"subject"`        // service name, group name, or "*"
+	TargetService string `json:"target_service"` // service name or "*"
+	Action        string `json:"action"`         // HTTP method, "read", "write", or "*"
+	Effect        string `json:"effect"`         // "allow" | "deny"
+	Priority      int    `json:"priority"`       // 0 = highest
+	Enabled       bool   `json:"enabled"`
+}
+
 // SyncResponse is returned by the sync endpoint.
 type SyncResponse struct {
 	Blocklist    []BlocklistEntry   `json:"blocklist,omitempty"`
 	BlVersion    int64              `json:"bl_version"`
 	NewInstances []ServiceInstance  `json:"new_instances,omitempty"`
 	PublicKeys   map[string]string  `json:"public_keys,omitempty"`   // name → public_key
+	Groups       []ServiceGroup     `json:"groups,omitempty"`        // all service groups
+	Policies     []Policy           `json:"policies,omitempty"`      // all active policies
 	RemovedIDs   []string           `json:"removed_ids,omitempty"`
 	CatVersion   int64              `json:"cat_version"`
 	NotModified  bool               `json:"not_modified"`

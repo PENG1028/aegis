@@ -202,6 +202,11 @@ func AllMigrations() []Migration {
 			Name:    "serviceauth_v2_keys",
 			UpSQL:   migration037,
 		},
+		{
+			Version: "038",
+			Name:    "serviceauth_groups_policies",
+			UpSQL:   migration038,
+		},
 	}
 }
 
@@ -1141,4 +1146,34 @@ CREATE INDEX IF NOT EXISTS idx_certificates_not_after ON certificates(not_after)
 const migration037 = `
 ALTER TABLE svc_auth_services ADD COLUMN public_key TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_svc_auth_name_unique ON svc_auth_services(name);
+`
+
+// migration038 adds service groups + access policies for ServiceAuth v2.
+const migration038 = `
+CREATE TABLE IF NOT EXISTS svc_auth_groups (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL UNIQUE,
+	description TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS svc_auth_group_members (
+	group_id TEXT NOT NULL,
+	service_name TEXT NOT NULL,
+	PRIMARY KEY (group_id, service_name),
+	FOREIGN KEY (group_id) REFERENCES svc_auth_groups(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS svc_auth_policies (
+	id TEXT PRIMARY KEY,
+	subject TEXT NOT NULL DEFAULT '*',
+	target_service TEXT NOT NULL DEFAULT '*',
+	action TEXT NOT NULL DEFAULT '*',
+	effect TEXT NOT NULL DEFAULT 'allow',
+	priority INTEGER NOT NULL DEFAULT 0,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_policies_subject ON svc_auth_policies(subject);
 `
