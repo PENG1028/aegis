@@ -556,6 +556,43 @@ func (s *Service) VerifyTicketAndGetSpace(ticketStr string) (serviceName string,
 	return callerName, nil
 }
 
+// Rebind migrates a service identity to a new name with a fresh keypair.
+// Admin-only operation. The old name immediately becomes invalid.
+func (s *Service) Rebind(ctx context.Context, oldName, newName string) (*KeyPair, error) {
+	instances, err := s.deps.Repo.FindByName(oldName)
+	if err != nil || len(instances) == 0 {
+		return nil, ErrServiceNotFound
+	}
+
+	// Generate new keypair for the new name.
+	pubKey, privKey, err := GenerateKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("rebind: generate keypair: %w", err)
+	}
+
+	// Update the existing record with new name and new public key.
+	// Old public key is invalidated immediately.
+	rec := &instances[0]
+	rec.Name = newName
+	rec.PublicKey = pubKey
+	rec.UpdatedAt = time.Now()
+
+	if err := s.deps.Repo.DeleteService(rec.ID); err != nil {
+		return nil, fmt.Errorf("rebind: remove old: %w", err)
+	}
+	// Re-insert with new name.
+	if err := s.deps.Repo.UpsertService(rec); err != nil {
+		return nil, fmt.Errorf("rebind: insert new: %w", err)
+	}
+
+	s.catVersion.Add(1)
+
+	return &KeyPair{
+		PublicKey:  pubKey,
+		PrivateKey: privKey,
+	}, nil
+}
+
 // LookupServiceByName returns the first active instance of a named service.
 func (s *Service) LookupServiceByName(ctx context.Context, name string) (*ServiceRecord, error) {
 	instances, err := s.deps.Repo.FindByName(name)

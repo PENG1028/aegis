@@ -59,7 +59,7 @@ func (r *Repository) UpsertService(s *ServiceRecord) error {
 // FindByName returns all instances registered under the given service name.
 func (r *Repository) FindByName(name string) ([]ServiceRecord, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, name, host, port, node_host, apis_json, status, last_seen, created_at, updated_at
+		`SELECT id, name, host, port, node_host, apis_json, public_key, status, last_seen, created_at, updated_at
 		 FROM svc_auth_services WHERE name=?`, name)
 	if err != nil {
 		return nil, fmt.Errorf("find service by name: %w", err)
@@ -71,7 +71,7 @@ func (r *Repository) FindByName(name string) ([]ServiceRecord, error) {
 // FindByID returns a single service record.
 func (r *Repository) FindByID(id string) (*ServiceRecord, error) {
 	row := r.DB.QueryRow(
-		`SELECT id, name, host, port, node_host, apis_json, status, last_seen, created_at, updated_at
+		`SELECT id, name, host, port, node_host, apis_json, public_key, status, last_seen, created_at, updated_at
 		 FROM svc_auth_services WHERE id=?`, id)
 	return scanService(row)
 }
@@ -79,7 +79,7 @@ func (r *Repository) FindByID(id string) (*ServiceRecord, error) {
 // ListActive returns all services whose status is not "blocked".
 func (r *Repository) ListActive() ([]ServiceRecord, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, name, host, port, node_host, apis_json, status, last_seen, created_at, updated_at
+		`SELECT id, name, host, port, node_host, apis_json, public_key, status, last_seen, created_at, updated_at
 		 FROM svc_auth_services WHERE status='active' ORDER BY name, host`)
 	if err != nil {
 		return nil, fmt.Errorf("list active services: %w", err)
@@ -91,7 +91,7 @@ func (r *Repository) ListActive() ([]ServiceRecord, error) {
 // ListAll returns every service record regardless of status.
 func (r *Repository) ListAll() ([]ServiceRecord, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, name, host, port, node_host, apis_json, status, last_seen, created_at, updated_at
+		`SELECT id, name, host, port, node_host, apis_json, public_key, status, last_seen, created_at, updated_at
 		 FROM svc_auth_services ORDER BY name, host`)
 	if err != nil {
 		return nil, fmt.Errorf("list all services: %w", err)

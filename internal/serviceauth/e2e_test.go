@@ -124,8 +124,16 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 
-	apis := []sdk.APIDef{{Name: "create", Path: "/api/v1/create", Method: "POST"}}
-	clientB := newSDKClient(t, srv.URL, "project-service", 3002, apis)
+	// Register both services so clientB gets clientA's public key via sync.
+	aAPIs := []sdk.APIDef{{Name: "create", Path: "/api/v1/create", Method: "POST"}}
+	clientA := newSDKClient(t, srv.URL, "admin-service", 3001, aAPIs)
+	defer clientA.Close()
+	if err := clientA.Register(ctx); err != nil {
+		t.Fatalf("register A: %v", err)
+	}
+
+	bAPIs := []sdk.APIDef{{Name: "create", Path: "/api/v1/create", Method: "POST"}}
+	clientB := newSDKClient(t, srv.URL, "project-service", 3002, bAPIs)
 	defer clientB.Close()
 	if err := clientB.Register(ctx); err != nil {
 		t.Fatalf("register B: %v", err)
@@ -143,9 +151,6 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 	))
 	testB := httptest.NewServer(guarded)
 	defer testB.Close()
-
-	// Generate keypair for manual ticket signing in tests.
-	_, testPriv, _ := core.GenerateKeyPair()
 
 	// Test 1: No ticket → 401
 	resp, _ := http.Post(testB.URL+"/api/v1/create", "application/json", bytes.NewReader([]byte(`{}`)))
@@ -170,9 +175,9 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 		t.Log("PASS: garbage ticket → 403")
 	}
 
-	// Test 3: Valid ticket → 200
+	// Test 3: Valid ticket → 200 (signed with clientA's registered private key)
 	claims := core.NewTicket("admin-service", "project-service", "create")
-	validTicket := core.SignTicket(claims, testPriv)
+	validTicket := core.SignTicket(claims, clientA.PrivateKey())
 	req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Service-Ticket", validTicket)
@@ -187,7 +192,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 		t.Logf("PASS: valid ticket → 200: %s", body)
 	}
 
-	// Test 4: Wrong key → 403
+	// Test 4: Wrong key (random, unregistered keypair) → 403
 	_, wrongPriv, _ := core.GenerateKeyPair()
 	wrongTicket := core.SignTicket(claims, wrongPriv)
 	req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
@@ -210,7 +215,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 		TargetAPI:     "create",
 		ExpiresAt:     time.Now().Add(-1 * time.Hour).Unix(),
 	}
-	expiredTicket := core.SignTicket(expiredClaims, testPriv)
+	expiredTicket := core.SignTicket(expiredClaims, clientA.PrivateKey())
 	req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Service-Ticket", expiredTicket)
@@ -226,7 +231,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 
 	// Test 6: Ticket for wrong target service → 403
 		otherClaims := core.NewTicket("admin-service", "other-service", "create")
-		otherTicket := core.SignTicket(otherClaims, testPriv)
+		otherTicket := core.SignTicket(otherClaims, clientA.PrivateKey())
 		req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Service-Ticket", otherTicket)
@@ -242,7 +247,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 
 		// Test 7: Ticket for wrong API → 403
 		wrongAPIClaims := core.NewTicket("admin-service", "project-service", "delete")
-		wrongAPITicket := core.SignTicket(wrongAPIClaims, testPriv)
+		wrongAPITicket := core.SignTicket(wrongAPIClaims, clientA.PrivateKey())
 		req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Service-Ticket", wrongAPITicket)
@@ -294,9 +299,8 @@ func TestE2E_BlockServicePreventsCalls(t *testing.T) {
 	testB := httptest.NewServer(guarded)
 	defer testB.Close()
 
-	_, testPriv, _ := core.GenerateKeyPair()
 	claims := core.NewTicket("admin-service", "project-service", "create")
-	validTicket := core.SignTicket(claims, testPriv)
+	validTicket := core.SignTicket(claims, clientA.PrivateKey())
 
 	// Pre-block: should pass.
 	req, _ := http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
