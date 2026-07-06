@@ -1181,7 +1181,12 @@ function CollapsibleMatrix({ providers, universe }: { providers: ProviderState[]
 }
 
 function InfraTable({ items }: { items: InfraItem[] }) {
-  if (!items.length) return null;
+  const defaults: InfraItem[] = [
+    { name: 'certbot', label: 'ACME 客户端 (certbot)', category: 'acme', installed: false, version: '', path: '', available: false, message: '未安装 — apt install certbot' },
+    { name: 'iptables', label: '透明代理 (iptables)', category: 'transparent_proxy', installed: false, version: '', path: '', available: false, message: '未安装 — apt install iptables' },
+    { name: 'dnsmasq', label: 'DNS 服务 (dnsmasq)', category: 'dns', installed: false, version: '', path: '', available: false, message: '未安装 — apt install dnsmasq' },
+  ];
+  const rows = items.length > 0 ? items : defaults;
   return (
     <Card title="基础设施" subtitle="外部依赖 — 安装检测、版本、可用性">
       <div className="overflow-x-auto">
@@ -1191,11 +1196,11 @@ function InfraTable({ items }: { items: InfraItem[] }) {
               <th className="py-1.5 pr-2 font-medium">工具</th>
               <th className="py-1.5 px-2 font-medium">用途</th>
               <th className="py-1.5 px-2 font-medium">版本</th>
-              <th className="py-1.5 pl-2 font-medium">状态</th>
+              <th className="py-1.5 pl-2 font-medium w-56">状态</th>
             </tr>
           </thead>
           <tbody>
-            {items.map(item => (
+            {rows.map(item => (
               <tr key={item.name} className="border-b border-a-border/20 hover:bg-a-border/10">
                 <td className="py-1.5 pr-2 font-mono text-a-fg text-[11px]">{item.name}</td>
                 <td className="py-1.5 px-2 text-a-muted text-[11px]">{item.label}</td>
@@ -1203,7 +1208,7 @@ function InfraTable({ items }: { items: InfraItem[] }) {
                 <td className="py-1.5 pl-2">
                   <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium',
                     item.available ? 'bg-[#4cd964]/10 text-[#4cd964]' : 'bg-[#ff5c72]/10 text-[#ff5c72]')}>
-                    {item.available ? '就绪' : item.message || '不可用'}
+                    {item.available ? '就绪' : item.message}
                   </span>
                 </td>
               </tr>
@@ -1217,10 +1222,9 @@ function InfraTable({ items }: { items: InfraItem[] }) {
 
 function ServiceOverview({ dns, tp, acme, infra }: { dns: any; tp: any; acme: any; infra: InfraItem[] }) {
   const dnsRunning = dns?.running;
-  const dnsDetail = dnsRunning ? `${dns?.listen_addr || ':5353'} → ${dns?.upstream || '1.1.1.1:53'}` : '已停止';
+  const dnsDetail = dnsRunning ? `${dns?.listen_addr || ':5353'} → ${dns?.upstream || '1.1.1.1:53'}` : '需要 dnsmasq (Linux)';
   const tpOk = tp?.available;
-  const tpRules = tp?.forward_targets?.length || 0;
-  const tpDetail = tpOk ? `${tpRules} 个转发入口就绪` : '不可用';
+  const tpDetail = tpOk ? `${tp?.forward_targets?.length || 0} 个转发入口就绪` : '需要 iptables (Linux)';
   const acmeOk = (acme as any)?.available;
   const acmeDetail = (acme as any)?.message || '—';
 
@@ -1229,7 +1233,7 @@ function ServiceOverview({ dns, tp, acme, infra }: { dns: any; tp: any; acme: an
   const acmeInfra = infra.find(i => i.name === 'certbot');
 
   return (
-    <Card title="Aegis 服务" subtitle="出口服务状态及其依赖">
+    <Card title="出口服务" subtitle="DNS · 透明代理 · ACME — 出站流量管理层">
       <div className="space-y-2">
         <ServiceRow label="DNS 解析器" ok={!!dnsRunning} detail={dnsDetail}>
           {dnsInfra && <DepRow ok={dnsInfra.available} detail={dnsInfra.message} />}
