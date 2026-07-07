@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -47,6 +48,13 @@ func NewHAProxyProvider(configPath, tcpConfigPath, backupDir string) *HAProxyPro
 		binaryPath:    bp,
 		inspectDelay:  "5s",
 	}
+}
+
+// ReadConfig implements the optional Reader interface.
+// Parses the current HAProxy config files and returns a structured snapshot.
+func (p *HAProxyProvider) ReadConfig(ctx context.Context) (*ConfigSnapshot, error) {
+	reader := &HAProxyReader{configPath: p.configPath, tcpConfigPath: p.tcpConfigPath}
+	return reader.ReadConfig(ctx)
 }
 
 // ============================================================================

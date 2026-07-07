@@ -33,6 +33,32 @@ release: build-ui embed-ui
 		-ldflags="-s -w -X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)" \
 		-o $(BINARY) $(MAIN)
 
+# ─── Dev — single command, kills everything stale, starts fresh ───
+.PHONY: dev dev-kill
+
+dev-kill:
+	@echo "  Killing stale processes on :3000 and :7380..."
+	@-taskkill //F //IM aegis-dev.exe 2>/dev/null
+	@-for pid in $$(netstat -ano | grep ':3000 ' | grep LISTEN | awk '{print $$5}' | sort -u); do taskkill //F //PID $$pid 2>/dev/null; done
+	@sleep 1
+	@echo "  Ports cleared."
+
+dev: dev-kill
+	$(GO) build -o aegis-dev.exe $(MAIN)
+	@echo "  Starting backend..."
+	@nohup ./aegis-dev.exe serve --addr 127.0.0.1:7380 > /tmp/aegis-dev.log 2>&1 &
+	@sleep 3
+	@echo "  Starting frontend..."
+	@cd $(UI_DIR) && nohup npm run dev > /tmp/vite-dev.log 2>&1 &
+	@sleep 3
+	@echo "  ───────────────────────────────"
+	@echo "   Backend:  http://127.0.0.1:7380"
+	@curl -s --max-time 2 http://127.0.0.1:7380/api/healthz 2>/dev/null || echo "   ⚠ Backend not ready"
+	@echo "   Frontend: http://localhost:3000"
+	@echo "   Login:    admin / admin"
+	@echo "   Logs:     tail -f /tmp/aegis-dev.log"
+	@echo "  ───────────────────────────────"
+
 # ─── UI ───
 dev-ui:
 	cd $(UI_DIR) && npm run dev

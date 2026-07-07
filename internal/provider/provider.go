@@ -26,6 +26,8 @@
 //  6. Register in registry.go
 package provider
 
+import "context"
+
 // ============================================================================
 // Provider — the unified interface for all gateway configuration backends
 // ============================================================================
@@ -85,7 +87,7 @@ type ApplyResult struct {
 }
 
 // ============================================================================
-// Optional extension interfaces (temporary bridges to dimension 3)
+// Optional extension interfaces
 // ============================================================================
 
 // LifecycleProvider is an optional interface for providers that support
@@ -128,4 +130,37 @@ type ServiceController interface {
 type ConfigCleaner interface {
 	Provider
 	CleanConfig() error
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Reader — 反向读取中间件现有配置（与 Provider.Render 镜像互补）
+// ══════════════════════════════════════════════════════════════════════════
+
+// Reader 从中间件的配置文件中逆向解析出结构化数据。
+// 每一类中间件 = 一个写 Provider + 一个读 Reader，成对注册。
+//
+// 用途：
+//   - 启动时检测残留配置（非 Aegis 管理的路由）
+//   - Apply 后校验实际配置与期望一致
+//   - 导出/迁移时从中间件恢复数据
+type Reader interface {
+	// ID 返回对应的 Provider ID，与 Registry.Get(id) 匹配。
+	ID() string
+
+	// ReadConfig 解析当前配置文件，返回结构化快照。
+	// ctx 用于超时控制（大文件解析可能较慢）。
+	ReadConfig(ctx context.Context) (*ConfigSnapshot, error)
+}
+
+// ConfigSnapshot 是 Reader.ReadConfig 的返回值。
+type ConfigSnapshot struct {
+	ProviderID string          `json:"provider_id"`
+	Routes     []RouteSpec     `json:"routes"`
+	Unmanaged  []UnmanagedBlock `json:"unmanaged,omitempty"`  // 无法解析的配置块
+}
+
+// UnmanagedBlock 表示配置文件中 Aegis 无法解析或识别的部分。
+type UnmanagedBlock struct {
+	Content  string `json:"content"`   // 原始文本
+	Location string `json:"location"`  // file:line 位置
 }

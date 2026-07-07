@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 
 type ServiceRecord = any;
 type CallLogEntry = any;
+type Tab = 'services' | 'groups' | 'policies' | 'my-resources' | 'dependencies' | 'auth-deps';
 
 export default function AuthServices() {
   const toast = useToast();
@@ -19,7 +20,26 @@ export default function AuthServices() {
   const [blockTarget, setBlockTarget] = useState<ServiceRecord | null>(null);
   const [blockReason, setBlockReason] = useState('');
   const [showBlockModal, setShowBlockModal] = useState(false);
-  const [tab, setTab] = useState<'services' | 'groups' | 'policies'>('services');
+  const [tab, setTab] = useState<Tab>('services');
+
+  // ── My Resources (service ticket) ──
+  const [ticket, setTicket] = useState('');
+  const [activeTicket, setActiveTicket] = useState('');
+  const loadMyResources = () => setActiveTicket(ticket);
+
+  const { data: myRoutesData, isLoading: myRoutesLoading } = useQuery({
+    queryKey: ['my-routes', activeTicket],
+    queryFn: () => adminApi.callMyRoutes(activeTicket),
+    enabled: activeTicket.length > 20,
+    retry: false,
+  });
+
+  const { data: myServicesData, isLoading: myServicesLoading } = useQuery({
+    queryKey: ['my-services', activeTicket],
+    queryFn: () => adminApi.callMyServices(activeTicket),
+    enabled: activeTicket.length > 20,
+    retry: false,
+  });
 
   // ── Data ──
 
@@ -133,11 +153,11 @@ export default function AuthServices() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-a-border/30 pb-0">
-        {(['services', 'groups', 'policies'] as const).map(t => (
+        {(['services', 'groups', 'policies', 'my-resources', 'dependencies', 'auth-deps'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={cn('px-3 py-1.5 text-xs border-b-2 transition-colors cursor-pointer',
               tab === t ? 'border-a-accent text-a-accent font-medium' : 'border-transparent text-a-muted hover:text-a-fg')}>
-            {{services: '服务', groups: '服务组', policies: '策略'}[t]}
+            {{services: '服务', groups: '服务组', policies: '策略', 'my-resources': '我的资源', dependencies: '依赖关系', 'auth-deps': 'Auth 依赖'}[t]}
           </button>
         ))}
       </div>
@@ -222,6 +242,282 @@ export default function AuthServices() {
 
       {/* End services tab */}
       </>)}
+
+      {tab === 'my-resources' && (
+        <Card title="我的资源" subtitle="用服务票证查看自己管理的域名和路由 — 这是服务自管理的参考案例">
+          {/* Ticket input */}
+          <div className="flex items-center gap-2 mb-4">
+            <input value={ticket} onChange={e => setTicket(e.target.value)}
+              placeholder="粘贴 X-Service-Ticket ..."
+              className="flex-1 bg-a-bg border border-a-border/50 rounded-a-sm px-3 py-1.5 text-xs font-mono text-a-fg placeholder:text-a-muted/40 focus:outline-none focus:border-a-accent/50" />
+            <Btn primary onClick={loadMyResources} disabled={ticket.length < 20} className="text-xs whitespace-nowrap">
+              {activeTicket ? '重新加载' : '加载资源'}
+            </Btn>
+          </div>
+          {ticket.length > 0 && ticket.length < 20 && (
+            <div className="text-[10px] text-a-muted/60 mb-2">票证长度不足，请粘贴完整的 X-Service-Ticket</div>
+          )}
+
+          {!activeTicket ? (
+            <div className="py-8 text-center">
+              <div className="text-3xl mb-2 opacity-30">🔑</div>
+              <div className="text-sm text-a-muted">输入服务票证查看该服务能看到的资源</div>
+              <div className="text-xs text-a-muted/60 mt-1">用于调试和验证服务自管理能力</div>
+            </div>
+          ) : myRoutesLoading || myServicesLoading ? (
+            <LoadingState />
+          ) : (
+            <div className="space-y-4">
+              {/* Routes table */}
+              <div>
+                <div className="text-xs font-medium text-a-fg mb-2">
+                  HTTP 路由 · {myRoutesData?.count || 0}
+                </div>
+                {(!myRoutesData?.routes || myRoutesData.routes.length === 0) ? (
+                  <div className="text-xs text-a-muted py-2">暂无路由</div>
+                ) : (
+                  <div className="overflow-x-auto border border-a-border/20 rounded-a-sm">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-a-border/30 text-a-muted text-left bg-a-surface/50">
+                          <th className="py-1.5 px-2 font-medium">域名</th>
+                          <th className="py-1.5 px-2 font-medium">后端</th>
+                          <th className="py-1.5 px-2 font-medium">状态</th>
+                          <th className="py-1.5 px-2 font-medium">TLS</th>
+                          <th className="py-1.5 px-2 font-medium">创建时间</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {myRoutesData.routes.map((r: any, i: number) => (
+                          <tr key={r.id || i} className="border-b border-a-border/20 hover:bg-a-border/10 transition-colors">
+                            <td className="py-1.5 px-2 font-mono text-a-fg">{r.domain}</td>
+                            <td className="py-1.5 px-2 font-mono text-a-muted">{r.service_id?.slice(0, 12)}…</td>
+                            <td className="py-1.5 px-2"><StatusBadge status={r.status} /></td>
+                            <td className="py-1.5 px-2 text-a-muted">{r.tls_enabled ? '✓' : '—'}</td>
+                            <td className="py-1.5 px-2 text-a-muted text-[10px]">{fmtTimeShort(r.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Services table */}
+              <div>
+                <div className="text-xs font-medium text-a-fg mb-2">
+                  注册服务 · {myServicesData?.count || 0}
+                </div>
+                {(!myServicesData?.services || myServicesData.services.length === 0) ? (
+                  <div className="text-xs text-a-muted py-2">暂无服务</div>
+                ) : (
+                  <div className="overflow-x-auto border border-a-border/20 rounded-a-sm">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-a-border/30 text-a-muted text-left bg-a-surface/50">
+                          <th className="py-1.5 px-2 font-medium">名称</th>
+                          <th className="py-1.5 px-2 font-medium">地址</th>
+                          <th className="py-1.5 px-2 font-medium">状态</th>
+                          <th className="py-1.5 px-2 font-medium">创建时间</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {myServicesData.services.map((s: any, i: number) => (
+                          <tr key={s.id || i} className="border-b border-a-border/20 hover:bg-a-border/10 transition-colors">
+                            <td className="py-1.5 px-2 font-semibold text-a-fg">{s.name}</td>
+                            <td className="py-1.5 px-2 font-mono text-a-muted">{s.host}:{s.port}</td>
+                            <td className="py-1.5 px-2"><StatusBadge status={s.status} /></td>
+                            <td className="py-1.5 px-2 text-a-muted text-[10px]">{fmtTimeShort(s.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="text-[10px] text-a-muted/60 pt-2 border-t border-a-border/20">
+                此页面展示的是服务自身通过 X-Service-Ticket 能看到的资源范围。
+                完整的拓扑图请查看 <span className="text-a-accent">「依赖关系」</span> 标签。
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {tab === 'dependencies' && (
+        <Card title="依赖关系" subtitle="过去 1h 内的服务间调用拓扑 — 数据来自 svc_auth_call_logs">
+          {topologyData && topologyData.nodes?.length > 0 ? (
+            <div className="space-y-4">
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="px-3 py-2 rounded-a-sm bg-a-surface border border-a-border/30">
+                  <div className="text-[9px] text-a-muted uppercase tracking-wider">服务节点</div>
+                  <div className="text-base font-bold font-mono text-a-fg mt-0.5">{topologyData.nodes.length}</div>
+                </div>
+                <div className="px-3 py-2 rounded-a-sm bg-a-surface border border-a-border/30">
+                  <div className="text-[9px] text-a-muted uppercase tracking-wider">调用边</div>
+                  <div className="text-base font-bold font-mono text-a-fg mt-0.5">{topologyData.edges?.length || 0}</div>
+                </div>
+                <div className="px-3 py-2 rounded-a-sm bg-a-surface border border-a-border/30">
+                  <div className="text-[9px] text-a-muted uppercase tracking-wider">总调用次数</div>
+                  <div className="text-base font-bold font-mono text-a-fg mt-0.5">
+                    {(topologyData.edges || []).reduce((s: number, e: any) => s + (e.count || 0), 0)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Edge table */}
+              <div className="overflow-x-auto border border-a-border/20 rounded-a-sm">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-a-border/30 text-a-muted text-left bg-a-surface/50">
+                      <th className="py-1.5 px-2 font-medium">调用方</th>
+                      <th className="py-1.5 px-2 font-medium">目标方</th>
+                      <th className="py-1.5 px-2 font-medium">API</th>
+                      <th className="py-1.5 px-2 font-medium text-right">调用次数</th>
+                      <th className="py-1.5 px-2 font-medium text-right">最后调用</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(topologyData.edges || [])
+                      .sort((a: any, b: any) => b.count - a.count)
+                      .map((e: any, i: number) => (
+                      <tr key={i} className="border-b border-a-border/20 hover:bg-a-border/10 transition-colors">
+                        <td className="py-1.5 px-2 font-semibold text-a-fg">{e.caller}</td>
+                        <td className="py-1.5 px-2 text-a-fg">→ <span className="font-semibold">{e.target}</span></td>
+                        <td className="py-1.5 px-2 font-mono text-a-muted text-[11px]">{e.api}</td>
+                        <td className="py-1.5 px-2 text-right font-mono text-a-fg">{e.count}</td>
+                        <td className="py-1.5 px-2 text-right text-a-muted text-[10px]">{fmtTimeShort(e.last_seen)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="text-[10px] text-a-muted/60 flex items-center gap-2">
+                <span>完整拓扑图见</span>
+                <a href="/fabric/callgraph" className="text-a-accent hover:underline">服务拓扑 · Service Topology →</a>
+              </div>
+            </div>
+          ) : (
+            <EmptyState title="暂无依赖数据" description="服务之间还没有调用记录，部署 SDK 并注册后自动生成" />
+          )}
+        </Card>
+      )}
+
+      {tab === 'auth-deps' && (
+        <Card title="Auth 依赖" subtitle="各服务与认证服务器的依赖关系 — 注册、心跳、调用都经过 ServiceAuth">
+          <div className="space-y-4">
+            {/* Stats */}
+            <div className="grid grid-cols-4 gap-3">
+              <div className="px-3 py-2 rounded-a-sm bg-a-surface border border-a-border/30">
+                <div className="text-[9px] text-a-muted uppercase tracking-wider">注册服务</div>
+                <div className="text-base font-bold font-mono text-a-fg mt-0.5">{services.length}</div>
+              </div>
+              <div className="px-3 py-2 rounded-a-sm bg-a-surface border border-a-border/30">
+                <div className="text-[9px] text-a-muted uppercase tracking-wider">活跃</div>
+                <div className="text-base font-bold font-mono text-[#4cd964] mt-0.5">{activeCount}</div>
+              </div>
+              <div className="px-3 py-2 rounded-a-sm bg-a-surface border border-a-border/30">
+                <div className="text-[9px] text-a-muted uppercase tracking-wider">总调用</div>
+                <div className="text-base font-bold font-mono text-a-fg mt-0.5">
+                  {(topologyData?.edges || []).reduce((s: number, e: any) => s + (e.count || 0), 0)}
+                </div>
+              </div>
+              <div className="px-3 py-2 rounded-a-sm bg-a-surface border border-a-border/30">
+                <div className="text-[9px] text-a-muted uppercase tracking-wider">节点</div>
+                <div className="text-base font-bold font-mono text-a-fg mt-0.5">
+                  {new Set(services.map((s: any) => s.node_host).filter(Boolean)).size}
+                </div>
+              </div>
+            </div>
+
+            {/* Service → Auth status table */}
+            <div>
+              <div className="text-xs font-medium text-a-fg mb-2">各服务认证状态</div>
+              <div className="overflow-x-auto border border-a-border/20 rounded-a-sm">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-a-border/30 text-a-muted text-left bg-a-surface/50">
+                      <th className="py-1.5 px-2 font-medium">服务名</th>
+                      <th className="py-1.5 px-2 font-medium">注册地址</th>
+                      <th className="py-1.5 px-2 font-medium">节点</th>
+                      <th className="py-1.5 px-2 font-medium">状态</th>
+                      <th className="py-1.5 px-2 font-medium">最后心跳</th>
+                      <th className="py-1.5 px-2 font-medium">注册时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {services.length === 0 ? (
+                      <tr><td colSpan={6} className="py-3 text-center text-a-muted">暂无注册服务</td></tr>
+                    ) : services.map((s: any) => (
+                      <tr key={s.id} className="border-b border-a-border/20 hover:bg-a-border/10 transition-colors">
+                        <td className="py-1.5 px-2 font-semibold text-a-fg">{s.name}</td>
+                        <td className="py-1.5 px-2 font-mono text-a-muted">{s.host}:{s.port}</td>
+                        <td className="py-1.5 px-2 font-mono text-[11px] text-a-muted">{s.node_host || '—'}</td>
+                        <td className="py-1.5 px-2">
+                          <StatusBadge status={s.status === 'blocked' ? 'disabled' : 'active'} />
+                        </td>
+                        <td className="py-1.5 px-2 text-a-muted text-[10px]">{fmtTimeShort(s.last_seen)}</td>
+                        <td className="py-1.5 px-2 text-a-muted text-[10px]">{fmtTimeShort(s.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Call edges with auth highlighting */}
+            <div>
+              <div className="text-xs font-medium text-a-fg mb-2">服务间调用拓扑（含认证流量）</div>
+              {(!topologyData?.edges || topologyData.edges.length === 0) ? (
+                <div className="text-xs text-a-muted py-3 text-center">暂无调用数据</div>
+              ) : (
+                <div className="overflow-x-auto border border-a-border/20 rounded-a-sm">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-a-border/30 text-a-muted text-left bg-a-surface/50">
+                        <th className="py-1.5 px-2 font-medium">调用方</th>
+                        <th className="py-1.5 px-2 font-medium">目标方</th>
+                        <th className="py-1.5 px-2 font-medium">API</th>
+                        <th className="py-1.5 px-2 font-medium text-right">调用次数</th>
+                        <th className="py-1.5 px-2 font-medium text-right">最后调用</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(topologyData.edges || [])
+                        .sort((a: any, b: any) => b.count - a.count)
+                        .map((e: any, i: number) => {
+                          const isAuthFlow = e.api === 'register' || e.api === 'sync' || e.api === 'report' || e.target === 'aegis' || e.caller.includes('auth');
+                          return (
+                            <tr key={i} className={cn('border-b border-a-border/20 hover:bg-a-border/10 transition-colors',
+                              isAuthFlow && 'bg-[#a865ff]/5'
+                            )}>
+                              <td className="py-1.5 px-2 font-semibold text-a-fg">{e.caller}</td>
+                              <td className="py-1.5 px-2">
+                                <span className={isAuthFlow ? 'text-[#a865ff]' : 'text-a-fg'}>→ {e.target}</span>
+                                {isAuthFlow && <span className="text-[9px] text-[#a865ff] ml-1">(认证)</span>}
+                              </td>
+                              <td className="py-1.5 px-2 font-mono text-a-muted text-[11px]">{e.api}</td>
+                              <td className="py-1.5 px-2 text-right font-mono text-a-fg">{e.count}</td>
+                              <td className="py-1.5 px-2 text-right text-a-muted text-[10px]">{fmtTimeShort(e.last_seen)}</td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="text-[10px] text-a-muted/60 flex items-center gap-2 pt-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#a865ff]/40" /> 紫色底色标记涉及认证服务的调用
+              <span className="ml-auto">完整拓扑见 <a href="/fabric/callgraph" className="text-a-accent hover:underline">服务拓扑 →</a></span>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {tab === 'groups' && (
         <Card title="服务组" subtitle="将服务分组以便在策略中引用">
