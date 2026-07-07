@@ -73,8 +73,8 @@ func handleRegister(svc *serviceauth.Service) http.HandlerFunc {
 			writeError(w, 400, "invalid request: "+err.Error())
 			return
 		}
-		if req.ServiceName == "" || req.Host == "" || req.Port <= 0 {
-			writeError(w, 400, "service_name, host, and port are required")
+		if req.ServiceName == "" || req.PublicKey == "" {
+			writeError(w, 400, "service_name and public_key are required")
 			return
 		}
 

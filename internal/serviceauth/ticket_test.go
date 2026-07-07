@@ -17,7 +17,7 @@ func genKeyPair(t *testing.T) (pub, priv string) {
 func TestSignAndVerify(t *testing.T) {
 	pub, priv := genKeyPair(t)
 
-	claims := NewTicket("svc-a", "svc-b", "createProject")
+	claims := NewTicket("svc-a")
 	ticket := SignTicket(claims, priv)
 
 	verified, err := VerifyTicket(ticket, pub)
@@ -27,19 +27,13 @@ func TestSignAndVerify(t *testing.T) {
 	if verified.CallerService != "svc-a" {
 		t.Errorf("CallerService = %q, want %q", verified.CallerService, "svc-a")
 	}
-	if verified.TargetService != "svc-b" {
-		t.Errorf("TargetService = %q, want %q", verified.TargetService, "svc-b")
-	}
-	if verified.TargetAPI != "createProject" {
-		t.Errorf("TargetAPI = %q, want %q", verified.TargetAPI, "createProject")
-	}
 }
 
 func TestVerifyWrongKey(t *testing.T) {
 	_, priv1 := genKeyPair(t)
 	pub2, _ := genKeyPair(t)
 
-	claims := NewTicket("a", "b", "c")
+	claims := NewTicket("a")
 	ticket := SignTicket(claims, priv1)
 
 	_, err := VerifyTicket(ticket, pub2)
@@ -53,8 +47,6 @@ func TestVerifyExpired(t *testing.T) {
 
 	claims := TicketClaims{
 		CallerService: "a",
-		TargetService: "b",
-		TargetAPI:     "c",
 		ExpiresAt:     time.Now().Add(-1 * time.Hour).Unix(),
 	}
 	ticket := SignTicket(claims, priv)
@@ -68,7 +60,7 @@ func TestVerifyExpired(t *testing.T) {
 func TestVerifyTampered(t *testing.T) {
 	pub, priv := genKeyPair(t)
 
-	claims := NewTicket("a", "b", "c")
+	claims := NewTicket("a")
 	ticket := SignTicket(claims, priv)
 
 	tampered := ticket + "garbage"
@@ -83,17 +75,15 @@ func TestSignTicketRoundTrip(t *testing.T) {
 
 	tests := []struct {
 		caller string
-		target string
-		api    string
 	}{
-		{"admin-service", "project-service", "createProject"},
-		{"svc-a", "svc-b", "health"},
-		{"user-svc", "auth-svc", "validateToken"},
-		{"short", "x", "y"},
+		{"admin-service"},
+		{"svc-a"},
+		{"user-svc"},
+		{"short"},
 	}
 
 	for _, tt := range tests {
-		claims := NewTicket(tt.caller, tt.target, tt.api)
+		claims := NewTicket(tt.caller)
 		ticket := SignTicket(claims, priv)
 		verified, err := VerifyTicket(ticket, pub)
 		if err != nil {
@@ -102,12 +92,6 @@ func TestSignTicketRoundTrip(t *testing.T) {
 		}
 		if verified.CallerService != tt.caller {
 			t.Errorf("caller mismatch: got %q want %q", verified.CallerService, tt.caller)
-		}
-		if verified.TargetService != tt.target {
-			t.Errorf("target mismatch: got %q want %q", verified.TargetService, tt.target)
-		}
-		if verified.TargetAPI != tt.api {
-			t.Errorf("api mismatch: got %q want %q", verified.TargetAPI, tt.api)
 		}
 	}
 }

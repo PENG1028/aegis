@@ -193,8 +193,6 @@ func isPrivateIP(ip net.IP) bool {
 
 const (
 	maxServiceNameLen = 128
-	maxAPINameLen     = 128
-	maxPathLen        = 512
 )
 
 var reservedChars = []byte{':', '\n', '\r', '\x00'}
@@ -212,29 +210,9 @@ func validateRegisterRequest(req RegisterRequest) error {
 	if containsReserved(req.ServiceName) {
 		return fmt.Errorf("%w: service_name contains reserved characters", ErrInvalidInput)
 	}
-
-	if req.Host == "" {
-		return fmt.Errorf("%w: host is required", ErrInvalidInput)
+	if req.PublicKey == "" {
+		return fmt.Errorf("%w: public_key is required", ErrInvalidInput)
 	}
-	if req.Port <= 0 || req.Port > 65535 {
-		return fmt.Errorf("%w: port must be 1-65535", ErrInvalidInput)
-	}
-
-	for i, api := range req.APIs {
-		if api.Name == "" {
-			return fmt.Errorf("%w: apis[%d].name is required", ErrInvalidInput, i)
-		}
-		if len(api.Name) > maxAPINameLen {
-			return fmt.Errorf("%w: apis[%d].name too long (max %d)", ErrInvalidInput, i, maxAPINameLen)
-		}
-		if containsReserved(api.Name) {
-			return fmt.Errorf("%w: apis[%d].name contains reserved characters", ErrInvalidInput, i)
-		}
-		if len(api.Path) > maxPathLen {
-			return fmt.Errorf("%w: apis[%d].path too long (max %d)", ErrInvalidInput, i, maxPathLen)
-		}
-	}
-
 	return nil
 }
 
@@ -249,6 +227,7 @@ func containsReserved(s string) bool {
 	return false
 }
 
+
 // ============================================================================
 // Bridge: Ticket → ActionContext (for Aegis integration)
 // ============================================================================
@@ -256,19 +235,15 @@ func containsReserved(s string) bool {
 // VerifyTicketAndGetSpace validates a service ticket using Ed25519 and the
 // caller's public key from the repository. Returns the caller's service name.
 func (s *Service) VerifyTicketAndGetSpace(ticketStr string) (serviceName string, err error) {
-	// Quick decode to get caller name before full verification.
-	claims, err := VerifyTicket(ticketStr, "") // won't pass; we just need caller name
-	// Full verification with public key lookup.
 	allKeys, keyErr := s.deps.Repo.ListPublicKeys()
 	if keyErr != nil {
 		return "", fmt.Errorf("verify ticket: lookup public keys: %w", keyErr)
 	}
-	// Decode again properly
 	ticketDecoded, decodeErr := base64.StdEncoding.DecodeString(ticketStr)
 	if decodeErr != nil {
 		return "", fmt.Errorf("verify ticket: %w", ErrTicketInvalid)
 	}
-	parts := strings.SplitN(string(ticketDecoded), ":", 5)
+	parts := strings.SplitN(string(ticketDecoded), ":", 3)
 	if len(parts) < 1 {
 		return "", fmt.Errorf("verify ticket: %w", ErrTicketInvalid)
 	}

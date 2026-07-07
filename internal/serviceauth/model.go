@@ -69,26 +69,20 @@ type BlocklistEntry struct {
 
 // RegisterRequest is sent by a service on startup.
 type RegisterRequest struct {
-	ServiceName string   `json:"service_name"`
-	Host        string   `json:"host"`
-	Port        int      `json:"port"`
-	NodeHost    string   `json:"node_host"`
-	APIs        []APIDef `json:"apis"`
-	PublicKey   string   `json:"public_key"` // Ed25519 public key (base64)
+	ServiceName string `json:"service_name"`
+	PublicKey   string `json:"public_key"` // Ed25519 public key (base64)
 }
 
 // RegisterResponse is returned after successful registration.
 type RegisterResponse struct {
-	ServiceID     string            `json:"service_id"`
-	Instances     []ServiceInstance `json:"instances"`      // all known instances
-	PublicKeys    map[string]string `json:"public_keys"`    // name → public_key
-	Groups        []ServiceGroup    `json:"groups,omitempty"`
-	Policies      []Policy          `json:"policies,omitempty"`
-	APIs          []APIDef          `json:"apis"`           // APIs of all services
-	Blocklist     []BlocklistEntry  `json:"blocklist"`
-	BlVersion     int64             `json:"bl_version"`
-	CatVersion    int64             `json:"cat_version"`
-	SyncInterval  int               `json:"sync_interval"` // seconds
+	ServiceID    string            `json:"service_id"`
+	PublicKeys   map[string]string `json:"public_keys"`    // name → public_key
+	Groups       []ServiceGroup    `json:"groups,omitempty"`
+	Policies     []Policy          `json:"policies,omitempty"`
+	Blocklist    []BlocklistEntry  `json:"blocklist"`
+	BlVersion    int64             `json:"bl_version"`
+	CatVersion   int64             `json:"cat_version"`
+	SyncInterval int               `json:"sync_interval"` // seconds
 }
 
 // ServiceInstance is a lightweight view of a service endpoint.
@@ -128,15 +122,13 @@ type Policy struct {
 
 // SyncResponse is returned by the sync endpoint.
 type SyncResponse struct {
-	Blocklist    []BlocklistEntry   `json:"blocklist,omitempty"`
-	BlVersion    int64              `json:"bl_version"`
-	NewInstances []ServiceInstance  `json:"new_instances,omitempty"`
-	PublicKeys   map[string]string  `json:"public_keys,omitempty"`   // name → public_key
-	Groups       []ServiceGroup     `json:"groups,omitempty"`        // all service groups
-	Policies     []Policy           `json:"policies,omitempty"`      // all active policies
-	RemovedIDs   []string           `json:"removed_ids,omitempty"`
-	CatVersion   int64              `json:"cat_version"`
-	NotModified  bool               `json:"not_modified"`
+	Blocklist  []BlocklistEntry  `json:"blocklist,omitempty"`
+	BlVersion  int64             `json:"bl_version"`
+	PublicKeys map[string]string `json:"public_keys,omitempty"`   // name → public_key
+	Groups     []ServiceGroup    `json:"groups,omitempty"`        // all service groups
+	Policies   []Policy          `json:"policies,omitempty"`       // all active policies
+	CatVersion int64             `json:"cat_version"`
+	NotModified bool             `json:"not_modified"`
 }
 
 // ReportRequest carries an async call-log entry from the SDK.
@@ -173,25 +165,4 @@ type TopologyEdge struct {
 type TopologyData struct {
 	Nodes []TopologyNode `json:"nodes"`
 	Edges []TopologyEdge `json:"edges"`
-}
-
-// ============================================================================
-// Ticket
-// ============================================================================
-
-// TicketClaims is the decoded content of a service ticket.
-type TicketClaims struct {
-	CallerService string `json:"caller"`
-	TargetService string `json:"target"`
-	TargetAPI     string `json:"api"`
-	ExpiresAt     int64  `json:"exp"`
-}
-
-// GenerateKeyPair creates a new Ed25519 key pair, returning base64-encoded strings.
-func GenerateKeyPair() (pubKey, privKey string, err error) {
-	pub, priv, err := ed25519GenerateKey()
-	if err != nil {
-		return "", "", err
-	}
-	return pub, priv, nil
 }

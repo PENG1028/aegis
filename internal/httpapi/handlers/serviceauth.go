@@ -46,8 +46,8 @@ func (h *Handlers) ServiceAuthRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request: "+err.Error())
 		return
 	}
-	if req.ServiceName == "" || req.Host == "" || req.Port <= 0 {
-		writeError(w, http.StatusBadRequest, "service_name, host, and port are required")
+	if req.ServiceName == "" || req.PublicKey == "" {
+		writeError(w, http.StatusBadRequest, "service_name and public_key are required")
 		return
 	}
 
