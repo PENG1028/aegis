@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"sync"
@@ -314,13 +315,21 @@ func (c *Client) resolveTarget(targetService, targetAPI, method string) (url, ef
 		return "", "", fmt.Errorf("service %q not found", targetService)
 	}
 
-	// Prefer same-host instance.
-	inst := instances[0]
-	for _, i := range instances {
+	// Collect same-host instances for load-balanced selection.
+	var sameHost []int
+	for idx, i := range instances {
 		if i.Host == c.localHost {
-			inst = i
-			break
+			sameHost = append(sameHost, idx)
 		}
+	}
+
+	var inst ServiceInstance
+	if len(sameHost) > 0 {
+		// Randomly pick among same-host instances (gray deploy support).
+		inst = instances[sameHost[rand.Intn(len(sameHost))]]
+	} else {
+		// No same-host — pick any instance randomly.
+		inst = instances[rand.Intn(len(instances))]
 	}
 
 	// Look up the API definition to get path and method.

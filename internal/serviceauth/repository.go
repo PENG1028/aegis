@@ -24,16 +24,17 @@ func NewRepository(db *sql.DB) *Repository {
 // Service records
 // ============================================================================
 
-// UpsertService inserts or updates a service by its unique name.
-// Host/Port/NodeHost are locators that change on restart/migration.
+// UpsertService inserts or updates a service instance by name + public_key.
+// Same name with different public_key = different instance (graceful upgrade).
+// Same name + same public_key = restart → update locators.
 func (r *Repository) UpsertService(s *ServiceRecord) error {
 	result, err := r.DB.Exec(
 		`UPDATE svc_auth_services
-		 SET host=?, port=?, node_host=?, apis_json=?, public_key=?, status=?, last_seen=?, updated_at=?
-		 WHERE name=?`,
-		s.Host, s.Port, s.NodeHost, s.APIsJSON, s.PublicKey, s.Status,
+		 SET host=?, port=?, node_host=?, apis_json=?, status=?, last_seen=?, updated_at=?
+		 WHERE name=? AND public_key=?`,
+		s.Host, s.Port, s.NodeHost, s.APIsJSON, s.Status,
 		s.LastSeen.Format(time.RFC3339), s.UpdatedAt.Format(time.RFC3339),
-		s.Name,
+		s.Name, s.PublicKey,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert service: update: %w", err)
@@ -43,7 +44,7 @@ func (r *Repository) UpsertService(s *ServiceRecord) error {
 		return nil
 	}
 
-	// New service.
+	// New instance.
 	_, err = r.DB.Exec(
 		`INSERT INTO svc_auth_services (id, name, host, port, node_host, apis_json, public_key, status, last_seen, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -111,12 +112,22 @@ func (r *Repository) UpdateStatus(id, status string) error {
 	return nil
 }
 
-// UpdateLastSeen refreshes the last_seen timestamp.
+// UpdateLastSeen refreshes the last_seen timestamp for an instance.
 func (r *Repository) UpdateLastSeen(id string, t time.Time) error {
 	_, err := r.DB.Exec(
 		`UPDATE svc_auth_services SET last_seen=? WHERE id=?`,
 		t.Format(time.RFC3339), id)
 	return err
+}
+
+// MarkStale marks instances as inactive when last_seen is older than threshold.
+func (r *Repository) MarkStale(threshold time.Time) (int, error) {
+	result, err := r.DB.Exec(
+		`UPDATE svc_auth_services SET status='inactive', updated_at=? WHERE last_seen < ? AND status='active'`,
+		time.Now().Format(time.RFC3339), threshold.Format(time.RFC3339))
+	if err != nil { return 0, err }
+	n, _ := result.RowsAffected()
+	return int(n), nil
 }
 
 // DeleteService removes a service record by ID.

@@ -105,6 +105,11 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		return nil, fmt.Errorf("register: %w", err)
 	}
 
+	// Mark instances that haven't heartbeated in 3 minutes as inactive (alpha).
+	if n, _ := s.deps.Repo.MarkStale(time.Now().Add(-3 * time.Minute)); n > 0 {
+		s.catVersion.Add(1)
+	}
+
 	s.catVersion.Add(1)
 
 	allActive, _ := s.deps.Repo.ListActive()

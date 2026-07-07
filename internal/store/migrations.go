@@ -207,6 +207,11 @@ func AllMigrations() []Migration {
 			Name:    "serviceauth_groups_policies",
 			UpSQL:   migration038,
 		},
+		{
+			Version: "039",
+			Name:    "serviceauth_multi_instance",
+			UpSQL:   migration039,
+		},
 	}
 }
 
@@ -1176,4 +1181,12 @@ CREATE TABLE IF NOT EXISTS svc_auth_policies (
 	created_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_policies_subject ON svc_auth_policies(subject);
+`
+
+// migration039 drops the UNIQUE name constraint for multi-instance support.
+// Multiple instances of the same service name can coexist with different public keys.
+const migration039 = `
+DROP INDEX IF EXISTS idx_svc_auth_name_unique;
+CREATE INDEX IF NOT EXISTS idx_svc_auth_name ON svc_auth_services(name);
+CREATE INDEX IF NOT EXISTS idx_svc_auth_last_seen ON svc_auth_services(last_seen);
 `
