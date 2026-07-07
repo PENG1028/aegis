@@ -1,9 +1,10 @@
 // ─── Provider Detail — 独立页面 (从 Providers.tsx 拆分) ───
+// v1.9E: 增加配置差异 (Drift) 检测展示，数据来自真实后端 API
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { providerApi, runtimeModeApi } from '@/lib/api-bridge';
-import { PageHeader, HealthDot, StatusBadge, Card, Btn, useToast, LoadingState, ErrorBanner } from '@/components/shared';
+import { PageHeader, HealthDot, StatusBadge, Card, Btn, useToast, LoadingState, ErrorBanner, EmptyState } from '@/components/shared';
 import { cn } from '@/lib/utils';
 
 interface ProviderState {
@@ -17,6 +18,15 @@ interface ProviderState {
 
 interface CapabilityDef {
   key: string; layer: string; label: string; description: string;
+}
+
+interface DriftData {
+  provider_id: string;
+  db_routes: number;
+  config_routes: number;
+  routes: any[];
+  unmanaged_blocks: { content: string; location: string }[];
+  consistent: boolean;
 }
 
 // ─── Helpers ───
@@ -38,6 +48,109 @@ function CapBar({ native, theoretical, unsupported, total }: {
         {theoretical > 0 && <div className="h-full bg-[#e8b830]" style={{ width: `${pct(theoretical)}%` }} />}
       </div>
       <span className="text-[10px] font-mono text-a-muted w-8 text-right">{native}/{total}</span>
+    </div>
+  );
+}
+
+// ─── Drift Section (折叠面板) ───
+
+function DriftSection({ providerId, toast }: { providerId: string; toast: any }) {
+  const [driftOpen, setDriftOpen] = useState(false);
+  const [unmanagedOpen, setUnmanagedOpen] = useState(false);
+
+  const { data: drift, isLoading, error, refetch } = useQuery({
+    queryKey: ['provider-drift', providerId],
+    queryFn: () => providerApi.getDrift(providerId),
+    enabled: driftOpen,
+    refetchInterval: driftOpen ? 60_000 : false,
+  });
+
+  return (
+    <div className="border-t border-a-border/30 pt-3 mt-3">
+      <button onClick={() => setDriftOpen(!driftOpen)}
+        className="flex items-center gap-2 text-xs text-a-muted hover:text-a-fg transition-colors cursor-pointer w-full text-left">
+        <span className={cn('w-2 h-2 rounded-full', drift?.consistent === false ? 'bg-[#e8b830]' : drift?.consistent === true ? 'bg-[#4cd964]' : 'bg-a-border/30')} />
+        配置差异 · Config Drift
+        <svg className={cn('w-3 h-3 ml-auto transition-transform', driftOpen && 'rotate-180')}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+
+      {driftOpen && (
+        <div className="mt-3 space-y-3">
+          {isLoading ? (
+            <div className="text-[10px] text-a-muted">读取配置中...</div>
+          ) : error ? (
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-[#ff5c72]">读取失败: {(error as any)?.message}</span>
+              <Btn onClick={() => refetch()} className="text-[9px]">重试</Btn>
+            </div>
+          ) : !drift ? (
+            <EmptyState title="无数据" description="Drift 检测不可用" />
+          ) : (
+            <>
+              {/* 状态头部 */}
+              <div className="flex items-center gap-3">
+                {drift.consistent ? (
+                  <span className="flex items-center gap-1 text-[11px] text-[#4cd964]">
+                    <span>✅</span> DB 与配置文件一致
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[11px] text-[#e8b830]">
+                    <span>⚠️</span> DB 与配置存在差异
+                  </span>
+                )}
+                <span className="text-[10px] text-a-muted font-mono">
+                  DB {drift.db_routes} 条 · 配置 {drift.config_routes} 条
+                </span>
+              </div>
+
+              {/* 差异明细 */}
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="px-2 py-1.5 rounded-a-sm bg-a-bg border border-a-border/20">
+                  <span className="text-a-muted">缺失 (DB有·配置无)</span>
+                  <span className={cn('ml-2 font-mono font-medium', (drift.db_routes - drift.config_routes) > 0 ? 'text-[#ff5c72]' : 'text-a-muted')}>
+                    {Math.max(0, drift.db_routes - drift.config_routes)}
+                  </span>
+                </div>
+                <div className="px-2 py-1.5 rounded-a-sm bg-a-bg border border-a-border/20">
+                  <span className="text-a-muted">未管理 (配置有·DB无)</span>
+                  <span className={cn('ml-2 font-mono font-medium', drift.unmanaged_blocks?.length > 0 ? 'text-[#e8b830]' : 'text-a-muted')}>
+                    {drift.unmanaged_blocks?.length || 0}
+                  </span>
+                </div>
+              </div>
+
+              {/* 无法解析的配置块 */}
+              {drift.unmanaged_blocks?.length > 0 && (
+                <div>
+                  <button onClick={() => setUnmanagedOpen(!unmanagedOpen)}
+                    className="flex items-center gap-1 text-[10px] text-[#e8b830] hover:text-[#e8b830]/80 transition-colors cursor-pointer">
+                    <span>⚠️</span> {drift.unmanaged_blocks.length} 个配置块无法解析
+                    <svg className={cn('w-2.5 h-2.5 transition-transform', unmanagedOpen && 'rotate-180')}
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                  {unmanagedOpen && (
+                    <div className="mt-1.5 space-y-1">
+                      {drift.unmanaged_blocks.map((b, i) => (
+                        <div key={i} className="px-2 py-1.5 rounded-a-sm bg-[#e8b830]/5 border border-[#e8b830]/20 text-[10px]">
+                          <div className="text-[9px] text-a-muted font-mono mb-0.5">{b.location}</div>
+                          <pre className="text-a-fg font-mono text-[9px] whitespace-pre-wrap break-all">{b.content}</pre>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Btn onClick={() => refetch()} className="text-[9px]" disabled={isLoading}>
+                  {isLoading ? '刷新中...' : '重新检测'}
+                </Btn>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -126,6 +239,10 @@ function ProviderCard({ provider, universe, toast }: {
               );
             })}
           </div>
+
+          {/* Drift Section — 真实后端数据 */}
+          <DriftSection providerId={provider.id} toast={toast} />
+
           {provider.installed ? (
             <div className="flex gap-2 pt-1 border-t border-a-border/30">
               <Btn onClick={() => { providerApi.reload(provider.id).then(() => toast(`${provider.name} 重载成功`)).catch((e: Error) => toast(`失败: ${e.message}`, 'error')); }} className="text-[10px]">热重载</Btn>
@@ -171,7 +288,7 @@ export default function ProvidersDetail() {
         subtitle={`${providers.length} 个 Provider · ${universe.length} 项能力`}
       />
 
-      <Card title="Provider 详情" subtitle="点击展开查看完整能力清单、诊断信息和操作">
+      <Card title="Provider 详情" subtitle="点击展开查看完整能力清单、诊断信息和配置差异">
         {isLoading ? (
           <LoadingState />
         ) : error ? (

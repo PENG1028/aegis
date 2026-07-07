@@ -159,12 +159,13 @@ function arrowHead(x: number, y: number, angle: number): string {
 
 // ─── Build simulation data ───
 
-function buildSimulation(topoData: { nodes: TopoNode[]; edges: TopoEdge[] }): { nodes: SimNode[]; edges: SimEdge[] } | null {
+function buildSimulation(topoData: { nodes?: TopoNode[]; edges?: TopoEdge[] }): { nodes: SimNode[]; edges: SimEdge[] } | null {
   if (!topoData.nodes?.length) return null;
 
   const rawNodes = topoData.nodes;
+  const rawEdges = topoData.edges || [];
   let maxCount = 0;
-  for (const e of topoData.edges) {
+  for (const e of rawEdges) {
     if (e.count > maxCount) maxCount = e.count;
   }
   const norm = maxCount > 0 ? 1 / maxCount : 1;
@@ -176,7 +177,7 @@ function buildSimulation(topoData: { nodes: TopoNode[]; edges: TopoEdge[] }): { 
   });
 
   const simEdges: SimEdge[] = [];
-  for (const e of topoData.edges) {
+  for (const e of rawEdges) {
     const si = nodeMap.get(e.caller);
     const ti = nodeMap.get(e.target);
     if (si === undefined || ti === undefined) continue;
@@ -195,7 +196,7 @@ function buildSimulation(topoData: { nodes: TopoNode[]; edges: TopoEdge[] }): { 
   // Mark cross-node services
   const nodeHostMap = new Map<string, string>();
   rawNodes.forEach(n => nodeHostMap.set(n.name, n.node_host));
-  for (const e of topoData.edges) {
+  for (const e of rawEdges) {
     const aHost = nodeHostMap.get(e.caller);
     const bHost = nodeHostMap.get(e.target);
     if (aHost && bHost && aHost !== bHost) {

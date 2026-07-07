@@ -148,6 +148,39 @@ function del<T = void>(path: string): Promise<T> {
   return request<T>('DELETE', path);
 }
 
+// Ticket-based request for service self-service endpoints (/api/v1/my/*).
+// Uses X-Service-Ticket instead of admin cookie session.
+async function getWithTicket<T>(path: string, ticket: string): Promise<T> {
+  const url = apiUrl(path);
+  const timeout = API_CONFIG.timeout;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'X-Service-Ticket': ticket,
+        'X-Caller-Service': 'ui-ref',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { const err = await res.json() as { error?: string | { code?: string; message?: string } }; if (typeof err.error === 'string') msg = err.error; else if (err.error && typeof err.error === 'object') msg = err.error.message || msg; } catch { /* ignore */ }
+      throw new ApiError(msg, res.status);
+    }
+    if (res.status === 204) return undefined as T;
+    return await res.json() as T;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof ApiError) throw err;
+    if ((err as Error).name === 'AbortError') throw new ApiError('请求超时', 408);
+    throw new ApiError((err as Error).message || '网络错误', 0);
+  }
+}
+
 // ─── Auth ───
 
 export interface AuthUser {
@@ -1257,6 +1290,16 @@ export const providerApi = {
 
   uninstall: (provider: string): Promise<any> =>
     del(`/api/admin/v1/providers/${provider}`),
+
+  // v1.9E Drift detection — compare DB state with actual config
+  getDrift: (provider: string): Promise<{
+    provider_id: string;
+    db_routes: number;
+    config_routes: number;
+    routes: any[];
+    unmanaged_blocks: { content: string; location: string }[];
+    consistent: boolean;
+  }> => get(`/api/admin/v1/providers/${provider}/drift`),
 };
 
 // ─── Runtime Mode API (v1.8L-20) ───
@@ -1380,13 +1423,6 @@ export const credentialApi = {
 // ─── Admin operations ───
 
 export const adminApi = {
-  // Scopes
-  listScopes: (): Promise<{ spaces: any[]; count: number }> =>
-    get('/api/admin/v1/scopes'),
-
-  createScope: (data: any): Promise<any> =>
-    post('/api/admin/v1/scopes', data),
-
 
   // Logs
   listOperations: (): Promise<{ operations: any[]; count: number }> =>
@@ -1447,6 +1483,13 @@ export const adminApi = {
 
   importCaddyConfirm: (routes: any[]): Promise<any> =>
     post('/api/admin/v1/import/caddy/confirm', { routes }),
+
+  // ── Ticket-based My Resources (service self-service) ──
+  callMyRoutes: (ticket: string): Promise<{ routes: any[]; count: number }> =>
+    getWithTicket('/api/v1/my/routes', ticket),
+
+  callMyServices: (ticket: string): Promise<{ services: any[]; count: number }> =>
+    getWithTicket('/api/v1/my/services', ticket),
 
   // ── Service Auth (v1.9A) ──
   listAuthServices: (): Promise<{ services: any[]; count: number }> =>
@@ -1510,6 +1553,16 @@ export const adminApi = {
 
   egressStatus: (): Promise<{ enabled: boolean }> =>
     get('/api/admin/v1/egress/status'),
+
+  // ── Runtime Mode (v1.9E) ──
+  modePreview: (target: string): Promise<any> =>
+    post('/api/admin/v1/mode/preview?target=' + encodeURIComponent(target)),
+
+  modeSwitch: (target: string, confirmRisks: boolean): Promise<any> =>
+    post('/api/admin/v1/mode/switch', { target_mode: target, confirm_risks: confirmRisks }),
+
+  modeCurrent: (): Promise<{ current: any; available_modes: any[] }> =>
+    get('/api/system/runtime-mode'),
 };
 
 // ─── Transparent Proxy (v1.8F) ───

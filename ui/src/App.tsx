@@ -22,9 +22,12 @@ import EntryPointDetail from '@/pages/exposure/EntryPointDetail';
 
 // ── Fabric ──
 import Providers from '@/pages/fabric/Providers';
+import EgressGateway from '@/pages/fabric/EgressGateway';
+import ModeSwitch from '@/pages/fabric/ModeSwitch';
+
+// ── Service Auth ──
 import AuthServices from '@/pages/fabric/AuthServices';
 import AuthCallGraph from '@/pages/fabric/AuthCallGraph';
-import EgressGateway from '@/pages/fabric/EgressGateway';
 
 // ── Runtime ──
 import Nodes from '@/pages/runtime/Nodes';
@@ -51,7 +54,6 @@ import Doctor from '@/pages/observe/Doctor';
 import Acceptance from '@/pages/observe/Acceptance';
 
 // ── Access ──
-import Scopes from '@/pages/access/Scopes';
 import Credentials from '@/pages/access/Credentials';
 import JoinTokens from '@/pages/access/JoinTokens';
 import AdminAccount from '@/pages/access/AdminAccount';
@@ -128,7 +130,12 @@ export default function App() {
                 <Route path="/fabric" element={<OutletLayout />}>
                   <Route index element={<Providers />} />
                   <Route path="egress" element={<EgressGateway />} />
-                  <Route path="auth" element={<AuthServices />} />
+                  <Route path="mode" element={<ModeSwitch />} />
+                </Route>
+
+                {/* ── Workspace 3b: Service Auth / 服务认证 ── */}
+                <Route path="/auth" element={<OutletLayout />}>
+                  <Route index element={<AuthServices />} />
                   <Route path="callgraph" element={<AuthCallGraph />} />
                 </Route>
 
@@ -165,7 +172,7 @@ export default function App() {
 
                 {/* ── Workspace 7: Access / 访问控制 ── */}
                 <Route path="/access" element={<OutletLayout />}>
-                  <Route index element={<Scopes />} />
+                  <Route index element={<Navigate to="/access/admin" replace />} />
                   <Route path="credentials" element={<Credentials />} />
                   <Route path="certificates" element={<Certificates />} />
                   <Route path="tokens" element={<JoinTokens />} />

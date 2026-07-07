@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -37,6 +38,13 @@ func NewCaddyProvider(cfg *config.Config) *CaddyProvider {
 		binaryPath: bp,
 		email:      cfg.Proxy.Email,
 	}
+}
+
+// ReadConfig implements the optional Reader interface.
+// Parses the current Caddyfile and returns a structured snapshot for drift detection.
+func (p *CaddyProvider) ReadConfig(ctx context.Context) (*ConfigSnapshot, error) {
+	reader := &CaddyReader{configPath: p.cfg.Proxy.CaddyfilePath}
+	return reader.ReadConfig(ctx)
 }
 
 // ============================================================================

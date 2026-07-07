@@ -68,6 +68,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/system/runtime-mode", h.RuntimeMode)   // v1.8L-20
 	mux.HandleFunc("GET /api/system/compositions", h.Compositions)  // v1.8L-22 — canonical composition registry
 
+	mux.HandleFunc("POST /api/admin/v1/mode/preview", h.ModePreview)
+	mux.HandleFunc("POST /api/admin/v1/mode/switch", h.ModeSwitch)
 	// v1.8F Cluster health aggregation
 	mux.HandleFunc("GET /api/admin/v1/cluster/health", h.ClusterHealth)
 
@@ -330,6 +332,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("PUT /api/admin/v1/providers/{provider}/config", h.ProviderSaveConfig)
 	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/reload", h.ProviderReload)
 	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/service", h.ProviderServiceControl)
+		mux.HandleFunc("GET /api/admin/v1/providers/{provider}/drift", h.ProviderDrift)
 	mux.HandleFunc("DELETE /api/admin/v1/providers/{provider}", h.ProviderUninstall)
 
 	// v1.8K Credential management (encrypted connection strings)
