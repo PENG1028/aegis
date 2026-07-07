@@ -379,7 +379,7 @@ func runTestMigrations(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for i, m := range []string{
 		`CREATE TABLE IF NOT EXISTS svc_auth_services (id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL DEFAULT 0, node_host TEXT NOT NULL DEFAULT '', apis_json TEXT NOT NULL DEFAULT '[]', public_key TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', last_seen TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_svc_auth_name_unique ON svc_auth_services(name)`,
+		`CREATE INDEX IF NOT EXISTS idx_svc_auth_name ON svc_auth_services(name)`,
 		`CREATE TABLE IF NOT EXISTS svc_auth_call_logs (id TEXT PRIMARY KEY, caller_service TEXT NOT NULL DEFAULT '', target_service TEXT NOT NULL DEFAULT '', target_api TEXT NOT NULL DEFAULT '', caller_host TEXT NOT NULL DEFAULT '', target_host TEXT NOT NULL DEFAULT '', allowed INTEGER NOT NULL DEFAULT 1, latency_ms INTEGER NOT NULL DEFAULT 0, error_msg TEXT NOT NULL DEFAULT '', called_at TEXT NOT NULL DEFAULT '')`,
 		`CREATE TABLE IF NOT EXISTS svc_auth_blocklist (id TEXT PRIMARY KEY, service_id TEXT, api_name TEXT NOT NULL DEFAULT '*', reason TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '')`,
 	} {
