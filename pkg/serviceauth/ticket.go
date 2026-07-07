@@ -15,17 +15,13 @@ const TicketValidity = 5 * time.Minute
 // TicketClaims is the decoded content of a service ticket.
 type TicketClaims struct {
 	CallerService string
-	TargetService string
-	TargetAPI     string
 	ExpiresAt     int64
 }
 
 // NewTicket creates a TicketClaims with ExpiresAt set to now + TicketValidity.
-func NewTicket(callerService, targetService, targetAPI string) TicketClaims {
+func NewTicket(callerService string) TicketClaims {
 	return TicketClaims{
 		CallerService: callerService,
-		TargetService: targetService,
-		TargetAPI:     targetAPI,
 		ExpiresAt:     time.Now().Add(TicketValidity).Unix(),
 	}
 }
@@ -42,10 +38,9 @@ func GenerateKeyPair() (pubKey, privKey string, err error) {
 }
 
 // SignTicket produces a self-contained Ed25519-signed ticket.
-// Format: base64(caller:target:api:expiry:base64_signature)
+// Format: base64(caller:expiry:base64_signature)
 func SignTicket(claims TicketClaims, privateKeyB64 string) string {
-	payload := fmt.Sprintf("%s:%s:%s:%d",
-		claims.CallerService, claims.TargetService, claims.TargetAPI, claims.ExpiresAt)
+	payload := fmt.Sprintf("%s:%d", claims.CallerService, claims.ExpiresAt)
 
 	privBytes, _ := base64.StdEncoding.DecodeString(privateKeyB64)
 	sig := ed25519.Sign(privBytes, []byte(payload))
@@ -63,22 +58,20 @@ func VerifyTicket(ticketStr, publicKeyB64 string) (*TicketClaims, error) {
 		return nil, fmt.Errorf("invalid ticket encoding")
 	}
 
-	parts := strings.SplitN(string(decoded), ":", 5)
-	if len(parts) != 5 {
+	parts := strings.SplitN(string(decoded), ":", 3)
+	if len(parts) != 3 {
 		return nil, fmt.Errorf("malformed ticket")
 	}
 
 	claims := &TicketClaims{
 		CallerService: parts[0],
-		TargetService: parts[1],
-		TargetAPI:     parts[2],
 	}
-	if _, err := fmt.Sscanf(parts[3], "%d", &claims.ExpiresAt); err != nil {
+	if _, err := fmt.Sscanf(parts[1], "%d", &claims.ExpiresAt); err != nil {
 		return nil, fmt.Errorf("unreadable expiry")
 	}
 
-	payload := strings.Join(parts[:4], ":")
-	sig, err := base64.StdEncoding.DecodeString(parts[4])
+	payload := strings.Join(parts[:2], ":")
+	sig, err := base64.StdEncoding.DecodeString(parts[2])
 	if err != nil {
 		return nil, fmt.Errorf("invalid signature encoding")
 	}

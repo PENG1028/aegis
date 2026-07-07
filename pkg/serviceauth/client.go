@@ -1,21 +1,20 @@
 // Package serviceauth is the Go SDK for the Aegis service-auth cluster.
 //
 // Import this package in your Go service to automatically register with the
-// cluster, call other services, and protect your own endpoints.
+// cluster, call other services by URL, and protect your own endpoints.
 //
 //	func main() {
 //	    client, _ := serviceauth.New(serviceauth.Config{
 //	        ServiceName: "my-service",
-//	        ServicePort: 8080,
-//	        APIs: []serviceauth.APIDef{
-//	            {Name: "health", Path: "/health", Method: "GET"},
-//	        },
 //	    })
 //	    client.Register(context.Background())
 //	    defer client.Close()
 //
-//	    http.HandleFunc("GET /health", client.Guard(healthHandler))
-//	    http.ListenAndServe(":8080", nil)
+//	    // Call any service by URL — ticket is auto-signed
+//	    resp, _ := client.Post("https://other-service.example.com/api/action", body)
+//
+//	    // Protect endpoints with Guard middleware
+//	    http.Handle("GET /api/resource", client.Guard(handler))
 //	}
 package serviceauth
 
@@ -28,19 +27,15 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"sync"
 	"time"
 )
 
-// Config is the SDK initialisation config. Only ServiceName and ServicePort
-// are required; everything else has sensible defaults.
+// Config is the SDK initialisation config. Only ServiceName is required.
 type Config struct {
 	ServiceName string   // required — logical name in the cluster
-	ServicePort int      // required — port this service listens on
-	APIs        []APIDef // this service's exposed APIs
 	AegisURL    string   // optional — auto-detected if empty
 	HTTPClient  *http.Client
 }
@@ -52,18 +47,14 @@ type Client struct {
 	gatewayURL string
 	serviceID  string
 
-	privateKey string              // Ed25519 private key (base64, stored locally)
-	publicKey  string              // Ed25519 public key (base64, sent to server)
-	publicKeys map[string]string   // name → public_key (synced)
-	instances  map[string][]ServiceInstance
-	apis       map[string][]APIDef
+	privateKey string            // Ed25519 private key (base64, stored locally)
+	publicKey  string            // Ed25519 public key (base64, sent to server)
+	publicKeys map[string]string // name → public_key (synced)
 	groups     []ServiceGroup
 	policies   []Policy
 	blocklist  []BlocklistEntry
 	blVersion  int64
 	catVersion int64
-	localHost  string
-	nodeHost   string
 	keyDir     string // dir for storing private key
 
 	httpClient *http.Client
@@ -77,9 +68,6 @@ type Client struct {
 func New(cfg Config) (*Client, error) {
 	if cfg.ServiceName == "" {
 		return nil, fmt.Errorf("serviceauth: ServiceName is required")
-	}
-	if cfg.ServicePort <= 0 {
-		return nil, fmt.Errorf("serviceauth: ServicePort is required")
 	}
 
 	gatewayURL := cfg.AegisURL
@@ -96,19 +84,13 @@ func New(cfg Config) (*Client, error) {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 
-	nodeHost, _ := os.Hostname()
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := &Client{
 		cfg:        cfg,
 		gatewayURL: gatewayURL,
 		httpClient: httpClient,
-		instances:  make(map[string][]ServiceInstance),
-		apis:       make(map[string][]APIDef),
 		publicKeys: make(map[string]string),
-		localHost:  detectLocalIP(),
-		nodeHost:   nodeHost,
 		keyDir:     keyDir(),
 		ctx:        ctx,
 		cancel:     cancel,
@@ -127,17 +109,8 @@ func (c *Client) Register(ctx context.Context) error {
 	c.publicKey = pubKey
 	c.privateKey = privKey
 
-	apis := c.cfg.APIs
-	if apis == nil {
-		apis = []APIDef{}
-	}
-
 	reqBody := RegisterRequest{
 		ServiceName: c.cfg.ServiceName,
-		Host:        c.localHost,
-		Port:        c.cfg.ServicePort,
-		NodeHost:    c.nodeHost,
-		APIs:        apis,
 		PublicKey:   pubKey,
 	}
 
@@ -170,15 +143,8 @@ func (c *Client) Register(ctx context.Context) error {
 	for k, v := range regResp.PublicKeys {
 		c.publicKeys[k] = v
 	}
-	for _, inst := range regResp.Instances {
-		c.instances[inst.Name] = append(c.instances[inst.Name], inst)
-	}
 	c.groups = regResp.Groups
 	c.policies = regResp.Policies
-	for _, api := range regResp.APIs {
-		owner := c.findAPIOwner(api)
-		c.apis[owner] = append(c.apis[owner], api)
-	}
 	c.mu.Unlock()
 
 	syncInterval := time.Duration(regResp.SyncInterval) * time.Second
@@ -188,68 +154,92 @@ func (c *Client) Register(ctx context.Context) error {
 	c.wg.Add(1)
 	go c.syncLoop(syncInterval)
 
-	log.Printf("[serviceauth] registered as %s (%s) with %d peers",
-		c.cfg.ServiceName, c.serviceID, len(regResp.Instances))
+	log.Printf("[serviceauth] registered as %s (%s)", c.cfg.ServiceName, c.serviceID)
 	return nil
 }
 
-// Call invokes an API on another service in the cluster.
-// The SDK handles ticket generation and instance selection automatically.
-// method is optional — if empty, the method from the API definition is used.
-func (c *Client) Call(ctx context.Context, targetService, targetAPI string, body io.Reader) (*http.Response, error) {
-	return c.callWithMethod(ctx, targetService, targetAPI, "", body)
-}
+// ============================================================================
+// URL-based HTTP methods — each request carries an auto-signed Ed25519 ticket.
+// ============================================================================
 
-// callWithMethod is the internal implementation that respects the API's
-// declared HTTP method.
-func (c *Client) callWithMethod(ctx context.Context, targetService, targetAPI, method string, body io.Reader) (*http.Response, error) {
-	targetURL, effectiveMethod, err := c.resolveTarget(targetService, targetAPI, method)
+// Post sends a POST request with an auto-signed service ticket.
+func (c *Client) Post(ctx context.Context, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", url, body)
 	if err != nil {
-		return nil, fmt.Errorf("call: %w", err)
-	}
-
-	ticket := c.generateTicket(targetService, targetAPI)
-
-	req, err := http.NewRequestWithContext(ctx, effectiveMethod, targetURL, body)
-	if err != nil {
-		return nil, fmt.Errorf("call: %w", err)
+		return nil, fmt.Errorf("post: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Service-Ticket", ticket)
-	req.Header.Set("X-Caller-Service", c.cfg.ServiceName)
-	req.Header.Set("X-Caller-Host", c.localHost)
-
-	start := time.Now()
-	resp, err := c.httpClient.Do(req)
-	latency := time.Since(start).Milliseconds()
-
-	go c.reportCall(targetService, targetAPI, err == nil, int(latency))
-
-	return resp, err
+	return c.Do(req)
 }
 
-// CallAegis invokes an Aegis management API (e.g. bind-http-domain).
-// The target service is always "aegis" and the request is sent to the
-// gateway URL rather than a service instance.
-func (c *Client) CallAegis(ctx context.Context, apiPath, method string, body io.Reader) (*http.Response, error) {
+// Get sends a GET request with an auto-signed service ticket.
+func (c *Client) Get(ctx context.Context, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get: %w", err)
+	}
+	return c.Do(req)
+}
+
+// Put sends a PUT request with an auto-signed service ticket.
+func (c *Client) Put(ctx context.Context, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "PUT", url, body)
+	if err != nil {
+		return nil, fmt.Errorf("put: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.Do(req)
+}
+
+// Delete sends a DELETE request with an auto-signed service ticket.
+func (c *Client) Delete(ctx context.Context, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("delete: %w", err)
+	}
+	return c.Do(req)
+}
+
+// Do sends an HTTP request with an auto-signed service ticket attached.
+// The ticket proves the caller's identity via Ed25519 signature.
+func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	c.mu.RLock()
-	gateway := c.gatewayURL
+	privKey := c.privateKey
+	caller := c.cfg.ServiceName
 	c.mu.RUnlock()
 
-	ticket := c.generateTicket("aegis", apiPath)
+	ticket := SignTicket(NewTicket(caller), privKey)
 
-	url := gateway + apiPath
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
-	if err != nil {
-		return nil, fmt.Errorf("call aegis: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Service-Ticket", ticket)
-	req.Header.Set("X-Caller-Service", c.cfg.ServiceName)
-	req.Header.Set("X-Caller-Host", c.localHost)
+	req.Header.Set("X-Caller-Service", caller)
 
 	return c.httpClient.Do(req)
 }
+
+// ============================================================================
+// Health check
+// ============================================================================
+
+// Healthy returns true if the given URL responds with 200 within 5 seconds.
+func (c *Client) Healthy(url string) bool {
+	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
+// ============================================================================
+// Close
+// ============================================================================
 
 // Close stops the background sync loop.
 func (c *Client) Close() error {
@@ -279,14 +269,32 @@ func (c *Client) PrivateKey() string {
 	return c.privateKey
 }
 
+// Groups returns the current service groups (for policy evaluation).
+func (c *Client) Groups() []ServiceGroup {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.groups
+}
+
+// Policies returns the current policies.
+func (c *Client) Policies() []Policy {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.policies
+}
+
 // InGroup returns true if the named service belongs to the group. Local lookup.
 func (c *Client) InGroup(serviceName, groupName string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, g := range c.groups {
-		if g.Name != groupName { continue }
+		if g.Name != groupName {
+			continue
+		}
 		for _, m := range g.Members {
-			if m == serviceName { return true }
+			if m == serviceName {
+				return true
+			}
 		}
 	}
 	return false
@@ -297,7 +305,9 @@ func (c *Client) ListGroupMembers(groupName string) []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, g := range c.groups {
-		if g.Name == groupName { return g.Members }
+		if g.Name == groupName {
+			return g.Members
+		}
 	}
 	return nil
 }
@@ -305,153 +315,6 @@ func (c *Client) ListGroupMembers(groupName string) []string {
 // ============================================================================
 // Internal
 // ============================================================================
-
-func (c *Client) resolveTarget(targetService, targetAPI, method string) (url, effectiveMethod string, err error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	instances, ok := c.instances[targetService]
-	if !ok || len(instances) == 0 {
-		return "", "", fmt.Errorf("service %q not found", targetService)
-	}
-
-	// Collect same-host instances for load-balanced selection.
-	var sameHost []int
-	for idx, i := range instances {
-		if i.Host == c.localHost {
-			sameHost = append(sameHost, idx)
-		}
-	}
-
-	var inst ServiceInstance
-	if len(sameHost) > 0 {
-		// Randomly pick among same-host instances (gray deploy support).
-		inst = instances[sameHost[rand.Intn(len(sameHost))]]
-	} else {
-		// No same-host — pick any instance randomly.
-		inst = instances[rand.Intn(len(instances))]
-	}
-
-	// Look up the API definition to get path and method.
-	path := "/"
-	effectiveMethod = method
-	apis, ok := c.apis[targetService]
-	if !ok {
-		// Fallback: try empty-key (unknown owner) APIs.
-		apis = c.apis[""]
-	}
-	for _, a := range apis {
-		if a.Name == targetAPI {
-			path = a.Path
-			if effectiveMethod == "" {
-				effectiveMethod = a.Method
-			}
-			break
-		}
-	}
-	if effectiveMethod == "" {
-		effectiveMethod = "POST" // last-resort default
-	}
-
-	return fmt.Sprintf("http://%s:%d%s", inst.Host, inst.Port, path), effectiveMethod, nil
-}
-
-func (c *Client) generateTicket(targetService, targetAPI string) string {
-	c.mu.RLock()
-	privKey := c.privateKey
-	c.mu.RUnlock()
-
-	claims := NewTicket(c.cfg.ServiceName, targetService, targetAPI)
-	return SignTicket(claims, privKey)
-}
-
-func (c *Client) reportCall(targetService, targetAPI string, allowed bool, latencyMs int) {
-	req := ReportRequest{
-		CallerService: c.cfg.ServiceName,
-		TargetService: targetService,
-		TargetAPI:     targetAPI,
-		CallerHost:    c.localHost,
-		Allowed:       allowed,
-		LatencyMs:     latencyMs,
-	}
-	data, _ := json.Marshal(req)
-
-	c.mu.RLock()
-	gateway := c.gatewayURL
-	c.mu.RUnlock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	httpReq, _ := http.NewRequestWithContext(ctx, "POST", gateway+"/api/service-auth/v1/report", bytes.NewReader(data))
-	httpReq.Header.Set("Content-Type", "application/json")
-	resp, err := c.httpClient.Do(httpReq)
-	if err == nil {
-		resp.Body.Close()
-	}
-}
-
-// findAPIOwner attempts to determine which service owns an API definition.
-// In the Register response, APIs come back flat. We heuristically match
-// by path prefix against known instances.
-// ─── Keypair management ───
-
-func keyDir() string {
-	dir, err := os.UserHomeDir()
-	if err != nil {
-		return ".aegis/keys"
-	}
-	return dir + "/.aegis/keys"
-}
-
-func (c *Client) keyPath() string {
-	return c.keyDir + "/" + c.cfg.ServiceName + ".key"
-}
-
-func (c *Client) loadOrGenerateKeyPair() (pubKey, privKey string, err error) {
-	os.MkdirAll(c.keyDir, 0700)
-
-	// Try loading existing key.
-	if data, err := os.ReadFile(c.keyPath()); err == nil && len(data) > 0 {
-		privKey = string(data)
-		pub, genErr := ed25519PrivateToPublic(privKey)
-		if genErr == nil {
-			return pub, privKey, nil
-		}
-		log.Printf("[serviceauth] corrupt key, regenerating: %v", genErr)
-	}
-
-	// Generate new key pair.
-	pub, priv, err := GenerateKeyPair()
-	if err != nil {
-		return "", "", err
-	}
-	if err := os.WriteFile(c.keyPath(), []byte(priv), 0600); err != nil {
-		return "", "", fmt.Errorf("save key: %w", err)
-	}
-	log.Printf("[serviceauth] generated new Ed25519 key for %s", c.cfg.ServiceName)
-	return pub, priv, nil
-}
-
-func ed25519PrivateToPublic(privKeyB64 string) (string, error) {
-	privBytes, err := base64.StdEncoding.DecodeString(privKeyB64)
-	if err != nil {
-		return "", err
-	}
-	priv := ed25519.PrivateKey(privBytes)
-	pub := priv.Public().(ed25519.PublicKey)
-	return base64.StdEncoding.EncodeToString(pub), nil
-}
-
-// ─── Internal helpers ───
-
-func (c *Client) findAPIOwner(api APIDef) string {
-	// Fallback: most APIs belong to the registering service.
-	if api.Path != "" {
-		return c.cfg.ServiceName
-	}
-	return ""
-}
 
 func (c *Client) syncLoop(interval time.Duration) {
 	defer c.wg.Done()
@@ -503,7 +366,6 @@ func (c *Client) doSync() {
 	c.blVersion = syncResp.BlVersion
 	c.catVersion = syncResp.CatVersion
 
-	// Merge blocklist + public keys.
 	if len(syncResp.Blocklist) > 0 {
 		c.blocklist = syncResp.Blocklist
 	}
@@ -516,18 +378,53 @@ func (c *Client) doSync() {
 	if len(syncResp.Policies) > 0 {
 		c.policies = syncResp.Policies
 	}
+}
 
-	// Deduplicate new instances by (name, host, port).
-	seen := make(map[string]bool)
-	for _, inst := range syncResp.NewInstances {
-		key := fmt.Sprintf("%s:%s:%d", inst.Name, inst.Host, inst.Port)
-		if seen[key] {
-			continue
+// ─── Keypair management ───
+
+func keyDir() string {
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return ".aegis/keys"
+	}
+	return dir + "/.aegis/keys"
+}
+
+func (c *Client) keyPath() string {
+	return c.keyDir + "/" + c.cfg.ServiceName + ".key"
+}
+
+func (c *Client) loadOrGenerateKeyPair() (pubKey, privKey string, err error) {
+	os.MkdirAll(c.keyDir, 0700)
+
+	// Try loading existing key.
+	if data, err := os.ReadFile(c.keyPath()); err == nil && len(data) > 0 {
+		privKey = string(data)
+		pub, genErr := ed25519PrivateToPublic(privKey)
+		if genErr == nil {
+			return pub, privKey, nil
 		}
-		seen[key] = true
-		c.instances[inst.Name] = append(c.instances[inst.Name], inst)
+		log.Printf("[serviceauth] corrupt key, regenerating: %v", genErr)
 	}
-	for _, id := range syncResp.RemovedIDs {
-		delete(c.instances, id)
+
+	// Generate new key pair.
+	pub, priv, err := GenerateKeyPair()
+	if err != nil {
+		return "", "", err
 	}
+	if err := os.WriteFile(c.keyPath(), []byte(priv), 0600); err != nil {
+		return "", "", fmt.Errorf("save key: %w", err)
+	}
+	log.Printf("[serviceauth] generated new Ed25519 key for %s", c.cfg.ServiceName)
+	return pub, priv, nil
+}
+
+func ed25519PrivateToPublic(privKeyB64 string) (string, error) {
+	privBytes, err := base64.StdEncoding.DecodeString(privKeyB64)
+	if err != nil {
+		return "", err
+	}
+	priv := ed25519.PrivateKey(privBytes)
+	pub := priv.Public().(ed25519.PublicKey)
+	return base64.StdEncoding.EncodeToString(pub), nil
 }

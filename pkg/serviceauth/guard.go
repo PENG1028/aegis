@@ -15,7 +15,11 @@ const ctxKeyCaller contextKey = "serviceauth-caller"
 // Guard returns HTTP middleware that verifies every request carries a valid
 // service ticket signed with the caller's Ed25519 private key. Verification is
 // local — zero network calls.
-func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
+//
+// The caller's identity is injected into the request context and can be
+// retrieved with CallerFromContext(). The service's own code is responsible
+// for permission checks — Guard only verifies identity.
+func (c *Client) Guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ticket := r.Header.Get("X-Service-Ticket")
 		if ticket == "" {
@@ -34,34 +38,19 @@ func (c *Client) Guard(apiName string, next http.Handler) http.Handler {
 		c.mu.RUnlock()
 
 		if pubKey == "" {
-			writeGuardError(w, 403, "unknown caller: "+callerName)
+			writeGuardError(w, 403, "unknown caller")
 			return
 		}
 
 		claims, err := VerifyTicket(ticket, pubKey)
 		if err != nil {
-			writeGuardError(w, 403, "invalid ticket: "+err.Error())
+			writeGuardError(w, 403, "invalid ticket")
 			return
 		}
 
-		if claims.TargetService != c.cfg.ServiceName {
-			writeGuardError(w, 403, "ticket target mismatch")
-			return
-		}
-
-		if apiName != "" && claims.TargetAPI != apiName {
-			writeGuardError(w, 403, "ticket api mismatch")
-			return
-		}
-
-		blockedReason := c.isBlocked(claims.CallerService, apiName)
+		blockedReason := c.isBlocked(claims.CallerService)
 		if blockedReason != "" {
 			writeGuardError(w, 403, blockedReason)
-			return
-		}
-
-		if !c.isAllowed(claims.CallerService, c.cfg.ServiceName, apiName) {
-			writeGuardError(w, 403, "access denied by policy")
 			return
 		}
 
@@ -87,68 +76,25 @@ func callerNameFromTicket(ticketStr string) string {
 	if err != nil {
 		return ""
 	}
-	parts := strings.SplitN(string(decoded), ":", 5)
+	parts := strings.SplitN(string(decoded), ":", 3)
 	if len(parts) < 1 {
 		return ""
 	}
 	return parts[0]
 }
 
-func (c *Client) isBlocked(callerName, apiName string) string {
+func (c *Client) isBlocked(callerName string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, entry := range c.blocklist {
-		blockedName := c.serviceNameForID(entry.ServiceID)
-		if blockedName == "" || blockedName != callerName {
-			continue
-		}
-		if entry.APIName == "*" {
-			return "caller is blocked (service-level)"
-		}
-		if apiName != "" && entry.APIName == apiName {
-			return "caller is blocked (API-level): " + apiName
-		}
-	}
-	return ""
-}
-
-func (c *Client) serviceNameForID(id string) string {
-	for name, instances := range c.instances {
-		for _, inst := range instances {
-			if inst.Name == id || name == id {
-				return name
+		if entry.ServiceID == "*" || entry.ServiceID == callerName {
+			if entry.APIName == "*" {
+				return "caller is blocked (service-level)"
 			}
+			return "caller is blocked: " + entry.APIName
 		}
 	}
 	return ""
-}
-
-// isAllowed evaluates access policies. If no policy matches, defaults to allow.
-func (c *Client) isAllowed(callerName, targetService, apiName string) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	for _, p := range c.policies {
-		if !matchSubject(callerName, p.Subject) {
-			continue
-		}
-		if p.TargetService != "*" && p.TargetService != targetService {
-			continue
-		}
-		if p.Action != "*" && p.Action != apiName {
-			continue
-		}
-		return p.Effect == "allow"
-	}
-	return true // default allow
-}
-
-func matchSubject(callerName, subject string) bool {
-	if subject == "*" || subject == callerName {
-		return true
-	}
-	// Check group membership (groups stored locally in c.groups)
-	return false // group matching handled by caller via InGroup()
 }
 
 func writeGuardError(w http.ResponseWriter, status int, msg string) {

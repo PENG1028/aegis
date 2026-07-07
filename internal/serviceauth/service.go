@@ -2,7 +2,6 @@ package serviceauth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -85,15 +84,10 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		return nil, ErrNotInCluster
 	}
 
-	apisJSON, _ := json.Marshal(req.APIs)
 	now := time.Now()
 	rec := &ServiceRecord{
 		ID:        s.deps.IDGen(),
 		Name:      req.ServiceName,
-		Host:      req.Host,
-		Port:      req.Port,
-		NodeHost:  req.NodeHost,
-		APIsJSON:  string(apisJSON),
 		PublicKey: req.PublicKey,
 		Status:    "active",
 		LastSeen:  now,
@@ -105,28 +99,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		return nil, fmt.Errorf("register: %w", err)
 	}
 
-	// Mark instances that haven't heartbeated in 3 minutes as inactive (alpha).
-	if n, _ := s.deps.Repo.MarkStale(time.Now().Add(-3 * time.Minute)); n > 0 {
-		s.catVersion.Add(1)
-	}
-
 	s.catVersion.Add(1)
-
-	allActive, _ := s.deps.Repo.ListActive()
-	instances := make([]ServiceInstance, 0, len(allActive))
-	allAPIs := make([]APIDef, 0)
-	for _, svc := range allActive {
-		instances = append(instances, ServiceInstance{
-			Name:     svc.Name,
-			Host:     svc.Host,
-			Port:     svc.Port,
-			NodeHost: svc.NodeHost,
-		})
-		var apis []APIDef
-		if json.Unmarshal([]byte(svc.APIsJSON), &apis) == nil {
-			allAPIs = append(allAPIs, apis...)
-		}
-	}
 
 	publicKeys, _ := s.deps.Repo.ListPublicKeys()
 	groups, _ := s.deps.Repo.ListGroups()
@@ -139,11 +112,9 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 
 	return &RegisterResponse{
 		ServiceID:    rec.ID,
-		Instances:    instances,
 		PublicKeys:   publicKeys,
 		Groups:       groups,
 		Policies:     policies,
-		APIs:         allAPIs,
 		Blocklist:    blocklist,
 		BlVersion:    s.blVersion.Load(),
 		CatVersion:   s.catVersion.Load(),
@@ -180,17 +151,6 @@ func (s *Service) Sync(ctx context.Context, blVersion, catVersion int64) (*SyncR
 	}
 
 	if catVersion < currentCat {
-		allActive, err := s.deps.Repo.ListActive()
-		if err == nil {
-			for _, svc := range allActive {
-				resp.NewInstances = append(resp.NewInstances, ServiceInstance{
-					Name:     svc.Name,
-					Host:     svc.Host,
-					Port:     svc.Port,
-					NodeHost: svc.NodeHost,
-				})
-			}
-		}
 		if pks, err := s.deps.Repo.ListPublicKeys(); err == nil {
 			resp.PublicKeys = pks
 		}

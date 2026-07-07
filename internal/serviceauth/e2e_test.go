@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -30,7 +29,6 @@ func newTestServer(t *testing.T) (*core.Service, *httptest.Server, *sql.DB) {
 
 	svc, err := core.NewService(core.Dependencies{
 		Repo:        core.NewRepository(db),
-		
 		NodeChecker: &allowAllChecker{},
 		LogWriter:   nil,
 		IDGen:       core.DefaultIDGen,
@@ -47,15 +45,11 @@ func newTestServer(t *testing.T) (*core.Service, *httptest.Server, *sql.DB) {
 	return svc, srv, db
 }
 
-func newSDKClient(t *testing.T, serverURL, name string, port int, apis []sdk.APIDef) *sdk.Client {
+func newSDKClient(t *testing.T, serverURL, name string) *sdk.Client {
 	t.Helper()
-	os.Setenv("AEGIS_URL", serverURL)
-	os.Setenv("SERVICE_HOST", "127.0.0.1")
 
 	client, err := sdk.New(sdk.Config{
 		ServiceName: name,
-		ServicePort: port,
-		APIs:        apis,
 		AegisURL:    serverURL,
 	})
 	if err != nil {
@@ -65,7 +59,7 @@ func newSDKClient(t *testing.T, serverURL, name string, port int, apis []sdk.API
 }
 
 // ============================================================================
-// E2E: Two services register and verify they see each other
+// E2E: Two services register and verify
 // ============================================================================
 
 func TestE2E_TwoServicesRegisterAndCall(t *testing.T) {
@@ -74,20 +68,13 @@ func TestE2E_TwoServicesRegisterAndCall(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 
-	aAPIs := []sdk.APIDef{
-		{Name: "validateAdmin", Path: "/api/v1/admin/validate", Method: "POST"},
-	}
-	clientA := newSDKClient(t, srv.URL, "admin-service", 3001, aAPIs)
+	clientA := newSDKClient(t, srv.URL, "admin-service")
 	defer clientA.Close()
 	if err := clientA.Register(ctx); err != nil {
 		t.Fatalf("register A: %v", err)
 	}
 
-	bAPIs := []sdk.APIDef{
-		{Name: "createProject", Path: "/api/v1/projects", Method: "POST"},
-		{Name: "getUserList", Path: "/api/v1/users", Method: "GET"},
-	}
-	clientB := newSDKClient(t, srv.URL, "project-service", 3002, bAPIs)
+	clientB := newSDKClient(t, srv.URL, "project-service")
 	defer clientB.Close()
 	if err := clientB.Register(ctx); err != nil {
 		t.Fatalf("register B: %v", err)
@@ -99,14 +86,13 @@ func TestE2E_TwoServicesRegisterAndCall(t *testing.T) {
 	t.Logf("A ID=%s, B ID=%s", clientA.ServiceID(), clientB.ServiceID())
 
 	// Verify DB has both.
-	rows, _ := db.Query("SELECT name, host, port, status FROM svc_auth_services ORDER BY name")
+	rows, _ := db.Query("SELECT name, status FROM svc_auth_services ORDER BY name")
 	defer rows.Close()
 	count := 0
 	for rows.Next() {
-		var name, host, status string
-		var port int
-		rows.Scan(&name, &host, &port, &status)
-		t.Logf("  DB: %s @ %s:%d [%s]", name, host, port, status)
+		var name, status string
+		rows.Scan(&name, &status)
+		t.Logf("  DB: %s [%s]", name, status)
 		count++
 	}
 	if count != 2 {
@@ -125,15 +111,13 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 	ctx := context.Background()
 
 	// Register both services so clientB gets clientA's public key via sync.
-	aAPIs := []sdk.APIDef{{Name: "create", Path: "/api/v1/create", Method: "POST"}}
-	clientA := newSDKClient(t, srv.URL, "admin-service", 3001, aAPIs)
+	clientA := newSDKClient(t, srv.URL, "admin-service")
 	defer clientA.Close()
 	if err := clientA.Register(ctx); err != nil {
 		t.Fatalf("register A: %v", err)
 	}
 
-	bAPIs := []sdk.APIDef{{Name: "create", Path: "/api/v1/create", Method: "POST"}}
-	clientB := newSDKClient(t, srv.URL, "project-service", 3002, bAPIs)
+	clientB := newSDKClient(t, srv.URL, "project-service")
 	defer clientB.Close()
 	if err := clientB.Register(ctx); err != nil {
 		t.Fatalf("register B: %v", err)
@@ -141,7 +125,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 
 	// Start a simulated project-service with Guard middleware.
 	guarded := http.NewServeMux()
-	guarded.Handle("POST /api/v1/create", clientB.Guard("create",
+	guarded.Handle("POST /api/v1/create", clientB.Guard(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			caller := sdk.CallerFromContext(r.Context())
 			json.NewEncoder(w).Encode(map[string]string{
@@ -176,7 +160,7 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 	}
 
 	// Test 3: Valid ticket → 200 (signed with clientA's registered private key)
-	claims := core.NewTicket("admin-service", "project-service", "create")
+	claims := core.NewTicket("admin-service")
 	validTicket := core.SignTicket(claims, clientA.PrivateKey())
 	req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -211,8 +195,6 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 	// Test 5: Expired ticket → 403
 	expiredClaims := core.TicketClaims{
 		CallerService: "admin-service",
-		TargetService: "project-service",
-		TargetAPI:     "create",
 		ExpiresAt:     time.Now().Add(-1 * time.Hour).Unix(),
 	}
 	expiredTicket := core.SignTicket(expiredClaims, clientA.PrivateKey())
@@ -229,37 +211,21 @@ func TestE2E_GuardRejectsInvalidTicket(t *testing.T) {
 		t.Log("PASS: expired ticket → 403")
 	}
 
-	// Test 6: Ticket for wrong target service → 403
-		otherClaims := core.NewTicket("admin-service", "other-service", "create")
-		otherTicket := core.SignTicket(otherClaims, clientA.PrivateKey())
-		req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Service-Ticket", otherTicket)
-		req.Header.Set("X-Caller-Service", "admin-service")
-		resp, _ = http.DefaultClient.Do(req)
-		body, _ = io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode != 403 {
-			t.Errorf("Test 6 (wrong target): expected 403, got %d: %s", resp.StatusCode, body)
-		} else {
-			t.Log("PASS: wrong target service → 403")
-		}
-
-		// Test 7: Ticket for wrong API → 403
-		wrongAPIClaims := core.NewTicket("admin-service", "project-service", "delete")
-		wrongAPITicket := core.SignTicket(wrongAPIClaims, clientA.PrivateKey())
-		req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Service-Ticket", wrongAPITicket)
-		req.Header.Set("X-Caller-Service", "admin-service")
-		resp, _ = http.DefaultClient.Do(req)
-		body, _ = io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode != 403 {
-			t.Errorf("Test 7 (wrong api): expected 403, got %d: %s", resp.StatusCode, body)
-		} else {
-			t.Log("PASS: wrong api → 403")
-		}
+	// Test 6: Unknown caller → 403 (service not registered)
+	unknownClaims := core.NewTicket("unknown-service")
+	unknownTicket := core.SignTicket(unknownClaims, wrongPriv)
+	req, _ = http.NewRequest("POST", testB.URL+"/api/v1/create", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Service-Ticket", unknownTicket)
+	req.Header.Set("X-Caller-Service", "unknown-service")
+	resp, _ = http.DefaultClient.Do(req)
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Errorf("Test 6 (unknown caller): expected 403, got %d: %s", resp.StatusCode, body)
+	} else {
+		t.Log("PASS: unknown caller → 403")
+	}
 }
 
 // ============================================================================
@@ -272,17 +238,13 @@ func TestE2E_BlockServicePreventsCalls(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 
-	clientA := newSDKClient(t, srv.URL, "admin-service", 3001, []sdk.APIDef{
-		{Name: "ping", Path: "/ping", Method: "GET"},
-	})
+	clientA := newSDKClient(t, srv.URL, "admin-service")
 	defer clientA.Close()
 	if err := clientA.Register(ctx); err != nil {
 		t.Fatalf("register A: %v", err)
 	}
 
-	clientB := newSDKClient(t, srv.URL, "project-service", 3002, []sdk.APIDef{
-		{Name: "create", Path: "/api/v1/create", Method: "POST"},
-	})
+	clientB := newSDKClient(t, srv.URL, "project-service")
 	defer clientB.Close()
 	if err := clientB.Register(ctx); err != nil {
 		t.Fatalf("register B: %v", err)
@@ -290,7 +252,7 @@ func TestE2E_BlockServicePreventsCalls(t *testing.T) {
 
 	// Start guarded endpoint.
 	guarded := http.NewServeMux()
-	guarded.Handle("POST /api/v1/create", clientB.Guard("create",
+	guarded.Handle("POST /api/v1/create", clientB.Guard(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(200)
 			w.Write([]byte(`{"status":"ok"}`))
@@ -299,7 +261,7 @@ func TestE2E_BlockServicePreventsCalls(t *testing.T) {
 	testB := httptest.NewServer(guarded)
 	defer testB.Close()
 
-	claims := core.NewTicket("admin-service", "project-service", "create")
+	claims := core.NewTicket("admin-service")
 	validTicket := core.SignTicket(claims, clientA.PrivateKey())
 
 	// Pre-block: should pass.
@@ -355,19 +317,6 @@ func TestE2E_BlockServicePreventsCalls(t *testing.T) {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-type memorySecretStore struct{ secret []byte }
-
-func (s *memorySecretStore) Load() ([]byte, error) {
-	if len(s.secret) == 0 {
-		return nil, os.ErrNotExist
-	}
-	return s.secret, nil
-}
-func (s *memorySecretStore) Save(secret []byte) error {
-	s.secret = secret
-	return nil
-}
 
 type allowAllChecker struct{}
 
