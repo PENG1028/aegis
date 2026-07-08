@@ -295,29 +295,6 @@ const (
 // GatewayTypeDef describes the fixed properties of a gateway type.
 // Each GatewayType has exactly one GatewayTypeDef — this is how the system knows
 // what a gateway of a given type can and cannot do.
-type GatewayTypeDef struct {
-	Type        GatewayType
-	Label       string // Human-readable label for UI
-
-	// MatchKey defines what the gateway uses to distinguish traffic.
-	MatchKey MatchKey // "host_path" | "sni" | "port" | "dest_addr"
-
-	// ForwardKind defines what the gateway forwards.
-	ForwardKind ForwardKind // "http_proxy" | "tcp_stream" | "udp_datagram"
-
-	// TerminatesTLS is true if the gateway decrypts TLS and can read HTTP content.
-	TerminatesTLS bool
-
-	// UnderstandsHTTP is true if the gateway can read HTTP headers (Host, Path, etc.).
-	// Only true for TypeHTTPTerm. SNI passthrough sees TLS, not HTTP.
-	UnderstandsHTTP bool
-
-	// Granularity describes how many routes can share one port.
-	// domain+path: unlimited (Caddy on :80)
-	// domain: one per SNI hostname (HAProxy on :443)
-	// port: one route per port (TCP/UDP exposure)
-	Granularity RoutingGranularity
-}
 
 // MatchKey is what the gateway uses to match incoming traffic to a route.
 type MatchKey string
@@ -349,38 +326,6 @@ const (
 
 // GatewayTypeDefs maps each GatewayType to its fixed definition.
 // This is the single source of truth for gateway type capabilities.
-var GatewayTypeDefs = map[GatewayType]GatewayTypeDef{
-	TypeHTTPTerm: {
-		Type: TypeHTTPTerm, Label: "HTTP 终结网关",
-		MatchKey: MatchHostPath, ForwardKind: ForwardHTTPProxy,
-		TerminatesTLS: true, UnderstandsHTTP: true,
-		Granularity: RouteByDomainPath,
-	},
-	TypeSNIPass: {
-		Type: TypeSNIPass, Label: "TLS SNI 直通网关",
-		MatchKey: MatchSNI, ForwardKind: ForwardTCPStream,
-		TerminatesTLS: false, UnderstandsHTTP: false,
-		Granularity: RouteByDomain,
-	},
-	TypeTCPForward: {
-		Type: TypeTCPForward, Label: "TCP 端口网关",
-		MatchKey: MatchPort, ForwardKind: ForwardTCPStream,
-		TerminatesTLS: false, UnderstandsHTTP: false,
-		Granularity: RouteByPort,
-	},
-	TypeUDPForward: {
-		Type: TypeUDPForward, Label: "UDP 端口网关",
-		MatchKey: MatchPort, ForwardKind: ForwardUDPDatagram,
-		TerminatesTLS: false, UnderstandsHTTP: false,
-		Granularity: RouteByPort,
-	},
-	TypeTransparent: {
-		Type: TypeTransparent, Label: "透明劫持网关",
-		MatchKey: MatchDestAddr, ForwardKind: ForwardTCPStream,
-		TerminatesTLS: false, UnderstandsHTTP: false,
-		Granularity: RouteByPort,
-	},
-}
 
 // ============================================================================
 // Layer 3: Dependency model (hard vs soft)
