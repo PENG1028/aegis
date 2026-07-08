@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -177,31 +176,6 @@ func (h *Handlers) AdminBlockServiceAuthService(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, map[string]string{"status": "blocked"})
 }
 
-// AdminBlockServiceAuthAPI handles POST /api/admin/v1/service-auth/apis/{id}/block
-func (h *Handlers) AdminBlockServiceAuthAPI(w http.ResponseWriter, r *http.Request) {
-	if h.ServiceAuthSvc == nil {
-		writeError(w, http.StatusNotImplemented, "service auth not available")
-		return
-	}
-
-	var body struct {
-		ServiceID string `json:"service_id"`
-		APIName   string `json:"api_name"`
-		Reason    string `json:"reason"`
-	}
-	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request: "+err.Error())
-		return
-	}
-
-	if err := h.ServiceAuthSvc.BlockAPI(r.Context(), body.ServiceID, body.APIName, body.Reason); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "blocked"})
-}
-
 // AdminUnblockServiceAuth handles POST /api/admin/v1/service-auth/blocklist/{id}/unblock
 func (h *Handlers) AdminUnblockServiceAuth(w http.ResponseWriter, r *http.Request) {
 	if h.ServiceAuthSvc == nil {
@@ -266,38 +240,6 @@ func (h *Handlers) AdminServiceAuthCallLogs(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, logs)
-}
-
-// AdminRebindService handles POST /api/admin/v1/service-auth/services/{name}/rebind
-func (h *Handlers) AdminRebindService(w http.ResponseWriter, r *http.Request) {
-	if h.ServiceAuthSvc == nil {
-		writeError(w, http.StatusNotImplemented, "service auth not available")
-		return
-	}
-
-	oldName := r.PathValue("name")
-	var body struct {
-		NewName string `json:"new_name"`
-	}
-	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request: "+err.Error())
-		return
-	}
-
-	kp, err := h.ServiceAuthSvc.Rebind(r.Context(), oldName, body.NewName)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	log.Printf("[serviceauth] rebind: %s → %s (admin action)", oldName, body.NewName)
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":      "rebound",
-		"old_name":    oldName,
-		"new_name":    body.NewName,
-		"public_key":  kp.PublicKey,
-		"private_key": kp.PrivateKey,
-	})
 }
 
 // ─── Groups ───
