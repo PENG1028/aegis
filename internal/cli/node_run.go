@@ -78,9 +78,6 @@ Examples:
 	return cmd
 }
 
-func init() {
-	// Register node subcommand if serve isn't already running
-}
 
 // NewNodeCommand creates the 'aegis node' parent command.
 func NewNodeCommand() *cobra.Command {
@@ -95,11 +92,5 @@ func NewNodeCommand() *cobra.Command {
 	return cmd
 }
 
-// Ensure the command is registered when the package initializes.
-var _ = func() bool {
-	// Register in root command at construction time
-	return true
-}()
 
-// Placeholder for backup
 var _ = os.Stderr
