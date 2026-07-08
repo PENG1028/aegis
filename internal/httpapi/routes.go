@@ -9,33 +9,33 @@ import (
 // RegisterRoutes sets up all API routes on the given mux.
 func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	h := &handlers.Handlers{
-		DB:            svcs.DB,
-		Config:        svcs.Config,
-		Project:       svcs.Project,
-		Service:       svcs.Service,
-		EndpointRepo:  svcs.EndpointRepo,
-		EndpointSvc:   svcs.EndpointSvc,
-		Route:         svcs.Route,
-		ManagedDomain: svcs.ManagedDomain,
-		Exposure:      svcs.Exposure,
-		Apply:         svcs.Apply,
-			Workflow:      svcs.Workflow, // v1.8L
-		Health:        svcs.Health,
-		Logs:          svcs.Logs,
-		Action:        svcs.Action,
-		Space:         svcs.Space,
-		AdminAuth:     svcs.AdminAuth,
-		EdgeSvc:       svcs.EdgeSvc,
-		ListenerSvc:   svcs.ListenerSvc,
-		NodeRepo:      svcs.NodeRepo,
-		NodeSvc:       svcs.NodeSvc,
-		NodeAuthSvc:   svcs.NodeAuthSvc,
+		DB:              svcs.DB,
+		Config:          svcs.Config,
+		Project:         svcs.Project,
+		Service:         svcs.Service,
+		EndpointRepo:    svcs.EndpointRepo,
+		EndpointSvc:     svcs.EndpointSvc,
+		Route:           svcs.Route,
+		ManagedDomain:   svcs.ManagedDomain,
+		Exposure:        svcs.Exposure,
+		Apply:           svcs.Apply,
+		Workflow:        svcs.Workflow, // v1.8L
+		Health:          svcs.Health,
+		Logs:            svcs.Logs,
+		Action:          svcs.Action,
+		Space:           svcs.Space,
+		AdminAuth:       svcs.AdminAuth,
+		EdgeSvc:         svcs.EdgeSvc,
+		ListenerSvc:     svcs.ListenerSvc,
+		NodeRepo:        svcs.NodeRepo,
+		NodeSvc:         svcs.NodeSvc,
+		NodeAuthSvc:     svcs.NodeAuthSvc,
 		NodeStateSvc:    svcs.NodeStateSvc,
 		GatewayInvRepo:  svcs.GatewayInvRepo,
 		GatewayInvSvc:   svcs.GatewayInvSvc,
 		TopologySvc:     svcs.TopologySvc,
-		Gateway:       svcs.Gateway,
-		DeploymentSvc: svcs.DepSvc,
+		Gateway:         svcs.Gateway,
+		DeploymentSvc:   svcs.DepSvc,
 		PendingState:    svcs.PendingState,
 		TraceSvc:        svcs.TraceSvc,
 		SafetySvc:       svcs.SafetySvc,
@@ -45,10 +45,10 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		RoutingTableSvc: svcs.RoutingTableSvc,
 		RelayResolver:   &handlers.RelayResolver{Resolver: svcs.RelaySvc},
 		TransparentMgr:  svcs.TransparentMgr,
-		ProvReg:         svcs.ProvReg, // v1.8L-19 — provider registry for install/uninstall/config handlers
-		EgressSvc:       svcs.EgressSvc,     // v1.9A-5 — egress rule engine
-		CertStore:       svcs.CertStore,     // v1.9C — TLS certificate store
-		ACMEMgr:         svcs.ACMEMgr,       // v1.9C — ACME auto-cert manager
+		ProvReg:         svcs.ProvReg,   // v1.8L-19 — provider registry for install/uninstall/config handlers
+		EgressSvc:       svcs.EgressSvc, // v1.9A-5 — egress rule engine
+		CertStore:       svcs.CertStore, // v1.9C — TLS certificate store
+		ACMEMgr:         svcs.ACMEMgr,   // v1.9C — ACME auto-cert manager
 		Version:         svcs.Version,
 		BuildTime:       svcs.BuildTime,
 	}
@@ -65,8 +65,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 
 	// System
 	mux.HandleFunc("GET /api/system/status", h.SystemStatus)
-	mux.HandleFunc("GET /api/system/runtime-mode", h.RuntimeMode)   // v1.8L-20
-	mux.HandleFunc("GET /api/system/compositions", h.Compositions)  // v1.8L-22 — canonical composition registry
+	mux.HandleFunc("GET /api/system/runtime-mode", h.RuntimeMode)  // v1.8L-20
+	mux.HandleFunc("GET /api/system/compositions", h.Compositions) // v1.8L-22 — canonical composition registry
 
 	mux.HandleFunc("POST /api/admin/v1/mode/preview", h.ModePreview)
 	mux.HandleFunc("POST /api/admin/v1/mode/switch", h.ModeSwitch)
@@ -264,16 +264,15 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/actual-state", h.AdminGetActualState)
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/sync-status", h.AdminGetSyncStatus)
 
-		// v1.9B: Distributed Node Runtime
-		mux.HandleFunc("GET /api/admin/v1/distnode/status", h.AdminDistNodeStatus)
-		mux.HandleFunc("POST /api/admin/v1/distnode/check", h.AdminDistNodeCheck)
-		mux.HandleFunc("POST /api/admin/v1/distnode/ping/{id}", h.AdminDistNodePingPeer)
-			mux.HandleFunc("GET /api/admin/v1/distnode/aggregate", h.AdminDistNodeAggregate)
-		mux.HandleFunc("GET /api/admin/v1/nodes/{id}/distnode-overview", h.AdminDistNodeOverview)
+	// v1.9B: Distributed Node Runtime
+	mux.HandleFunc("GET /api/admin/v1/distnode/status", h.AdminDistNodeStatus)
+	mux.HandleFunc("POST /api/admin/v1/distnode/check", h.AdminDistNodeCheck)
+	mux.HandleFunc("POST /api/admin/v1/distnode/ping/{id}", h.AdminDistNodePingPeer)
+	mux.HandleFunc("GET /api/admin/v1/distnode/aggregate", h.AdminDistNodeAggregate)
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/distnode-overview", h.AdminDistNodeOverview)
 
-		// distnode transport call (used by peers)
-		// Mounted separately in RegisterDistNodeTransport if enabled
-
+	// distnode transport call (used by peers)
+	// Mounted separately in RegisterDistNodeTransport if enabled
 
 	// Admin Gateway Inventory
 	mux.HandleFunc("GET /api/admin/v1/gateways", h.AdminListGateways)
@@ -288,21 +287,21 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/topology/edges", h.AdminCreateTopologyEdge)
 	mux.HandleFunc("PATCH /api/admin/v1/topology/edges/{id}", h.AdminUpdateTopologyEdge)
 
-		// ============================================================================
-		// v1.8C-3 Gateway Policy + Routing Table
-		// ============================================================================
+	// ============================================================================
+	// v1.8C-3 Gateway Policy + Routing Table
+	// ============================================================================
 
-		// Gateway Policy APIs
-		mux.HandleFunc("GET /api/admin/v1/services/{id}/gateway-policy", h.AdminGetServicePolicy)
-		mux.HandleFunc("PUT /api/admin/v1/services/{id}/gateway-policy", h.AdminSetServicePolicy)
-		mux.HandleFunc("GET /api/admin/v1/routes/{id}/gateway-policy", h.AdminGetRoutePolicy)
-		mux.HandleFunc("PUT /api/admin/v1/routes/{id}/gateway-policy", h.AdminSetRoutePolicy)
+	// Gateway Policy APIs
+	mux.HandleFunc("GET /api/admin/v1/services/{id}/gateway-policy", h.AdminGetServicePolicy)
+	mux.HandleFunc("PUT /api/admin/v1/services/{id}/gateway-policy", h.AdminSetServicePolicy)
+	mux.HandleFunc("GET /api/admin/v1/routes/{id}/gateway-policy", h.AdminGetRoutePolicy)
+	mux.HandleFunc("PUT /api/admin/v1/routes/{id}/gateway-policy", h.AdminSetRoutePolicy)
 
-		// Routing Table APIs
-		mux.HandleFunc("GET /api/admin/v1/nodes/{id}/routing-table", h.AdminGetNodeRoutingTable)
-		mux.HandleFunc("POST /api/admin/v1/nodes/{id}/routing-table/generate", h.AdminGenerateNodeRoutingTable)
-		mux.HandleFunc("GET /api/admin/v1/routing/preview", h.AdminPreviewRoute)
-		mux.HandleFunc("GET /api/admin/v1/routing/validate", h.AdminValidateNodeRouting)
+	// Routing Table APIs
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/routing-table", h.AdminGetNodeRoutingTable)
+	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/routing-table/generate", h.AdminGenerateNodeRoutingTable)
+	mux.HandleFunc("GET /api/admin/v1/routing/preview", h.AdminPreviewRoute)
+	mux.HandleFunc("GET /api/admin/v1/routing/validate", h.AdminValidateNodeRouting)
 	// ============================================================================
 	// v1.8E DNS Resolver
 	// ============================================================================
@@ -332,7 +331,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("PUT /api/admin/v1/providers/{provider}/config", h.ProviderSaveConfig)
 	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/reload", h.ProviderReload)
 	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/service", h.ProviderServiceControl)
-		mux.HandleFunc("GET /api/admin/v1/providers/{provider}/drift", h.ProviderDrift)
+	mux.HandleFunc("GET /api/admin/v1/providers/{provider}/drift", h.ProviderDrift)
 	mux.HandleFunc("DELETE /api/admin/v1/providers/{provider}", h.ProviderUninstall)
 
 	// v1.8K Credential management (encrypted connection strings)
@@ -352,6 +351,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("POST /api/service-auth/v1/register", h.ServiceAuthRegister)
 		mux.HandleFunc("GET /api/service-auth/v1/sync", h.ServiceAuthSync)
 		mux.HandleFunc("POST /api/service-auth/v1/report", h.ServiceAuthReport)
+		mux.HandleFunc("POST /api/service-auth/v1/heartbeat", h.ServiceAuthHeartbeat)
 
 		mux.HandleFunc("GET /api/admin/v1/service-auth/services", h.AdminListServiceAuthServices)
 		mux.HandleFunc("GET /api/admin/v1/service-auth/services/{id}", h.AdminGetServiceAuthService)
@@ -360,16 +360,16 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("GET /api/admin/v1/service-auth/topology", h.AdminServiceAuthTopology)
 		mux.HandleFunc("GET /api/admin/v1/service-auth/call-logs", h.AdminServiceAuthCallLogs)
 
-			// v1.9D groups + policies
-			mux.HandleFunc("GET /api/admin/v1/service-auth/groups", h.AdminListServiceAuthGroups)
-			mux.HandleFunc("POST /api/admin/v1/service-auth/groups", h.AdminUpsertServiceAuthGroup)
-			mux.HandleFunc("DELETE /api/admin/v1/service-auth/groups/{id}", h.AdminDeleteServiceAuthGroup)
-			mux.HandleFunc("GET /api/admin/v1/service-auth/policies", h.AdminListServiceAuthPolicies)
-			mux.HandleFunc("POST /api/admin/v1/service-auth/policies", h.AdminUpsertServiceAuthPolicy)
-			mux.HandleFunc("DELETE /api/admin/v1/service-auth/policies/{id}", h.AdminDeleteServiceAuthPolicy)
+		// v1.9D groups + policies
+		mux.HandleFunc("GET /api/admin/v1/service-auth/groups", h.AdminListServiceAuthGroups)
+		mux.HandleFunc("POST /api/admin/v1/service-auth/groups", h.AdminUpsertServiceAuthGroup)
+		mux.HandleFunc("DELETE /api/admin/v1/service-auth/groups/{id}", h.AdminDeleteServiceAuthGroup)
+		mux.HandleFunc("GET /api/admin/v1/service-auth/policies", h.AdminListServiceAuthPolicies)
+		mux.HandleFunc("POST /api/admin/v1/service-auth/policies", h.AdminUpsertServiceAuthPolicy)
+		mux.HandleFunc("DELETE /api/admin/v1/service-auth/policies/{id}", h.AdminDeleteServiceAuthPolicy)
 	}
 
-		// v1.9A-5 Egress Gateway — allow/block rules + global toggle
+	// v1.9A-5 Egress Gateway — allow/block rules + global toggle
 	if svcs.EgressSvc != nil {
 		mux.HandleFunc("GET /api/admin/v1/egress/rules", h.AdminListEgressRules)
 		mux.HandleFunc("POST /api/admin/v1/egress/rules", h.AdminCreateEgressRule)
@@ -380,7 +380,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("GET /api/admin/v1/egress/status", h.AdminEgressStatus)
 	}
 
-		// v1.9C Certificate store — user-uploaded TLS certificates
+	// v1.9C Certificate store — user-uploaded TLS certificates
 	if svcs.CertStore != nil {
 		mux.HandleFunc("GET /api/admin/v1/certificates", h.AdminListCertificates)
 		mux.HandleFunc("POST /api/admin/v1/certificates", h.AdminUploadCertificate)

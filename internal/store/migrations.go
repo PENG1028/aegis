@@ -132,7 +132,7 @@ func AllMigrations() []Migration {
 			Name:    "add_deployments",
 			UpSQL:   migration023,
 		},
-	{
+		{
 			Version: "024",
 			Name:    "add_trusted_gateways",
 			UpSQL:   migration024,
@@ -211,6 +211,11 @@ func AllMigrations() []Migration {
 			Version: "039",
 			Name:    "serviceauth_multi_instance",
 			UpSQL:   migration039,
+		},
+		{
+			Version: "040",
+			Name:    "serviceauth_instance_heartbeat",
+			UpSQL:   migration040,
 		},
 	}
 }
@@ -651,7 +656,6 @@ CREATE TABLE IF NOT EXISTS spaces (
 // migration015 removed — api_tokens table no longer exists.
 const migration015 = `DROP TABLE IF EXISTS api_tokens;`
 
-
 // migration016 adds ownership fields to services, routes, and edge_mux_rules.
 const migration016 = `
 ALTER TABLE services ADD COLUMN space_id TEXT NOT NULL DEFAULT '';
@@ -801,7 +805,6 @@ CREATE INDEX IF NOT EXISTS idx_gateway_listeners_node_id ON gateway_listeners(no
 const migration025 = `
 ALTER TABLE routes ADD COLUMN gateway_link_id TEXT NOT NULL DEFAULT "";
 `
-
 
 const migration024 = `
 CREATE TABLE IF NOT EXISTS trusted_gateways (
@@ -1065,7 +1068,6 @@ CREATE INDEX IF NOT EXISTS idx_credentials_alias ON credentials(alias);
 CREATE INDEX IF NOT EXISTS idx_credentials_scheme ON credentials(scheme);
 `
 
-
 // migration034 adds the egress_rules table for allow/block rules.
 const migration034 = `
 CREATE TABLE IF NOT EXISTS egress_rules (
@@ -1189,4 +1191,10 @@ const migration039 = `
 DROP INDEX IF EXISTS idx_svc_auth_name_unique;
 CREATE INDEX IF NOT EXISTS idx_svc_auth_name ON svc_auth_services(name);
 CREATE INDEX IF NOT EXISTS idx_svc_auth_last_seen ON svc_auth_services(last_seen);
+`
+
+// migration040 adds instance_id to svc_auth_services for heartbeat tracking.
+const migration040 = `
+ALTER TABLE svc_auth_services ADD COLUMN instance_id TEXT NOT NULL DEFAULT "";
+CREATE INDEX IF NOT EXISTS idx_svc_auth_instance ON svc_auth_services(name, instance_id);
 `

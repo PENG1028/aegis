@@ -110,6 +110,26 @@ func (h *Handlers) ServiceAuthReport(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
+// ServiceAuthHeartbeat handles POST /api/service-auth/v1/heartbeat
+func (h *Handlers) ServiceAuthHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil {
+		writeError(w, http.StatusNotImplemented, "service auth not available")
+		return
+	}
+	var body struct {
+		Name       string `json:"name"`
+		InstanceID string `json:"instance_id"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := h.ServiceAuthSvc.Heartbeat(r.Context(), body.Name, body.InstanceID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status":"ok"})
+}
 
 // ============================================================================
 // Admin API
