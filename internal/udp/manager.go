@@ -2,7 +2,6 @@ package udp
 
 import (
 	"fmt"
-	"net"
 	"sync"
 )
 
@@ -161,16 +160,4 @@ func (m *Manager) ListStatus() []ProxyStatus {
 	return result
 }
 
-// IsPrivateAddress checks if an IP is a private/internal address.
-// (Same logic as tcp.IsPrivateAddress for consistency.)
-func IsPrivateAddress(host string) bool {
-	ip := net.ParseIP(host)
-	if ip == nil {
-		ips, err := net.LookupIP(host)
-		if err != nil || len(ips) == 0 {
-			return false
-		}
-		ip = ips[0]
-	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
-}
+// ValidateEntryBind is in aegis/internal/safety package.
