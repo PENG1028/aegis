@@ -164,23 +164,24 @@ function verifyIncomingTicket(req: Request, publicKeys: Record<string, string>) 
 
 ### 发现
 
-```go
-// 方案 A：定时轮询 sync 数据（当前做法）
-go func() {
-    for {
-        names := client.KnownServices()
-        for _, name := range names {
-            if !seen[name] {
-                handleNewService(name)
-                seen[name] = true
-            }
-        }
-        time.Sleep(30 * time.Second)
-    }
-}()
+发现靠 topology（调用日志聚合），**不依赖全局服务名单**。
+只看有调用关系的服务——你调过谁、谁调过你——才是真正需要关心的。
 
-// 方案 B：Webhook（服务端有新注册时推送，当前未实现）
-// Aegis POST /_webhook/service-registered → {"name": "...", "public_key": "..."}
+```go
+// 方案 A：topology API（推荐）
+type TopologyEdge struct {
+    Caller string `json:"caller"`
+    Target string `json:"target"`
+    Count  int64  `json:"count"`
+}
+// 返回的边集就是有调用关系的服务对，天然范围限制
+
+// 调用方式（admin API）：
+// GET /api/admin/v1/service-auth/topology?window=24h
+
+// 方案 B：sync 数据的 groups/policies（范围有限，仅同组或策略关联）
+// client.Groups()  — 与你同组的服务
+// client.Policies() — 策略里引用了你的服务
 ```
 
 ### 放置
