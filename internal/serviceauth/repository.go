@@ -69,6 +69,18 @@ func (r *Repository) FindByName(name string) ([]ServiceRecord, error) {
 	return scanServices(rows)
 }
 
+// FindByPublicKey returns all services registered with the given public key.
+func (r *Repository) FindByPublicKey(pubKey string) ([]ServiceRecord, error) {
+	rows, err := r.DB.Query(
+		`SELECT id, name, host, port, node_host, apis_json, public_key, status, last_seen, created_at, updated_at
+		 FROM svc_auth_services WHERE public_key=? AND status='active'`, pubKey)
+	if err != nil {
+		return nil, fmt.Errorf("find by public key: %w", err)
+	}
+	defer rows.Close()
+	return scanServices(rows)
+}
+
 // FindByID returns a single service record.
 func (r *Repository) FindByID(id string) (*ServiceRecord, error) {
 	row := r.DB.QueryRow(

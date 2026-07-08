@@ -100,6 +100,24 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 	}
 
 	s.catVersion.Add(1)
+	// 检测异常注册模式
+	var warnings []string
+	existing, _ := s.deps.Repo.FindByName(req.ServiceName)
+	for _, e := range existing {
+		if e.PublicKey != req.PublicKey && e.Status == "active" {
+			warnings = append(warnings,
+				fmt.Sprintf("服务 %s 已有不同的公钥注册（可能是密钥轮换或多实例，请确认）", req.ServiceName))
+			break
+		}
+	}
+	keyUsers, _ := s.deps.Repo.FindByPublicKey(req.PublicKey)
+	for _, u := range keyUsers {
+		if u.Name != req.ServiceName {
+			warnings = append(warnings,
+				fmt.Sprintf("此公钥已在服务 %s 上使用，两个服务共享同一私钥", u.Name))
+		}
+	}
+
 
 	publicKeys, _ := s.deps.Repo.ListPublicKeys()
 	groups, _ := s.deps.Repo.ListGroups()
@@ -119,6 +137,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		BlVersion:    s.blVersion.Load(),
 		CatVersion:   s.catVersion.Load(),
 		SyncInterval: 30,
+		Warnings:     warnings,
 	}, nil
 }
 
