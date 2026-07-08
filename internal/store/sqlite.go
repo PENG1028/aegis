@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -29,10 +30,12 @@ func OpenSQLite(path string) (*sql.DB, error) {
 	db.Exec("PRAGMA journal_mode=WAL")
 	db.Exec("PRAGMA busy_timeout=5000")
 
-	// SQLite is fundamentally single-writer. Limit to 1 open conn to prevent
-	// "database is locked" errors under concurrent write load.
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// SQLite is single-writer but WAL mode supports concurrent readers.
+	// Allow multiple connections so one slow query doesn't block everything.
+	// ConnMaxLifetime recycles connections periodically to prevent hangs.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(5 * time.Minute)
 
 	if err := db.Ping(); err != nil {
 		db.Close()
