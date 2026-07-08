@@ -14,9 +14,6 @@ var (
 	// ErrServiceBlocked is returned when the caller or target service is blocked.
 	ErrServiceBlocked = errors.New("serviceauth: service is blocked")
 
-	// ErrAPIBlocked is returned when the specific API is blocked.
-	ErrAPIBlocked = errors.New("serviceauth: api is blocked")
-
 	// ErrTicketInvalid is returned when a ticket fails HMAC verification.
 	ErrTicketInvalid = errors.New("serviceauth: invalid ticket")
 

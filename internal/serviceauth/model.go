@@ -15,28 +15,19 @@ import "time"
 // ============================================================================
 
 // ServiceRecord represents a registered service instance.
-// Name is the unique logical identity — upsert by name, not by name+host+port.
-// Host/Port/NodeHost are locators that change on restart/migration.
 type ServiceRecord struct {
 	ID        string    `json:"id"`
-	Name      string    `json:"name"`      // unique logical identity (immutable)
-	Host      string    `json:"host"`      // current IP (locator, may change)
-	Port      int       `json:"port"`      // current port (locator, may change)
-	NodeHost  string    `json:"node_host"` // os.Hostname()
-	APIsJSON  string    `json:"apis_json"` // JSON array of APIDef
-	PublicKey string    `json:"public_key"` // Ed25519 public key (base64)
-	Status    string    `json:"status"`    // "active" | "blocked" | "inactive"
+	Name      string    `json:"name"`       // unique logical identity (immutable)
+	PublicKey string    `json:"public_key"`  // Ed25519 public key (base64)
+	Status    string    `json:"status"`     // "active" | "blocked" | "inactive"
 	LastSeen  time.Time `json:"last_seen"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// APIDef describes one API endpoint a service exposes.
-type APIDef struct {
-	Name   string `json:"name"`   // logical name, e.g. "createProject"
-	Path   string `json:"path"`   // e.g. "/api/v1/projects"
-	Method string `json:"method"` // GET | POST | PUT | DELETE | PATCH
-	Params string `json:"params,omitempty"` // JSON Schema for request params (v2)
+	// Deprecated: kept for DB scan compatibility, not populated on register.
+	Host     string `json:"-"`
+	Port     int    `json:"-"`
+	NodeHost string `json:"-"`
+	APIsJSON string `json:"-"`
 }
 
 // CallLog records one inter-service call.
@@ -83,20 +74,6 @@ type RegisterResponse struct {
 	BlVersion    int64             `json:"bl_version"`
 	CatVersion   int64             `json:"cat_version"`
 	SyncInterval int               `json:"sync_interval"` // seconds
-}
-
-// ServiceInstance is a lightweight view of a service endpoint.
-type ServiceInstance struct {
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	NodeHost string `json:"node_host"`
-}
-
-// KeyPair is an Ed25519 key pair for service identity.
-type KeyPair struct {
-	PublicKey  string `json:"public_key"`  // base64
-	PrivateKey string `json:"private_key"` // base64; only returned once
 }
 
 // ServiceGroup is a named collection of services for access control.

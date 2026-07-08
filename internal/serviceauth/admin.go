@@ -39,28 +39,6 @@ func (s *Service) BlockService(ctx context.Context, id, reason string) error {
 	return nil
 }
 
-// BlockAPI blocks a specific API of a service.
-func (s *Service) BlockAPI(ctx context.Context, serviceID, apiName, reason string) error {
-	rec, err := s.deps.Repo.FindByID(serviceID)
-	if err != nil || rec == nil {
-		return ErrServiceNotFound
-	}
-
-	ver := s.blVersion.Add(1)
-	entry := &BlocklistEntry{
-		ID:        s.deps.IDGen(),
-		ServiceID: rec.Name, // store service name so SDK's isBlocked can match
-		APIName:   apiName,
-		Reason:    reason,
-		Version:   ver,
-	}
-	if err := s.deps.Repo.AddBlock(entry); err != nil {
-		return fmt.Errorf("block api: %w", err)
-	}
-
-	return nil
-}
-
 // Unblock removes a blocklist entry.
 func (s *Service) Unblock(ctx context.Context, blockID string) error {
 	if err := s.deps.Repo.RemoveBlock(blockID); err != nil {
@@ -259,51 +237,8 @@ func (s *Service) VerifyTicketAndGetSpace(ticketStr string) (serviceName string,
 		return "", fmt.Errorf("verify ticket: %w", verifyErr)
 	}
 
-	instances, _ := s.deps.Repo.FindByName(callerName)
-	for _, inst := range instances {
-		if inst.Status == "blocked" {
-			return "", ErrServiceBlocked
-		}
-	}
 	_ = claims
 	return callerName, nil
-}
-
-// Rebind migrates a service identity to a new name with a fresh keypair.
-// Admin-only operation. The old name immediately becomes invalid.
-func (s *Service) Rebind(ctx context.Context, oldName, newName string) (*KeyPair, error) {
-	instances, err := s.deps.Repo.FindByName(oldName)
-	if err != nil || len(instances) == 0 {
-		return nil, ErrServiceNotFound
-	}
-
-	// Generate new keypair for the new name.
-	pubKey, privKey, err := GenerateKeyPair()
-	if err != nil {
-		return nil, fmt.Errorf("rebind: generate keypair: %w", err)
-	}
-
-	// Update the existing record with new name and new public key.
-	// Old public key is invalidated immediately.
-	rec := &instances[0]
-	rec.Name = newName
-	rec.PublicKey = pubKey
-	rec.UpdatedAt = time.Now()
-
-	if err := s.deps.Repo.DeleteService(rec.ID); err != nil {
-		return nil, fmt.Errorf("rebind: remove old: %w", err)
-	}
-	// Re-insert with new name.
-	if err := s.deps.Repo.UpsertService(rec); err != nil {
-		return nil, fmt.Errorf("rebind: insert new: %w", err)
-	}
-
-	s.catVersion.Add(1)
-
-	return &KeyPair{
-		PublicKey:  pubKey,
-		PrivateKey: privKey,
-	}, nil
 }
 
 // ─── Groups ───
