@@ -5,20 +5,21 @@ package serviceauth
 // RegisterRequest is sent to the cluster on startup.
 type RegisterRequest struct {
 	ServiceName string `json:"service_name"`
-	PublicKey   string `json:"public_key"` // Ed25519 public key (base64)
+	PublicKey   string `json:"public_key"`  // Ed25519 public key (base64)
+	InstanceID  string `json:"instance_id"` // optional, for heartbeat tracking
 }
 
 // RegisterResponse is returned after successful registration.
 type RegisterResponse struct {
-	ServiceID    string            `json:"service_id"`
-	PublicKeys   map[string][]string `json:"public_keys"`    // name → public_key
-	Groups       []ServiceGroup    `json:"groups,omitempty"`
-	Policies     []Policy          `json:"policies,omitempty"`
-	Blocklist    []BlocklistEntry  `json:"blocklist"`
-	BlVersion    int64             `json:"bl_version"`
-	CatVersion   int64             `json:"cat_version"`
-	SyncInterval int               `json:"sync_interval"`
-	Warnings     []string          `json:"warnings,omitempty"`
+	ServiceID    string              `json:"service_id"`
+	PublicKeys   map[string][]string `json:"public_keys"`
+	Groups       []ServiceGroup      `json:"groups,omitempty"`
+	Policies     []Policy            `json:"policies,omitempty"`
+	Blocklist    []BlocklistEntry    `json:"blocklist"`
+	BlVersion    int64               `json:"bl_version"`
+	CatVersion   int64               `json:"cat_version"`
+	SyncInterval int                 `json:"sync_interval"`
+	Warnings     []string            `json:"warnings,omitempty"`
 }
 
 // ServiceGroup is a named collection of services.
@@ -51,13 +52,13 @@ type BlocklistEntry struct {
 
 // SyncResponse is returned by the sync endpoint.
 type SyncResponse struct {
-	Blocklist    []BlocklistEntry  `json:"blocklist,omitempty"`
-	BlVersion    int64             `json:"bl_version"`
+	Blocklist    []BlocklistEntry   `json:"blocklist,omitempty"`
+	BlVersion    int64              `json:"bl_version"`
 	PublicKeys   map[string][]string `json:"public_keys,omitempty"`
-	Groups       []ServiceGroup    `json:"groups,omitempty"`
-	Policies     []Policy          `json:"policies,omitempty"`
-	CatVersion   int64             `json:"cat_version"`
-	NotModified  bool              `json:"not_modified"`
+	Groups       []ServiceGroup     `json:"groups,omitempty"`
+	Policies     []Policy           `json:"policies,omitempty"`
+	CatVersion   int64              `json:"cat_version"`
+	NotModified  bool               `json:"not_modified"`
 }
 
 // ReportRequest carries an async call-log entry.

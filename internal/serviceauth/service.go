@@ -7,54 +7,38 @@ import (
 	"time"
 )
 
-// ============================================================================
-// Dependencies — everything the Service needs from the outside world.
-// All fields are interfaces or concrete types defined in this package so
-// the core has zero imports of Aegis (or any other project) packages.
-// ============================================================================
+// ─── Dependencies ─────────────────────────────────────────────────────────
 
-// NodeChecker decides whether an IP address belongs to the trusted cluster.
 type NodeChecker interface {
-	// FindByIP returns node info if the IP is recognised, or ErrNotInCluster.
 	FindByIP(ip string) (*NodeInfo, error)
 }
 
-// NodeInfo is minimal node identity returned by NodeChecker.
 type NodeInfo struct {
 	NodeID    string
 	LocalIP   string
 	PrivateIP string
 }
 
-// LogRecorder writes inter-service call records.
 type LogRecorder interface {
 	WriteCallLog(caller, target, api, callerHost, targetHost string, allowed bool, latencyMs int, errMsg string) error
 }
 
-// Dependencies holds every external dependency of the Service.
 type Dependencies struct {
 	Repo        *Repository
-	NodeChecker NodeChecker // may be nil — falls back to private-IP check
-	LogWriter   LogRecorder // may be nil — logs are silently dropped
+	NodeChecker NodeChecker
+	LogWriter   LogRecorder
 	IDGen       func() string
-	MasterKey   []byte // deprecated: Ed25519 keypairs replace cluster secret signing
+	MasterKey   []byte
 }
 
-// ============================================================================
-// Service
-// ============================================================================
+// ─── Service ──────────────────────────────────────────────────────────────
 
-// Service is the core business-logic layer for serviceauth.
-// It is transport-agnostic — HTTP handlers in Aegis
-// call its methods.
 type Service struct {
-	deps Dependencies
-
-	blVersion  atomic.Int64 // monotonic blocklist version
-	catVersion atomic.Int64 // monotonic catalog version
+	deps      Dependencies
+	blVersion atomic.Int64
+	catVersion atomic.Int64
 }
 
-// NewService creates a Service. No shared secret — Ed25519 keypairs are per-service.
 func NewService(deps Dependencies) (*Service, error) {
 	if deps.Repo == nil {
 		return nil, fmt.Errorf("serviceauth: Repo is required")
@@ -62,7 +46,6 @@ func NewService(deps Dependencies) (*Service, error) {
 	if deps.IDGen == nil {
 		deps.IDGen = DefaultIDGen
 	}
-
 	svc := &Service{deps: deps}
 	if v, err := deps.Repo.GetBlocklistVersion(); err == nil {
 		svc.blVersion.Store(v)
@@ -70,37 +53,32 @@ func NewService(deps Dependencies) (*Service, error) {
 	return svc, nil
 }
 
-// ============================================================================
-// Register — called by a service on startup
-// ============================================================================
+// ─── Register ─────────────────────────────────────────────────────────────
 
-// Register processes a service registration request.
 func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP string) (*RegisterResponse, error) {
 	if err := validateRegisterRequest(req); err != nil {
 		return nil, err
 	}
-
 	if !s.isInCluster(clientIP) {
 		return nil, ErrNotInCluster
 	}
 
 	now := time.Now()
 	rec := &ServiceRecord{
-		ID:        s.deps.IDGen(),
-		Name:      req.ServiceName,
-		PublicKey: req.PublicKey,
-		Status:    "active",
-		LastSeen:  now,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         s.deps.IDGen(),
+		Name:       req.ServiceName,
+		PublicKey:  req.PublicKey,
+		InstanceID: req.InstanceID,
+		Status:     "active",
+		LastSeen:   now,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
-
 	if err := s.deps.Repo.UpsertService(rec); err != nil {
 		return nil, fmt.Errorf("register: %w", err)
 	}
-
 	s.catVersion.Add(1)
-	// 检测异常注册模式
+
 	var warnings []string
 	existing, _ := s.deps.Repo.FindByName(req.ServiceName)
 	for _, e := range existing {
@@ -118,11 +96,9 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		}
 	}
 
-
 	publicKeys, _ := s.deps.Repo.ListPublicKeys()
 	groups, _ := s.deps.Repo.ListGroups()
 	policies, _ := s.deps.Repo.ListPolicies()
-
 	blocklist, _ := s.deps.Repo.GetBlocklist()
 	if blocklist == nil {
 		blocklist = []BlocklistEntry{}
@@ -141,34 +117,21 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 	}, nil
 }
 
-// ============================================================================
-// Sync — lightweight delta poll
-// ============================================================================
+// ─── Sync ─────────────────────────────────────────────────────────────────
 
-// Sync returns changes since the client's last known versions.
 func (s *Service) Sync(ctx context.Context, blVersion, catVersion int64) (*SyncResponse, error) {
 	currentBL := s.blVersion.Load()
 	currentCat := s.catVersion.Load()
-
 	if blVersion >= currentBL && catVersion >= currentCat {
-		return &SyncResponse{
-			BlVersion:   currentBL,
-			CatVersion:  currentCat,
-			NotModified: true,
-		}, nil
+		return &SyncResponse{BlVersion: currentBL, CatVersion: currentCat, NotModified: true}, nil
 	}
 
-	resp := &SyncResponse{
-		BlVersion:  currentBL,
-		CatVersion: currentCat,
-	}
-
+	resp := &SyncResponse{BlVersion: currentBL, CatVersion: currentCat}
 	if blVersion < currentBL {
 		if entries, err := s.deps.Repo.GetBlocklistSince(blVersion); err == nil {
 			resp.Blocklist = entries
 		}
 	}
-
 	if catVersion < currentCat {
 		if pks, err := s.deps.Repo.ListPublicKeys(); err == nil {
 			resp.PublicKeys = pks
@@ -180,15 +143,27 @@ func (s *Service) Sync(ctx context.Context, blVersion, catVersion int64) (*SyncR
 			resp.Policies = policies
 		}
 	}
-
 	return resp, nil
 }
 
-// ============================================================================
-// Report — asynchronous call logging
-// ============================================================================
+// ─── Heartbeat ────────────────────────────────────────────────────────────
 
-// Report records an inter-service call.
+func (s *Service) Heartbeat(ctx context.Context, name, instanceID string) error {
+	if name == "" || instanceID == "" {
+		return fmt.Errorf("%w: name and instance_id are required", ErrInvalidInput)
+	}
+	return s.deps.Repo.Heartbeat(name, instanceID, time.Now())
+}
+
+func (s *Service) CountOnline(ctx context.Context, window time.Duration) (map[string]int, error) {
+	if window <= 0 {
+		window = 2 * time.Minute
+	}
+	return s.deps.Repo.CountOnlineByService(time.Now().Add(-window))
+}
+
+// ─── Report ───────────────────────────────────────────────────────────────
+
 func (s *Service) Report(ctx context.Context, req ReportRequest) error {
 	log := &CallLog{
 		ID:            s.deps.IDGen(),
@@ -202,18 +177,14 @@ func (s *Service) Report(ctx context.Context, req ReportRequest) error {
 		ErrorMsg:      req.ErrorMsg,
 		CalledAt:      time.Now(),
 	}
-
 	if err := s.deps.Repo.InsertCallLog(log); err != nil {
 		return fmt.Errorf("report: %w", err)
 	}
-
 	if s.deps.LogWriter != nil {
 		_ = s.deps.LogWriter.WriteCallLog(
 			req.CallerService, req.TargetService, req.TargetAPI,
 			req.CallerHost, req.TargetHost, req.Allowed, req.LatencyMs, req.ErrorMsg,
 		)
 	}
-
 	return nil
 }
-

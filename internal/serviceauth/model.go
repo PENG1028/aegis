@@ -1,11 +1,3 @@
-// Package serviceauth provides zero-config service-to-service authentication
-// within a trusted cluster. Services register on startup and receive a shared
-// cluster secret. Every inter-service call carries an HMAC ticket that the
-// receiver verifies locally — Aegis is never
-// in the data path.
-//
-//	v1: cluster-wide mutual trust — any registered service may call any API
-//	    of any other registered service. Admin can block services/APIs.
 package serviceauth
 
 import "time"
@@ -16,13 +8,14 @@ import "time"
 
 // ServiceRecord represents a registered service instance.
 type ServiceRecord struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`       // unique logical identity (immutable)
-	PublicKey string    `json:"public_key"`  // Ed25519 public key (base64)
-	Status    string    `json:"status"`     // "active" | "blocked" | "inactive"
-	LastSeen  time.Time `json:"last_seen"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`       // unique logical identity (immutable)
+	PublicKey  string    `json:"public_key"`  // Ed25519 public key (base64)
+	InstanceID string    `json:"instance_id"` // unique per instance, heartbeat tracking
+	Status     string    `json:"status"`      // "active" | "blocked" | "inactive"
+	LastSeen   time.Time `json:"last_seen"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 	// Deprecated: kept for DB scan compatibility, not populated on register.
 	Host     string `json:"-"`
 	Port     int    `json:"-"`
@@ -45,7 +38,6 @@ type CallLog struct {
 }
 
 // BlocklistEntry records a blocked service or API.
-// When APIName is "*" the entire service is blocked.
 type BlocklistEntry struct {
 	ID        string `json:"id"`
 	ServiceID string `json:"service_id"`
@@ -61,20 +53,21 @@ type BlocklistEntry struct {
 // RegisterRequest is sent by a service on startup.
 type RegisterRequest struct {
 	ServiceName string `json:"service_name"`
-	PublicKey   string `json:"public_key"` // Ed25519 public key (base64)
+	PublicKey   string `json:"public_key"`  // Ed25519 public key (base64)
+	InstanceID  string `json:"instance_id"` // optional, for heartbeat tracking
 }
 
 // RegisterResponse is returned after successful registration.
 type RegisterResponse struct {
 	ServiceID    string              `json:"service_id"`
-	PublicKeys   map[string][]string `json:"public_keys"`    // name → public keys (may be multiple)
+	PublicKeys   map[string][]string `json:"public_keys"`
 	Groups       []ServiceGroup      `json:"groups,omitempty"`
 	Policies     []Policy            `json:"policies,omitempty"`
 	Blocklist    []BlocklistEntry    `json:"blocklist"`
 	BlVersion    int64               `json:"bl_version"`
 	CatVersion   int64               `json:"cat_version"`
-	SyncInterval int                 `json:"sync_interval"` // seconds
-	Warnings     []string            `json:"warnings,omitempty"` // 注册时的异常提示
+	SyncInterval int                 `json:"sync_interval"`
+	Warnings     []string            `json:"warnings,omitempty"`
 }
 
 // ServiceGroup is a named collection of services for access control.
@@ -90,23 +83,23 @@ type ServiceGroup struct {
 // Policy is an access control rule.
 type Policy struct {
 	ID            string `json:"id"`
-	Subject       string `json:"subject"`        // service name, group name, or "*"
-	TargetService string `json:"target_service"` // service name or "*"
-	Action        string `json:"action"`         // HTTP method, "read", "write", or "*"
-	Effect        string `json:"effect"`         // "allow" | "deny"
-	Priority      int    `json:"priority"`       // 0 = highest
+	Subject       string `json:"subject"`
+	TargetService string `json:"target_service"`
+	Action        string `json:"action"`
+	Effect        string `json:"effect"`
+	Priority      int    `json:"priority"`
 	Enabled       bool   `json:"enabled"`
 }
 
 // SyncResponse is returned by the sync endpoint.
 type SyncResponse struct {
-	Blocklist  []BlocklistEntry  `json:"blocklist,omitempty"`
-	BlVersion  int64             `json:"bl_version"`
-	PublicKeys map[string][]string `json:"public_keys,omitempty"`   // name → public keys
-	Groups     []ServiceGroup    `json:"groups,omitempty"`        // all service groups
-	Policies   []Policy          `json:"policies,omitempty"`       // all active policies
-	CatVersion int64             `json:"cat_version"`
-	NotModified bool             `json:"not_modified"`
+	Blocklist   []BlocklistEntry  `json:"blocklist,omitempty"`
+	BlVersion   int64             `json:"bl_version"`
+	PublicKeys  map[string][]string `json:"public_keys,omitempty"`
+	Groups      []ServiceGroup    `json:"groups,omitempty"`
+	Policies    []Policy          `json:"policies,omitempty"`
+	CatVersion  int64             `json:"cat_version"`
+	NotModified bool              `json:"not_modified"`
 }
 
 // ReportRequest carries an async call-log entry from the SDK.
@@ -132,10 +125,10 @@ type TopologyNode struct {
 
 // TopologyEdge is a directed edge between two services.
 type TopologyEdge struct {
-	Caller  string `json:"caller"`
-	Target  string `json:"target"`
-	API     string `json:"api"`
-	Count   int64  `json:"count"`
+	Caller   string `json:"caller"`
+	Target   string `json:"target"`
+	API      string `json:"api"`
+	Count    int64  `json:"count"`
 	LastSeen string `json:"last_seen"`
 }
 
