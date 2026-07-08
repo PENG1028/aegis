@@ -53,7 +53,8 @@ func newServeCommand(cfg *config.Config, svcs *httpapi.Services) *cobra.Command 
 			//   1. AdminAuth — injects AdminContext from cookie for /api/admin/v1/*
 			//   2. Auth — checks AdminContext first, falls back to Bearer token
 			//   3. ViewProxy — intercepts X-Aegis-View-As, forwards before auth
-		//   4. CORS (innermost, runs last)
+	//   4. CORS
+	//   5. Recovery (innermost, runs last before handler)
 			var handler http.Handler = mux
 			handler = apiMiddleware.Recovery(handler)
 			handler = apiMiddleware.CORS(handler)

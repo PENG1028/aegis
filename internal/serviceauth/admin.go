@@ -283,6 +283,10 @@ func (s *Service) DeletePolicy(ctx context.Context, id string) error {
 
 // EvaluatePolicy checks whether a caller is allowed to perform an action on a target.
 // Returns true if allowed, false if denied. Unmatched → defaultPolicy applies.
+//
+// Deprecated: Guard no longer evaluates policies (it only checks blocklist + identity).
+// This function is kept for reference but is NOT called anywhere in production code.
+// Policy evaluation is the responsibility of the service's own middleware.
 func EvaluatePolicy(callerName string, groups []ServiceGroup, policies []Policy, targetService, action, defaultPolicy string) bool {
 	// Check if caller matches any policy subject.
 	for _, p := range policies {

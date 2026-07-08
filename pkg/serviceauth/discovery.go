@@ -18,7 +18,6 @@ func autoDetectAegis() (string, error) {
 
 	candidates := []string{
 		"http://127.0.0.1:7380",   // Aegis default
-		"http://127.0.0.1:7380",   // Aegis default
 		"http://localhost:7380",
 	}
 

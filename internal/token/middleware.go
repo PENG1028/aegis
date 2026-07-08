@@ -40,9 +40,9 @@ func SetServiceAuthChecker(checker ServiceAuthChecker) {
 // AuthMiddleware provides authentication for the HTTP API.
 // It supports three auth methods (tried in order):
 //
-//  1. Admin session cookie (set by AdminAuthMiddleware)
-//  2. X-Service-Ticket header (service-to-service, via serviceauth bridge)
-//  3. Authorization: Bearer <admin_token> (static admin token, CLI/curl)
+//  1. Admin session cookie (set by AdminAuthMiddleware) — AdminContext
+//  2. Authorization: Bearer token (static admin token, CLI/curl)
+//  3. X-Service-Ticket header (service-to-service, via serviceauth bridge)
 type AuthMiddleware struct {
 	adminToken string
 }
