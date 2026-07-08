@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -16,11 +17,25 @@ const ctxKeyCaller contextKey = "serviceauth-caller"
 // service ticket signed with the caller's Ed25519 private key. Verification is
 // local — zero network calls.
 //
+// Before verifying the ticket, Guard checks the caller's IP against the
+// client's IPChecker (default: cluster-only). External IPs can be allowed
+// via temporary whitelist entries synced from Aegis (max 24h).
+//
 // The caller's identity is injected into the request context and can be
 // retrieved with CallerFromContext(). The service's own code is responsible
 // for permission checks — Guard only verifies identity.
 func (c *Client) Guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// IP 检查（默认：仅允许内网 IP）
+		remoteIP := extractIP(r)
+		c.mu.RLock()
+		checker := c.ipChecker
+		c.mu.RUnlock()
+		if !checker.Allow(remoteIP) {
+			writeGuardError(w, 403, "request from untrusted IP")
+			return
+		}
+
 		ticket := r.Header.Get("X-Service-Ticket")
 		if ticket == "" {
 			writeGuardError(w, 401, "missing service ticket")
@@ -95,6 +110,14 @@ func (c *Client) isBlocked(callerName string) string {
 		}
 	}
 	return ""
+}
+
+func extractIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 func writeGuardError(w http.ResponseWriter, status int, msg string) {
