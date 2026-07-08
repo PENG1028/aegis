@@ -129,7 +129,7 @@ export default function AuthServices() {
   const filtered = services.filter((s: ServiceRecord) => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return s.name?.toLowerCase().includes(q) || s.host?.includes(q) || `${s.port}`.includes(q);
+    return s.name?.toLowerCase().includes(q);
   });
 
   // ── Helpers ──
@@ -157,7 +157,7 @@ export default function AuthServices() {
           <button key={t} onClick={() => setTab(t)}
             className={cn('px-3 py-1.5 text-xs border-b-2 transition-colors cursor-pointer',
               tab === t ? 'border-a-accent text-a-accent font-medium' : 'border-transparent text-a-muted hover:text-a-fg')}>
-            {{services: '服务', groups: '服务组', policies: '策略', 'my-resources': '我的资源', dependencies: '依赖关系', 'auth-deps': 'Auth 依赖'}[t]}
+            {{services: '服务', groups: '服务组', policies: '策略(遗留)', 'my-resources': '我的资源', dependencies: '依赖关系', 'auth-deps': 'Auth 依赖'}[t]}
           </button>
         ))}
       </div>
@@ -188,25 +188,24 @@ export default function AuthServices() {
               <thead>
                 <tr className="border-b border-a-border text-a-muted text-left">
                   <th className="py-2 px-3 font-medium">名称</th>
-                  <th className="py-2 px-3 font-medium">地址</th>
-                  <th className="py-2 px-3 font-medium">APIs</th>
-                  <th className="py-2 px-3 font-medium">节点</th>
+                  <th className="py-2 px-3 font-medium">公钥</th>
+                  <th className="py-2 px-3 font-medium">实例</th>
                   <th className="py-2 px-3 font-medium">状态</th>
+                  <th className="py-2 px-3 font-medium">最后心跳</th>
                   <th className="py-2 px-3 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((s: ServiceRecord) => {
-                  const apis = safeParseJSON(s.apis_json);
                   const isBlocked = s.status === 'blocked';
                   return (
                     <tr key={s.id}
                       onClick={() => openDetail(s)}
                       className="border-b border-a-border/50 hover:bg-a-border/10 transition-colors cursor-pointer">
                       <td className="py-2 px-3 font-semibold text-a-fg">{s.name}</td>
-                      <td className="py-2 px-3 font-mono text-a-muted">{s.host}:{s.port}</td>
-                      <td className="py-2 px-3 font-mono text-a-muted">{apis.length}</td>
-                      <td className="py-2 px-3 font-mono text-[11px] text-a-muted">{s.node_host || '—'}</td>
+                      <td className="py-2 px-3 font-mono text-[10px] text-a-muted max-w-[120px] truncate">{s.public_key ? s.public_key.slice(0, 20) + '...' : '-'}</td>
+                      <td className="py-2 px-3 font-mono text-[10px] text-a-muted">{s.instance_id || '-'}</td>
+                      <td className="py-2 px-3 text-[10px] text-a-muted whitespace-nowrap">{fmtTimeShort(s.last_seen)}</td>
                       <td className="py-2 px-3">
                         <StatusBadge status={isBlocked ? 'disabled' : 'active'} />
                       </td>
@@ -541,7 +540,10 @@ export default function AuthServices() {
       )}
 
       {tab === 'policies' && (
-        <Card title="权限策略" subtitle="基于服务+操作的控制规则，无匹配时默认允许">
+        <Card title="权限策略" subtitle="Guard 已不检查策略，此功能仅作展示（策略引擎已移除）">
+          <div className="mb-2 px-3 py-2 rounded-a-sm bg-[#e8b830]/10 border border-[#e8b830]/20 text-[11px] text-[#e8b830]">
+            ⚠️ 策略引擎已移除。Guard 只验证身份，权限由服务自己的中间件决定。此页面保留供参考。
+          </div>
           <div className="mb-3 flex items-center gap-2">
             <Btn primary onClick={() => { setPolicyForm({ subject: '', target_service: '', action: '*', effect: 'allow' }); setShowPolicyModal(true); }} className="text-xs">新建策略</Btn>
             <span className="text-[10px] text-a-muted ml-auto">{policies.length} 条</span>
@@ -629,7 +631,6 @@ function ServiceDetailContent({ svc, callLogs, onBlock, onUnblock }: {
   onBlock: () => void;
   onUnblock: () => void;
 }) {
-  const apis = safeParseJSON(svc.apis_json);
   const isBlocked = svc.status === 'blocked';
   const svcLogs = callLogs.filter((l: CallLogEntry) => l.caller_service === svc.name || l.target_service === svc.name).slice(0, 20);
 
@@ -650,12 +651,12 @@ function ServiceDetailContent({ svc, callLogs, onBlock, onUnblock }: {
             </div>
           </div>
           <div>
-            <div className="text-a-muted mb-0.5">地址</div>
-            <div className="font-mono text-a-fg">{svc.host}:{svc.port}</div>
+            <div className="text-a-muted mb-0.5">公钥</div>
+            <div className="font-mono text-[10px] text-a-fg break-all">{svc.public_key ? svc.public_key.slice(0, 32) + '...' : '—'}</div>
           </div>
           <div>
-            <div className="text-a-muted mb-0.5">节点</div>
-            <div className="font-mono text-a-fg">{svc.node_host || '—'}</div>
+            <div className="text-a-muted mb-0.5">实例 ID</div>
+            <div className="font-mono text-[10px] text-a-fg">{svc.instance_id || '—'}</div>
           </div>
           <div>
             <div className="text-a-muted mb-0.5">最后心跳</div>
@@ -668,30 +669,11 @@ function ServiceDetailContent({ svc, callLogs, onBlock, onUnblock }: {
         </div>
       </Card>
 
-      {/* APIs */}
-      <Card title={`APIs (${apis.length})`}>
-        {apis.length === 0 ? (
-          <div className="text-xs text-a-muted py-2">未注册 API</div>
-        ) : (
-          <div className="divide-y divide-a-border/20">
-            {apis.map((a: any, i: number) => (
-              <div key={i} className="py-1.5 flex items-center gap-3 text-xs font-mono">
-                <span className={cn(
-                  'px-1 py-0.5 rounded text-[10px] font-semibold min-w-[48px] text-center',
-                  a.method === 'GET' && 'text-[#4cd964] bg-[#4cd964]/10',
-                  a.method === 'POST' && 'text-[#a865ff] bg-[#a865ff]/10',
-                  (a.method === 'PUT' || a.method === 'PATCH') && 'text-[#e8b830] bg-[#e8b830]/10',
-                  a.method === 'DELETE' && 'text-[#ff5c72] bg-[#ff5c72]/10',
-                )}>
-                  {a.method || 'ANY'}
-                </span>
-                <span className="text-a-muted flex-1">{a.path}</span>
-                <span className="text-a-fg2">{a.name}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      {(svc.public_key) && (
+        <Card title="公钥">
+          <div className="text-xs font-mono text-a-muted break-all bg-a-bg/50 p-2 rounded-a-sm">{svc.public_key}</div>
+        </Card>
+      )}
 
       {/* Call logs */}
       <Card title={`调用记录 (最近 ${svcLogs.length})`}>
