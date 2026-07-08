@@ -75,6 +75,7 @@ func (s *ActionService) updateServiceTarget(ctx context.Context, ac *ActionConte
 
 	s.logSvc.Log(ctx, "action.update-target", "service", svc.ID, "success",
 		fmt.Sprintf("updated service target to %s:%d", input.TargetHost, input.TargetPort), ac.Actor)
+	s.reportCall(ctx, ac, "update-target")
 
 	return &ActionResult{
 		OperationID: opID,
@@ -113,6 +114,7 @@ func (s *ActionService) updateEdgeRuleTarget(ctx context.Context, ac *ActionCont
 
 	s.logSvc.Log(ctx, "action.update-target", "edge_rule", rule.ID, "success",
 		fmt.Sprintf("updated edge rule target to %s:%d", input.TargetHost, input.TargetPort), ac.Actor)
+	s.reportCall(ctx, ac, "update-target")
 
 	return &ActionResult{
 		OperationID: opID,

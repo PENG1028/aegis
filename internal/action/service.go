@@ -23,6 +23,10 @@ type ActionResult struct {
 	Details     string `json:"details,omitempty"`
 }
 
+// CallReporter records an inter-service call log.
+// Injected after construction to break circular init dependency.
+type CallReporter func(ctx context.Context, callerService, targetService, targetAPI string, allowed bool, latencyMs int, errMsg string) error
+
 // ActionService is the unified entry point for all v1.6 actions.
 // Both CLI and HTTP API call this same service to ensure consistent behavior.
 type ActionService struct {
@@ -35,6 +39,7 @@ type ActionService struct {
 	spaceRepo    *space.Repository
 	logSvc       logs.Logger
 	listenerSvc  *listener.Service
+	callReporter CallReporter // optional, set via SetCallReporter
 }
 
 // NewActionService creates a new ActionService.
@@ -60,6 +65,19 @@ func NewActionService(
 		logSvc:       logSvc,
 		listenerSvc:  listenerSvc,
 	}
+}
+
+// SetCallReporter injects the call reporter after construction.
+func (s *ActionService) SetCallReporter(r CallReporter) {
+	s.callReporter = r
+}
+
+// reportCall writes a call log entry if the caller is a service and a reporter is set.
+func (s *ActionService) reportCall(ctx context.Context, ac *ActionContext, api string) {
+	if s.callReporter == nil || !ac.IsService() {
+		return
+	}
+	_ = s.callReporter(ctx, ac.SpaceID, "aegis-gateway", api, true, 0, "")
 }
 
 // requireSpace validates that the action context has a valid space for space-scoped operations.
