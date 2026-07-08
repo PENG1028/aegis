@@ -151,6 +151,7 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 
 	s.logSvc.Log(ctx, "action.bind-http-domain", "action", opID, "success",
 		fmt.Sprintf("bound HTTP domain %s -> %s:%d", input.Domain, input.TargetHost, input.TargetPort), ac.Actor)
+	s.reportCall(ctx, ac, "bind-http-domain")
 
 	return &ActionResult{
 		OperationID: opID,

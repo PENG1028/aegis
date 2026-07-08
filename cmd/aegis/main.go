@@ -50,6 +50,7 @@ import (
 	"aegis/internal/trace"
 	"aegis/internal/transparent"
 	"aegis/internal/udp"
+	"time"
 
 	cli "aegis/internal/cli"
 )
@@ -309,7 +310,53 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: service auth init failed: %v\n", err)
 	} else {
-		token.SetServiceAuthChecker(serviceAuthSvc) // bridge: Ticket → ActionContext
+		token.SetServiceAuthChecker(serviceAuthSvc)
+			actionSvc.SetCallReporter(func(ctx context.Context, caller, target, api string, allowed bool, latencyMs int, errMsg string) error {
+					return serviceAuthSvc.Report(ctx, serviceauth.ReportRequest{
+						CallerService: caller,
+						TargetService: target,
+						TargetAPI:     api,
+						Allowed:       allowed,
+						LatencyMs:     latencyMs,
+						ErrorMsg:      errMsg,
+					})
+				})
+
+			// Aegis self-registration
+			go func() {
+				ctx := context.Background()
+				pubKey, _, err := serviceauth.GenerateKeyPair()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warning: aegis self-registration key generation failed: %v\n", err)
+					return
+				}
+				const aegisName = "aegis-gateway"
+				instanceID := "aegis-" + core.NewID("id")[3:]
+
+				_, err = serviceAuthSvc.Register(ctx, serviceauth.RegisterRequest{
+					ServiceName: aegisName,
+					PublicKey:   pubKey,
+					InstanceID:  instanceID,
+				}, "127.0.0.1")
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warning: aegis self-registration failed: %v\n", err)
+					return
+				}
+				fmt.Fprintf(os.Stderr, "info: aegis self-registered as %s (%s)\n", aegisName, instanceID)
+
+				ticker := time.NewTicker(30 * time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ticker.C:
+						if err := serviceAuthSvc.Heartbeat(ctx, aegisName, instanceID); err != nil {
+							fmt.Fprintf(os.Stderr, "warning: aegis heartbeat: %v\n", err)
+						}
+					case <-ctx.Done():
+						return
+					}
+				}
+			}() // bridge: Ticket → ActionContext
 	}
 	traceSvc := trace.NewService(trace.Dependencies{
 		RouteRepo:       routeRepo,

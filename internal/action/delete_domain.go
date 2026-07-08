@@ -41,6 +41,7 @@ func (s *ActionService) DeleteDomain(ctx context.Context, input DeleteDomainInpu
 
 		s.logSvc.Log(ctx, "action.delete-domain", "route", rt.ID, "success",
 			fmt.Sprintf("deleted route for domain %s", input.Domain), ac.Actor)
+		s.reportCall(ctx, ac, "delete-domain")
 
 		return &ActionResult{
 			OperationID: opID,
@@ -72,6 +73,7 @@ func (s *ActionService) DeleteDomain(ctx context.Context, input DeleteDomainInpu
 
 		s.logSvc.Log(ctx, "action.delete-domain", "edge_rule", rule.ID, "success",
 			fmt.Sprintf("deleted edge rule for SNI %s", input.Domain), ac.Actor)
+		s.reportCall(ctx, ac, "delete-domain")
 
 		return &ActionResult{
 			OperationID: opID,

@@ -67,6 +67,7 @@ func (s *ActionService) disableRouteDomain(ctx context.Context, ac *ActionContex
 
 	s.logSvc.Log(ctx, "action.disable-domain", "route", rt.ID, "success",
 		fmt.Sprintf("disabled route for domain %s", domain), ac.Actor)
+	s.reportCall(ctx, ac, "disable-domain")
 
 	return &ActionResult{
 		OperationID: opID,
@@ -108,6 +109,7 @@ func (s *ActionService) disableEdgeRuleDomain(ctx context.Context, ac *ActionCon
 
 	s.logSvc.Log(ctx, "action.disable-domain", "edge_rule", rule.ID, "success",
 		fmt.Sprintf("disabled edge rule for SNI %s", sniHost), ac.Actor)
+	s.reportCall(ctx, ac, "disable-domain")
 
 	return &ActionResult{
 		OperationID: opID,

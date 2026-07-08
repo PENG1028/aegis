@@ -101,6 +101,7 @@ func (s *ActionService) BindTLSBackend(ctx context.Context, input BindTLSBackend
 
 	s.logSvc.Log(ctx, "action.bind-tls-backend", "action", opID, "success",
 		fmt.Sprintf("bound TLS backend %s -> %s:%d", input.SNIHost, input.TargetHost, input.TargetPort), ac.Actor)
+	s.reportCall(ctx, ac, "bind-tls-backend")
 
 	return &ActionResult{
 		OperationID: opID,
