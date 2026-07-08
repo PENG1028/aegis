@@ -5,7 +5,7 @@ import "context"
 // ActionContext carries the caller's identity and permissions through the action pipeline.
 type ActionContext struct {
 	SpaceID   string `json:"space_id"`
-	TokenType string `json:"token_type"` // admin | space
+	TokenType string `json:"token_type"` // admin | service | space
 	TokenID   string `json:"token_id"`
 	Actor     string `json:"actor"` // cli | api
 }
@@ -18,6 +18,11 @@ func (ac *ActionContext) IsAdmin() bool {
 // IsSpace returns true if the caller is scoped to a space.
 func (ac *ActionContext) IsSpace() bool {
 	return ac.TokenType == "space"
+}
+
+// IsService returns true if the caller is a registered service (via ServiceAuth ticket).
+func (ac *ActionContext) IsService() bool {
+	return ac.TokenType == "service"
 }
 
 // NewAdminContext creates an admin context for CLI/internal operations.

@@ -67,6 +67,39 @@ mux.Handle("POST /api/verify", client.Guard(
 ```
 
 ---
+	
+## 管理自己的域名和服务（Action API）
+
+带上 ServiceAuth ticket 可以调 Aegis Action API 来管理域名映射。
+你的服务名会自动映射为一个独立空间，你只能操作自己空间内的资源。
+
+```go
+// 创建 HTTP 域名映射
+resp, err := client.Post(ctx, aegisURL+"/api/v1/actions/bind-http-domain", body)
+// body: {"domain": "myapp.example.com", "target_host": "127.0.0.1", "target_port": 3000}
+
+// 查看自己空间的资源
+routes, _ := client.Get(ctx, aegisURL+"/api/v1/my/routes")
+services, _ := client.Get(ctx, aegisURL+"/api/v1/my/services")
+```
+
+不需要 admin token。ticket 自动证明身份，Aegis 自动按空间隔离。
+
+可用端点：
+
+| 端点 | 用途 |
+|------|------|
+| `POST /api/v1/actions/bind-http-domain` | 绑定 HTTP 域名 → 后端 |
+| `POST /api/v1/actions/bind-tls-backend` | 绑定 TLS/SNI 后端 |
+| `PATCH /api/v1/actions/update-target` | 更新已绑定的目标 |
+| `POST /api/v1/actions/disable-domain` | 禁用域名 |
+| `DELETE /api/v1/actions/domain` | 删除域名 |
+| `GET /api/v1/my/routes` | 查看我的路由 |
+| `GET /api/v1/my/services` | 查看我的服务 |
+| `GET /api/v1/my/edge-rules` | 查看我的 SNI 规则 |
+| `GET /api/v1/my/operations` | 查看我的操作记录 |
+
+---
 
 ## 非 Go 服务接入（Next.js / Python / 任意语言）
 
