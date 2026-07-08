@@ -161,21 +161,23 @@ func (r *Repository) DeleteStale(before time.Time) (int, error) {
 	return int(n), nil
 }
 
-// ListPublicKeys returns a map of service name → Ed25519 public key for all active services.
-func (r *Repository) ListPublicKeys() (map[string]string, error) {
+// ListPublicKeys returns a map of service name → list of Ed25519 public keys.
+// Multiple keys per name is possible when instances use different keypairs
+// (restarted with key lost, or multi-instance with independent keys).
+func (r *Repository) ListPublicKeys() (map[string][]string, error) {
 	rows, err := r.DB.Query(
 		`SELECT name, public_key FROM svc_auth_services WHERE status='active' AND public_key != ''`)
 	if err != nil {
 		return nil, fmt.Errorf("list public keys: %w", err)
 	}
 	defer rows.Close()
-	out := make(map[string]string)
+	out := make(map[string][]string)
 	for rows.Next() {
 		var name, key string
 		if err := rows.Scan(&name, &key); err != nil {
 			return nil, err
 		}
-		out[name] = key
+		out[name] = append(out[name], key)
 	}
 	return out, rows.Err()
 }

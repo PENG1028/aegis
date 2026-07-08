@@ -49,28 +49,37 @@ func (c *Client) Guard(next http.Handler) http.Handler {
 		}
 
 		c.mu.RLock()
-		pubKey := c.publicKeys[callerName]
+		keys := c.publicKeys[callerName]
 		c.mu.RUnlock()
 
-		if pubKey == "" {
+		if len(keys) == 0 {
 			writeGuardError(w, 403, "unknown caller")
 			return
 		}
 
-		claims, err := VerifyTicket(ticket, pubKey)
-		if err != nil {
+		var verifiedClaims *TicketClaims
+		verified := false
+		for _, key := range keys {
+			c, e := VerifyTicket(ticket, key)
+			if e == nil {
+				verifiedClaims = c
+				verified = true
+				break
+			}
+		}
+		if !verified {
 			writeGuardError(w, 403, "invalid ticket")
 			return
 		}
 
-		blockedReason := c.isBlocked(claims.CallerService)
+		blockedReason := c.isBlocked(verifiedClaims.CallerService)
 		if blockedReason != "" {
 			writeGuardError(w, 403, blockedReason)
 			return
 		}
 
 		caller := CallerInfo{
-			ServiceName: claims.CallerService,
+			ServiceName: verifiedClaims.CallerService,
 			CallerHost:  r.Header.Get("X-Caller-Host"),
 		}
 		ctx := context.WithValue(r.Context(), ctxKeyCaller, caller)

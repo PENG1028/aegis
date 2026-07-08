@@ -11,7 +11,7 @@ type RegisterRequest struct {
 // RegisterResponse is returned after successful registration.
 type RegisterResponse struct {
 	ServiceID    string            `json:"service_id"`
-	PublicKeys   map[string]string `json:"public_keys"`    // name → public_key
+	PublicKeys   map[string][]string `json:"public_keys"`    // name → public_key
 	Groups       []ServiceGroup    `json:"groups,omitempty"`
 	Policies     []Policy          `json:"policies,omitempty"`
 	Blocklist    []BlocklistEntry  `json:"blocklist"`
@@ -53,7 +53,7 @@ type BlocklistEntry struct {
 type SyncResponse struct {
 	Blocklist    []BlocklistEntry  `json:"blocklist,omitempty"`
 	BlVersion    int64             `json:"bl_version"`
-	PublicKeys   map[string]string `json:"public_keys,omitempty"`
+	PublicKeys   map[string][]string `json:"public_keys,omitempty"`
 	Groups       []ServiceGroup    `json:"groups,omitempty"`
 	Policies     []Policy          `json:"policies,omitempty"`
 	CatVersion   int64             `json:"cat_version"`

@@ -66,15 +66,15 @@ type RegisterRequest struct {
 
 // RegisterResponse is returned after successful registration.
 type RegisterResponse struct {
-	ServiceID    string            `json:"service_id"`
-	PublicKeys   map[string]string `json:"public_keys"`    // name → public_key
-	Groups       []ServiceGroup    `json:"groups,omitempty"`
-	Policies     []Policy          `json:"policies,omitempty"`
-	Blocklist    []BlocklistEntry  `json:"blocklist"`
-	BlVersion    int64             `json:"bl_version"`
-	CatVersion   int64             `json:"cat_version"`
-	SyncInterval int               `json:"sync_interval"` // seconds
-	Warnings     []string          `json:"warnings,omitempty"` // 注册时的异常提示
+	ServiceID    string              `json:"service_id"`
+	PublicKeys   map[string][]string `json:"public_keys"`    // name → public keys (may be multiple)
+	Groups       []ServiceGroup      `json:"groups,omitempty"`
+	Policies     []Policy            `json:"policies,omitempty"`
+	Blocklist    []BlocklistEntry    `json:"blocklist"`
+	BlVersion    int64               `json:"bl_version"`
+	CatVersion   int64               `json:"cat_version"`
+	SyncInterval int                 `json:"sync_interval"` // seconds
+	Warnings     []string            `json:"warnings,omitempty"` // 注册时的异常提示
 }
 
 // ServiceGroup is a named collection of services for access control.
@@ -102,7 +102,7 @@ type Policy struct {
 type SyncResponse struct {
 	Blocklist  []BlocklistEntry  `json:"blocklist,omitempty"`
 	BlVersion  int64             `json:"bl_version"`
-	PublicKeys map[string]string `json:"public_keys,omitempty"`   // name → public_key
+	PublicKeys map[string][]string `json:"public_keys,omitempty"`   // name → public keys
 	Groups     []ServiceGroup    `json:"groups,omitempty"`        // all service groups
 	Policies   []Policy          `json:"policies,omitempty"`       // all active policies
 	CatVersion int64             `json:"cat_version"`

@@ -227,18 +227,18 @@ func (s *Service) VerifyTicketAndGetSpace(ticketStr string) (serviceName string,
 	}
 	callerName := parts[0]
 
-	pubKey, ok := allKeys[callerName]
-	if !ok {
+	keys, ok := allKeys[callerName]
+	if !ok || len(keys) == 0 {
 		return "", ErrServiceNotFound
 	}
-
-	claims, verifyErr := VerifyTicket(ticketStr, pubKey)
-	if verifyErr != nil {
-		return "", fmt.Errorf("verify ticket: %w", verifyErr)
+	var verifyErr error
+	for _, pubKey := range keys {
+		_, verifyErr = VerifyTicket(ticketStr, pubKey)
+		if verifyErr == nil {
+			return callerName, nil
+		}
 	}
-
-	_ = claims
-	return callerName, nil
+	return "", fmt.Errorf("verify ticket: %w", verifyErr)
 }
 
 // ─── Groups ───
