@@ -35,3 +35,4 @@ internal/uiassets/dist/
 _fix_policy_test.py
 __pycache__/
 *.pyc
+_notes/
