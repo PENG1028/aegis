@@ -3,6 +3,8 @@ package action
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	"aegis/internal/endpoint"
@@ -89,7 +91,7 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 	_, err = s.endpointSvc.CreateEndpoint(ctx, endpoint.CreateEndpointInput{
 		ServiceID: svc.ID,
 		Type:      "private",
-		Address:   fmt.Sprintf("%s:%d", input.TargetHost, input.TargetPort),
+		Address:   net.JoinHostPort(input.TargetHost, strconv.Itoa(input.TargetPort)),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create endpoint: %w", err)

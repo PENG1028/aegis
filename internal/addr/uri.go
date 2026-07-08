@@ -11,6 +11,7 @@ package addr
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -137,7 +138,7 @@ func (c *ConnInfo) TargetAddr() string {
 	if c.Port == 0 {
 		return c.Host
 	}
-	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+	return net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 }
 
 // IsCredential returns true if this is a credential:// alias.

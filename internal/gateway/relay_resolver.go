@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"fmt"
+	"net"
 	"sort"
+	"strconv"
 
 	"aegis/internal/endpoint"
 	"aegis/internal/listener"
@@ -216,7 +218,7 @@ func localGateway(res *RelayResult, node *node.NodeRecord, targetHost string, ta
 	res.GatewayHost = "127.0.0.1"
 	res.GatewayPort = httpPort
 	res.GatewayURL = fmt.Sprintf("http://127.0.0.1:%d", httpPort)
-	res.FinalLocalTarget = fmt.Sprintf("127.0.0.1:%d", targetPort)
+	res.FinalLocalTarget = net.JoinHostPort("127.0.0.1", strconv.Itoa(targetPort))
 
 	// Check for self-loop: if target is a listener port, that's a loop
 	if isListenerPort(listeners, targetPort) {
@@ -236,8 +238,8 @@ func privateGateway(res *RelayResult, node *node.NodeRecord, targetHost string, 
 	res.DirectTargetSuppressed = true
 	res.GatewayHost = node.PrivateIP
 	res.GatewayPort = httpPort
-	res.GatewayURL = fmt.Sprintf("http://%s:%d", node.PrivateIP, httpPort)
-	res.FinalLocalTarget = fmt.Sprintf("127.0.0.1:%d", targetPort)
+	res.GatewayURL = "http://" + net.JoinHostPort(node.PrivateIP, strconv.Itoa(httpPort))
+	res.FinalLocalTarget = net.JoinHostPort("127.0.0.1", strconv.Itoa(targetPort))
 	res.GatewayLinkID = gwLink.ID
 
 	res.Recommendation = fmt.Sprintf("send request to private gateway %s:%d (target node %s) with GatewayLink auth", node.PrivateIP, httpPort, node.NodeID)
@@ -250,8 +252,8 @@ func publicGateway(res *RelayResult, node *node.NodeRecord, targetHost string, t
 	res.DirectTargetSuppressed = true
 	res.GatewayHost = node.PublicIP
 	res.GatewayPort = httpsPort
-	res.GatewayURL = fmt.Sprintf("http://%s:%d", node.PublicIP, httpsPort)
-	res.FinalLocalTarget = fmt.Sprintf("127.0.0.1:%d", targetPort)
+	res.GatewayURL = "http://" + net.JoinHostPort(node.PublicIP, strconv.Itoa(httpsPort))
+	res.FinalLocalTarget = net.JoinHostPort("127.0.0.1", strconv.Itoa(targetPort))
 
 	res.AddRisk(RiskPublicTargetEgress, "info",
 		fmt.Sprintf("relay to node %s traverses public network — GatewayLink provides authorization", node.NodeID))
