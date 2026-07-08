@@ -54,10 +54,23 @@ func IsPublicIP(host string) bool {
 	return ClassifyIP(host, nil) == IPPublic
 }
 
-// IsPrivateIP returns true if the IP is private or loopback.
+// IsPrivateIP returns true if the IP is private, loopback, or link-local.
 func IsPrivateIP(host string) bool {
 	c := ClassifyIP(host, nil)
 	return c == IPPrivate || c == IPLoopback
+}
+
+// IsPrivateOrLinkLocal returns true if the IP is private, loopback, or link-local.
+// Link-local addresses (169.254.x.x / fe80::) are non-routable and treated as internal.
+func IsPrivateOrLinkLocal(host string) bool {
+	if IsPrivateIP(host) {
+		return true
+	}
+	ip := net.ParseIP(NormalizeHost(host))
+	if ip == nil {
+		return false
+	}
+	return ip.IsLinkLocalUnicast()
 }
 
 // NormalizeHost strips the port from a "host:port" string.

@@ -1,8 +1,9 @@
 package tcp
 
 import (
+	"aegis/internal/safety"
+
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 )
@@ -176,24 +177,6 @@ type ProxyConfig struct {
 	TargetPort int
 }
 
-// IsPrivateAddress checks if an IP is a private/internal address.
-func IsPrivateAddress(host string) bool {
-	ip := net.ParseIP(host)
-	if ip == nil {
-		// Try resolving hostname
-		ips, err := net.LookupIP(host)
-		if err != nil || len(ips) == 0 {
-			return false
-		}
-		ip = ips[0]
-	}
-
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
-		return true
-	}
-	return false
-}
-
 // ValidateEntryBind validates that an entry bind address is safe.
 // Returns true if the bind is allowed without admin override.
 func ValidateEntryBind(host string) (bool, string) {
@@ -206,7 +189,7 @@ func ValidateEntryBind(host string) (bool, string) {
 	if strings.HasPrefix(host, "127.") || host == "localhost" {
 		return true, "loopback allowed"
 	}
-	if IsPrivateAddress(host) {
+	if safety.IsPrivateOrLinkLocal(host) {
 		return true, "private address allowed"
 	}
 	return false, "public IP binding requires admin authorization"

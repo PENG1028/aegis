@@ -128,8 +128,8 @@ func (s *Service) isInCluster(clientIP string) bool {
 		return true
 	}
 
-	// Layer 2: private IPv4 ranges.
-	if isPrivateIP(ip) {
+	// Layer 2: private IPv4/IPv6 ranges.
+	if ip.IsPrivate() {
 		return true
 	}
 
@@ -140,28 +140,6 @@ func (s *Service) isInCluster(clientIP string) bool {
 		}
 	}
 
-	return false
-}
-
-// isPrivateIP returns true for RFC 1918 private IPv4 and RFC 4193 private IPv6.
-func isPrivateIP(ip net.IP) bool {
-	// IPv4 private ranges.
-	if ip4 := ip.To4(); ip4 != nil {
-		if ip4[0] == 10 {
-			return true
-		}
-		if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 {
-			return true
-		}
-		if ip4[0] == 192 && ip4[1] == 168 {
-			return true
-		}
-		return false
-	}
-	// IPv6 private ranges: fd00::/8 (unique local) and fe80::/10 (link-local).
-	if ip.IsPrivate() {
-		return true
-	}
 	return false
 }
 
