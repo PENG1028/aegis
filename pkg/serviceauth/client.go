@@ -163,8 +163,8 @@ func (c *Client) Register(ctx context.Context) error {
 	c.blVersion = regResp.BlVersion
 	c.catVersion = regResp.CatVersion
 	c.blocklist = regResp.Blocklist
-	for k, v := range regResp.PublicKeys {
-		c.publicKeys[k] = v
+	if regResp.PublicKeys != nil {
+		c.publicKeys = regResp.PublicKeys
 	}
 	c.groups = regResp.Groups
 	c.policies = regResp.Policies
@@ -314,6 +314,47 @@ func (c *Client) Policies() []Policy {
 	return c.policies
 }
 
+// ─── Service discovery ──────────────────────────────────────────────────
+
+// KnownServices returns all known service names from the synced key cache.
+// The list reflects whatever the server last sent — removed services disappear
+// after the next sync cycle (max 30s).
+func (c *Client) KnownServices() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	names := make([]string, 0, len(c.publicKeys))
+	for name := range c.publicKeys {
+		names = append(names, name)
+	}
+	return names
+}
+
+// ServiceStatus is the basic health info for a registered service.
+type ServiceStatus struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`      // active | inactive | blocked
+	LastSeen   string `json:"last_seen"`   // RFC3339
+	InstanceID string `json:"instance_id"`
+}
+
+// FetchServiceStatus returns the current status of all registered services.
+// Calls the dedicated /api/service-auth/v1/services endpoint.
+func (c *Client) FetchServiceStatus(ctx context.Context) ([]ServiceStatus, error) {
+	resp, err := c.Get(ctx, c.gatewayURL+"/api/service-auth/v1/services")
+	if err != nil {
+		return nil, fmt.Errorf("fetch service status: %w", err)
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Services []ServiceStatus `json:"services"`
+		Count    int             `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("fetch service status: decode: %w", err)
+	}
+	return result.Services, nil
+}
+
 // InGroup returns true if the named service belongs to the group. Local lookup.
 func (c *Client) InGroup(serviceName, groupName string) bool {
 	c.mu.RLock()
@@ -400,8 +441,8 @@ func (c *Client) doSync() {
 	if len(syncResp.Blocklist) > 0 {
 		c.blocklist = syncResp.Blocklist
 	}
-	for k, v := range syncResp.PublicKeys {
-		c.publicKeys[k] = v
+	if syncResp.PublicKeys != nil {
+		c.publicKeys = syncResp.PublicKeys
 	}
 	if len(syncResp.Groups) > 0 {
 		c.groups = syncResp.Groups

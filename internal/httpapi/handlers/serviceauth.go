@@ -131,6 +131,39 @@ func (h *Handlers) ServiceAuthHeartbeat(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status":"ok"})
 }
 
+// ServiceAuthListServices handles GET /api/service-auth/v1/services
+// Returns lightweight service list for SDK consumption (no admin auth needed).
+func (h *Handlers) ServiceAuthListServices(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil {
+		writeError(w, http.StatusNotImplemented, "service auth not available")
+		return
+	}
+	services, err := h.ServiceAuthSvc.ListServices(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	type svcBrief struct {
+		Name       string `json:"name"`
+		Status     string `json:"status"`
+		LastSeen   string `json:"last_seen"`
+		InstanceID string `json:"instance_id"`
+	}
+	result := make([]svcBrief, 0, len(services))
+	for _, s := range services {
+		result = append(result, svcBrief{
+			Name:       s.Name,
+			Status:     s.Status,
+			LastSeen:   s.LastSeen.Format(time.RFC3339),
+			InstanceID: s.InstanceID,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"services": result,
+		"count":    len(result),
+	})
+}
+
 // ============================================================================
 // Admin API
 // ============================================================================
