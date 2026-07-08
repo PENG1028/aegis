@@ -22,7 +22,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,6 +49,7 @@ type Client struct {
 	cfg        Config
 	gatewayURL string
 	serviceID  string
+	instanceID string // unique per process lifetime, for heartbeat tracking
 
 	privateKey string            // Ed25519 private key (base64, stored locally)
 	publicKey  string            // Ed25519 public key (base64, sent to server)
@@ -93,9 +96,12 @@ func New(cfg Config) (*Client, error) {
 		ipChecker = AllowCluster()
 	}
 
+	instanceID := generateInstanceID()
+
 	c := &Client{
 		cfg:        cfg,
 		gatewayURL: gatewayURL,
+		instanceID: instanceID,
 		httpClient: httpClient,
 		publicKeys: make(map[string][]string),
 		keyDir:     keyDir(),
@@ -105,6 +111,14 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	return c, nil
+}
+
+func generateInstanceID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("ins_%x", time.Now().UnixNano())
+	}
+	return "ins_" + hex.EncodeToString(b)
 }
 
 // Register joins the cluster and starts background sync.
@@ -120,6 +134,7 @@ func (c *Client) Register(ctx context.Context) error {
 	reqBody := RegisterRequest{
 		ServiceName: c.cfg.ServiceName,
 		PublicKey:   pubKey,
+			InstanceID:  c.instanceID,
 	}
 
 	data, _ := json.Marshal(reqBody)
