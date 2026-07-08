@@ -93,6 +93,19 @@ func (r *Registry) List() []ProviderState {
 	return states
 }
 
+// FindByCapability returns the first provider that has the given capability.
+// Returns nil if no provider supports the capability.
+// Use this instead of hardcoded Get("caddy").
+func (r *Registry) FindByCapability(cap Capability) Provider {
+	for _, id := range r.order {
+		p := r.providers[id]
+		if p.State().HasCapability(cap) {
+			return p
+		}
+	}
+	return nil
+}
+
 // ListAll returns all registered Provider instances for iteration.
 // Use during discovery and apply pipelines.
 func (r *Registry) ListAll() []Provider {
