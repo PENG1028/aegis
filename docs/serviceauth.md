@@ -435,6 +435,16 @@ C 的新 ticket（新私钥签的）→ 其他服务验签通过 ✅
 
 ---
 
+## 当前限制
+
+| 限制 | 说明 |
+|------|------|
+| Exposure API 无空间隔离 | TCP/UDP 端口转发 API（`/api/exposures/*`）未实现 ServiceAuth 空间隔离，需要 admin 权限。外部服务请用 Action API 管理域名 |
+| Apply API 无 ServiceAuth 检查 | `POST /api/apply` 当前仅受 AuthMiddleware 保护（Bearer/ticket 均可触发）。建议保持 admin token 调用 |
+| 策略引擎已移除 | `EvaluatePolicy` 函数已删除。Guard 只验证身份，权限由服务自己的中间件决定。Groups/Policies 的 UI 管理界面保留供参考 |
+
+---
+
 ## 术语
 
 | 术语 | 含义 |
