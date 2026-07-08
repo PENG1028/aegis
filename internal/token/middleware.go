@@ -57,7 +57,8 @@ func isPublicPath(path, method string) bool {
 	if path == "/api/admin/v1/auth/login" && method == "POST" {
 		return true
 	}
-	if path == "/api/node/v1/join" && method == "POST" {
+	// Node API — protected by handler-level authenticateNodeRequest()
+	if strings.HasPrefix(path, "/api/node/v1/") {
 		return true
 	}
 	if strings.HasPrefix(path, "/__aegis/") {
