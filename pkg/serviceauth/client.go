@@ -38,6 +38,7 @@ type Config struct {
 	ServiceName string   // required — logical name in the cluster
 	AegisURL    string   // optional — auto-detected if empty
 	HTTPClient  *http.Client
+	IPChecker   IPChecker // nil = cluster-only (default)
 }
 
 // Client manages the lifecycle of a service in the Aegis auth cluster.
@@ -56,6 +57,7 @@ type Client struct {
 	blVersion  int64
 	catVersion int64
 	keyDir     string // dir for storing private key
+	ipChecker  IPChecker // 调用方 IP 检查，默认允许内网
 
 	httpClient *http.Client
 	ctx        context.Context
@@ -86,12 +88,18 @@ func New(cfg Config) (*Client, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	ipChecker := cfg.IPChecker
+	if ipChecker == nil {
+		ipChecker = AllowCluster()
+	}
+
 	c := &Client{
 		cfg:        cfg,
 		gatewayURL: gatewayURL,
 		httpClient: httpClient,
 		publicKeys: make(map[string]string),
 		keyDir:     keyDir(),
+		ipChecker:  ipChecker,
 		ctx:        ctx,
 		cancel:     cancel,
 	}
@@ -267,6 +275,14 @@ func (c *Client) PrivateKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.privateKey
+}
+
+// SetIPChecker replaces the IP checker used by Guard.
+// WhitelistChecker 的条目最长 24h，硬编码不可绕过。
+func (c *Client) SetIPChecker(checker IPChecker) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ipChecker = checker
 }
 
 // Groups returns the current service groups (for policy evaluation).
