@@ -2,7 +2,6 @@
 /aegis
 /aegis.exe
 /aegis-dev.exe
-/serviceauthd.exe
 /aegis-linux
 /aegis-linux.gz
 /simulated-acceptance
@@ -36,3 +35,4 @@ _fix_policy_test.py
 __pycache__/
 *.pyc
 _notes/
+serviceauthd.exe

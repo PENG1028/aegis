@@ -101,11 +101,7 @@ func main() {
 	flag.Parse()
 
 	client, _ := serviceauth.New(serviceauth.Config{
-		ServiceName: *name, ServicePort: *port, AegisURL: *aegisURL,
-		APIs: []serviceauth.APIDef{
-			{Name: "health", Path: "/health", Method: "GET"},
-			{Name: "ping", Path: "/ping", Method: "POST"},
-		},
+			ServiceName: *name, AegisURL: *aegisURL,
 	})
 	client.Register(context.Background())
 	defer client.Close()

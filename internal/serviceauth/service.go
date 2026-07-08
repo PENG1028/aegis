@@ -45,7 +45,7 @@ type Dependencies struct {
 // ============================================================================
 
 // Service is the core business-logic layer for serviceauth.
-// It is transport-agnostic — HTTP handlers (in serviceauthd or Aegis)
+// It is transport-agnostic — HTTP handlers in Aegis
 // call its methods.
 type Service struct {
 	deps Dependencies
