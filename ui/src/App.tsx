@@ -24,6 +24,7 @@ import EntryPointDetail from '@/pages/exposure/EntryPointDetail';
 import Providers from '@/pages/fabric/Providers';
 import EgressGateway from '@/pages/fabric/EgressGateway';
 import ModeSwitch from '@/pages/fabric/ModeSwitch';
+import GatewayServicePanel from '@/pages/fabric/GatewayServicePanel';
 
 // ── Service Auth ──
 import AuthServices from '@/pages/fabric/AuthServices';
@@ -131,6 +132,7 @@ export default function App() {
                   <Route index element={<Providers />} />
                   <Route path="egress" element={<EgressGateway />} />
                   <Route path="mode" element={<ModeSwitch />} />
+                  <Route path="service" element={<GatewayServicePanel />} />
                 </Route>
 
                 {/* ── Workspace 3b: Service Auth / 服务认证 ── */}
