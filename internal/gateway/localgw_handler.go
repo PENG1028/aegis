@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // RoutingTableInfo provides routing table status for the status endpoint.
@@ -279,17 +280,13 @@ func (h *Handler) handleRemoteRelay(w http.ResponseWriter, r *http.Request, deci
 // containsAny checks if a string contains any of the given substrings.
 func containsAny(s string, substrs ...string) bool {
 	for _, sub := range substrs {
-		if stringsContains(s, sub) {
+		if strings.Contains(s, sub) {
 			return true
 		}
 	}
 	return false
 }
 
-// stringsContains is a wrapper for strings.Contains for use in this package.
-func stringsContains(s, substr string) bool {
-	return len(s) >= len(substr) && containsSubstring(s, substr)
-}
 
 // containsSubstring checks if s contains substr without importing strings.
 func containsSubstring(s, substr string) bool {
