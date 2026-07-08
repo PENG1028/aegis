@@ -307,41 +307,7 @@ func TestRoutePolicyFieldsRoundTrip(t *testing.T) {
 	}
 }
 
-func TestListServicePolicies(t *testing.T) {
-	db := setupTestDB(t)
-	defer db.Close()
-	repo := NewRepository(db)
-	svc := NewService(repo)
 
-	svc.SetServicePolicy(PolicyInput{ServiceID: "svc_a", Mode: ModeAuto})
-	svc.SetServicePolicy(PolicyInput{ServiceID: "svc_b", Mode: ModeFixed, PrimaryGatewayID: "gw1"})
-
-	list, err := svc.ListServicePolicies()
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(list) != 2 {
-		t.Errorf("expected 2 policies, got %d", len(list))
-	}
-}
-
-func TestListRoutePolicies(t *testing.T) {
-	db := setupTestDB(t)
-	defer db.Close()
-	repo := NewRepository(db)
-	svc := NewService(repo)
-
-	svc.SetRoutePolicy(PolicyInput{RouteID: "rt_a", Mode: ModeAuto})
-	svc.SetRoutePolicy(PolicyInput{RouteID: "rt_b", Mode: ModeDisabled})
-
-	list, err := svc.ListRoutePolicies()
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(list) != 2 {
-		t.Errorf("expected 2 policies, got %d", len(list))
-	}
-}
 
 func TestDefaultPolicy(t *testing.T) {
 	def := DefaultPolicy()

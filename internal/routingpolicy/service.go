@@ -160,16 +160,6 @@ func (s *Service) ResolvePolicy(routeID, serviceID string) (*ResolvedPolicy, err
 	return s.repo.ResolvePolicy(routeID, serviceID)
 }
 
-// ListServicePolicies returns all service policies.
-func (s *Service) ListServicePolicies() ([]ServiceGatewayPolicy, error) {
-	return s.repo.ListServicePolicies()
-}
-
-// ListRoutePolicies returns all route policies.
-func (s *Service) ListRoutePolicies() ([]RouteGatewayPolicy, error) {
-	return s.repo.ListRoutePolicies()
-}
-
 // validatePolicyInput validates policy input fields.
 func validatePolicyInput(input PolicyInput) error {
 	if input.Mode != "" && !IsValidMode(input.Mode) {
