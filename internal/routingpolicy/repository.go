@@ -121,19 +121,6 @@ func (r *Repository) DeleteServicePolicy(serviceID string) error {
 	return err
 }
 
-// ListServicePolicies returns all service gateway policies.
-func (r *Repository) ListServicePolicies() ([]ServiceGatewayPolicy, error) {
-	rows, err := r.DB.Query(
-		`SELECT policy_id, service_id, mode, primary_gateway_id, fallback_gateway_ids_json,
-		 allow_local, allow_private, allow_public, require_gateway_link, require_relay,
-		 preserve_host, tls_mode, priority, enabled, created_at, updated_at
-		 FROM service_gateway_policies ORDER BY priority DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanServicePolicies(rows)
-}
 
 // ============================================================================
 // Route Gateway Policy
@@ -240,19 +227,6 @@ func (r *Repository) DeleteRoutePolicy(routeID string) error {
 	return err
 }
 
-// ListRoutePolicies returns all route gateway policies.
-func (r *Repository) ListRoutePolicies() ([]RouteGatewayPolicy, error) {
-	rows, err := r.DB.Query(
-		`SELECT policy_id, route_id, mode, primary_gateway_id, fallback_gateway_ids_json,
-		 allow_local, allow_private, allow_public, require_gateway_link, require_relay,
-		 preserve_host, tls_mode, priority, enabled, created_at, updated_at
-		 FROM route_gateway_policies ORDER BY priority DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanRoutePolicies(rows)
-}
 
 // ============================================================================
 // Resolution
