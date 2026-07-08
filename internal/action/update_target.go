@@ -3,6 +3,8 @@ package action
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	"aegis/internal/edgemux"
@@ -57,7 +59,7 @@ func (s *ActionService) updateServiceTarget(ctx context.Context, ac *ActionConte
 	}
 
 	ep := &endpoints[0]
-	ep.Address = fmt.Sprintf("%s:%d", input.TargetHost, input.TargetPort)
+	ep.Address = net.JoinHostPort(input.TargetHost, strconv.Itoa(input.TargetPort))
 	ep.UpdatedAt = time.Now()
 	if err := s.endpointSvc.UpdateEndpoint(ctx, ep); err != nil {
 		return nil, fmt.Errorf("update endpoint: %w", err)

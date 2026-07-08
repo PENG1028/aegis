@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 )
 
 // DiagnosticLevel represents the severity of a diagnostic check result.
@@ -201,8 +202,7 @@ func RunStartupDiagnostics(p StartupDiagnosticsParams) StartupDiagnosticsResult 
 	}
 
 	// 5. bind port check
-	addr := fmt.Sprintf("%s:%d", p.BindAddr, p.Port)
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp", net.JoinHostPort(p.BindAddr, strconv.Itoa(p.Port)))
 	if err != nil {
 		checks = append(checks, DiagnosticCheck{
 			Name: "bind_port", Level: DiagFailed,

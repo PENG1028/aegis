@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -90,7 +91,7 @@ func (a *Addr) DialString() string {
 	if a.IsUnix() {
 		return a.Path
 	}
-	return fmt.Sprintf("%s:%d", a.Host, a.Port)
+	return net.JoinHostPort(a.Host, strconv.Itoa(a.Port))
 }
 
 // IsUnix returns true if this is a Unix domain socket address.
