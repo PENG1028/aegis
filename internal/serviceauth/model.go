@@ -74,6 +74,7 @@ type RegisterResponse struct {
 	BlVersion    int64             `json:"bl_version"`
 	CatVersion   int64             `json:"cat_version"`
 	SyncInterval int               `json:"sync_interval"` // seconds
+	Warnings     []string          `json:"warnings,omitempty"` // 注册时的异常提示
 }
 
 // ServiceGroup is a named collection of services for access control.
