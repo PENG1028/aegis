@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -332,9 +331,6 @@ func scanBlocklist(rows *sql.Rows) ([]BlocklistEntry, error) {
 	return out, nil
 }
 
-func (r *Repository) JoinStrings(ss []string, sep string) string {
-	return strings.Join(ss, sep)
-}
 
 func DefaultIDGen() string {
 	b := make([]byte, 12)
