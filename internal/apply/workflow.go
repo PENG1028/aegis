@@ -99,14 +99,14 @@ func (w *Workflow) TryApplyCtx(ctx context.Context) (*ApplyResult, error) {
 
 // GetCurrentConfig returns the current Caddyfile content.
 func (w *Workflow) GetCurrentConfig() (string, error) {
-	caddy := w.registry.Get("caddy")
-	if caddy == nil {
-		return "", fmt.Errorf("caddy provider not found")
+	cfgProvider := w.registry.FindByCapability(provider.CapHotReload)
+	if cfgProvider == nil {
+		return "", fmt.Errorf("no hot-reloadable provider found")
 	}
-	if reader, ok := caddy.(provider.ConfigReader); ok {
+	if reader, ok := cfgProvider.(provider.ConfigReader); ok {
 		return reader.GetCurrentConfig()
 	}
-	return "", fmt.Errorf("caddy provider does not support config reading")
+	return "", fmt.Errorf("provider does not support config reading")
 }
 
 // TryApply acquires the apply lock and executes Apply.
@@ -284,11 +284,11 @@ func (w *Workflow) Rollback(ctx context.Context) error {
 	}
 
 	// Reload via the Caddy provider
-	caddy := w.registry.Get("caddy")
-	if caddy == nil {
-		return fmt.Errorf("caddy provider not found for reload")
+	reloadProv := w.registry.FindByCapability(provider.CapHotReload)
+	if reloadProv == nil {
+		return fmt.Errorf("hot-reload provider not found for reload")
 	}
-	if reloadable, ok := caddy.(provider.ReloadableProvider); ok {
+	if reloadable, ok := reloadProv.(provider.ReloadableProvider); ok {
 		if err := reloadable.Reload(); err != nil {
 			return fmt.Errorf("reload after rollback: %w", err)
 		}
