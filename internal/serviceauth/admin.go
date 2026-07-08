@@ -45,7 +45,6 @@ func (s *Service) Unblock(ctx context.Context, blockID string) error {
 		return fmt.Errorf("unblock: %w", err)
 	}
 	s.blVersion.Add(1)
-	s.catVersion.Add(1)
 	return nil
 }
 
@@ -183,7 +182,6 @@ func containsReserved(s string) bool {
 	return false
 }
 
-
 // ============================================================================
 // Bridge: Ticket → ActionContext (for Aegis integration)
 // ============================================================================
@@ -217,44 +215,6 @@ func (s *Service) VerifyTicketAndGetSpace(ticketStr string) (serviceName string,
 		}
 	}
 	return "", fmt.Errorf("verify ticket: %w", verifyErr)
-}
-
-// ─── Groups ───
-
-func (s *Service) ListGroups(ctx context.Context) ([]ServiceGroup, error) {
-	return s.deps.Repo.ListGroups()
-}
-
-func (s *Service) UpsertGroup(ctx context.Context, g *ServiceGroup) error {
-	if g.ID == "" { g.ID = s.deps.IDGen() }
-	if err := s.deps.Repo.UpsertGroup(g); err != nil { return err }
-	s.catVersion.Add(1)
-	return nil
-}
-
-func (s *Service) DeleteGroup(ctx context.Context, id string) error {
-	if err := s.deps.Repo.DeleteGroup(id); err != nil { return err }
-	s.catVersion.Add(1)
-	return nil
-}
-
-// ─── Policies ───
-
-func (s *Service) ListPolicies(ctx context.Context) ([]Policy, error) {
-	return s.deps.Repo.ListPolicies()
-}
-
-func (s *Service) UpsertPolicy(ctx context.Context, p *Policy) error {
-	if p.ID == "" { p.ID = s.deps.IDGen() }
-	if err := s.deps.Repo.UpsertPolicy(p); err != nil { return err }
-	s.catVersion.Add(1)
-	return nil
-}
-
-func (s *Service) DeletePolicy(ctx context.Context, id string) error {
-	if err := s.deps.Repo.DeletePolicy(id); err != nil { return err }
-	s.catVersion.Add(1)
-	return nil
 }
 
 // LookupServiceByName returns the first active instance of a named service.

@@ -36,7 +36,6 @@ type Dependencies struct {
 type Service struct {
 	deps      Dependencies
 	blVersion atomic.Int64
-	catVersion atomic.Int64
 }
 
 func NewService(deps Dependencies) (*Service, error) {
@@ -77,7 +76,6 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 	if err := s.deps.Repo.UpsertService(rec); err != nil {
 		return nil, fmt.Errorf("register: %w", err)
 	}
-	s.catVersion.Add(1)
 
 	var warnings []string
 	existing, _ := s.deps.Repo.FindByName(req.ServiceName)
@@ -97,8 +95,6 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 	}
 
 	publicKeys, _ := s.deps.Repo.ListPublicKeys()
-	groups, _ := s.deps.Repo.ListGroups()
-	policies, _ := s.deps.Repo.ListPolicies()
 	blocklist, _ := s.deps.Repo.GetBlocklist()
 	if blocklist == nil {
 		blocklist = []BlocklistEntry{}
@@ -107,11 +103,8 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 	return &RegisterResponse{
 		ServiceID:    rec.ID,
 		PublicKeys:   publicKeys,
-		Groups:       groups,
-		Policies:     policies,
 		Blocklist:    blocklist,
 		BlVersion:    s.blVersion.Load(),
-		CatVersion:   s.catVersion.Load(),
 		SyncInterval: 30,
 		Warnings:     warnings,
 	}, nil
@@ -119,29 +112,20 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 
 // ─── Sync ─────────────────────────────────────────────────────────────────
 
-func (s *Service) Sync(ctx context.Context, blVersion, catVersion int64) (*SyncResponse, error) {
+func (s *Service) Sync(ctx context.Context, blVersion int64, _ int64) (*SyncResponse, error) {
+	// catVersion (2nd param) was for the removed groups/policies — kept for backward compat.
 	currentBL := s.blVersion.Load()
-	currentCat := s.catVersion.Load()
-	if blVersion >= currentBL && catVersion >= currentCat {
-		return &SyncResponse{BlVersion: currentBL, CatVersion: currentCat, NotModified: true}, nil
+
+	if blVersion >= currentBL {
+		return &SyncResponse{BlVersion: currentBL, NotModified: true}, nil
 	}
 
-	resp := &SyncResponse{BlVersion: currentBL, CatVersion: currentCat}
-	if blVersion < currentBL {
-		if entries, err := s.deps.Repo.GetBlocklistSince(blVersion); err == nil {
-			resp.Blocklist = entries
-		}
+	resp := &SyncResponse{BlVersion: currentBL}
+	if entries, err := s.deps.Repo.GetBlocklistSince(blVersion); err == nil {
+		resp.Blocklist = entries
 	}
-	if catVersion < currentCat {
-		if pks, err := s.deps.Repo.ListPublicKeys(); err == nil {
-			resp.PublicKeys = pks
-		}
-		if groups, err := s.deps.Repo.ListGroups(); err == nil {
-			resp.Groups = groups
-		}
-		if policies, err := s.deps.Repo.ListPolicies(); err == nil {
-			resp.Policies = policies
-		}
+	if pks, err := s.deps.Repo.ListPublicKeys(); err == nil {
+		resp.PublicKeys = pks
 	}
 	return resp, nil
 }

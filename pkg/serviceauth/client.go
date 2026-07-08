@@ -58,7 +58,6 @@ type Client struct {
 	policies   []Policy
 	blocklist  []BlocklistEntry
 	blVersion  int64
-	catVersion int64
 	keyDir     string // dir for storing private key
 	ipChecker  IPChecker // 调用方 IP 检查，默认允许内网
 
@@ -161,13 +160,10 @@ func (c *Client) Register(ctx context.Context) error {
 	c.mu.Lock()
 	c.serviceID = regResp.ServiceID
 	c.blVersion = regResp.BlVersion
-	c.catVersion = regResp.CatVersion
 	c.blocklist = regResp.Blocklist
 	if regResp.PublicKeys != nil {
 		c.publicKeys = regResp.PublicKeys
 	}
-	c.groups = regResp.Groups
-	c.policies = regResp.Policies
 	c.mu.Unlock()
 
 	syncInterval := time.Duration(regResp.SyncInterval) * time.Second
@@ -301,18 +297,8 @@ func (c *Client) SetIPChecker(checker IPChecker) {
 }
 
 // Groups returns the current service groups (for policy evaluation).
-func (c *Client) Groups() []ServiceGroup {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.groups
-}
 
 // Policies returns the current policies.
-func (c *Client) Policies() []Policy {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.policies
-}
 
 // ─── Service discovery ──────────────────────────────────────────────────
 
@@ -356,33 +342,8 @@ func (c *Client) FetchServiceStatus(ctx context.Context) ([]ServiceStatus, error
 }
 
 // InGroup returns true if the named service belongs to the group. Local lookup.
-func (c *Client) InGroup(serviceName, groupName string) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	for _, g := range c.groups {
-		if g.Name != groupName {
-			continue
-		}
-		for _, m := range g.Members {
-			if m == serviceName {
-				return true
-			}
-		}
-	}
-	return false
-}
 
 // ListGroupMembers returns all service names in a group. Local lookup.
-func (c *Client) ListGroupMembers(groupName string) []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	for _, g := range c.groups {
-		if g.Name == groupName {
-			return g.Members
-		}
-	}
-	return nil
-}
 
 // ============================================================================
 // Internal
@@ -406,11 +367,10 @@ func (c *Client) syncLoop(interval time.Duration) {
 func (c *Client) doSync() {
 	c.mu.RLock()
 	blVer := c.blVersion
-	catVer := c.catVersion
 	gateway := c.gatewayURL
 	c.mu.RUnlock()
 
-	url := fmt.Sprintf("%s/api/service-auth/v1/sync?bl_version=%d&cat_version=%d", gateway, blVer, catVer)
+	url := fmt.Sprintf("%s/api/service-auth/v1/sync?bl_version=%d", gateway, blVer)
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return
@@ -436,7 +396,6 @@ func (c *Client) doSync() {
 	defer c.mu.Unlock()
 
 	c.blVersion = syncResp.BlVersion
-	c.catVersion = syncResp.CatVersion
 
 	if len(syncResp.Blocklist) > 0 {
 		c.blocklist = syncResp.Blocklist
@@ -445,10 +404,8 @@ func (c *Client) doSync() {
 		c.publicKeys = syncResp.PublicKeys
 	}
 	if len(syncResp.Groups) > 0 {
-		c.groups = syncResp.Groups
 	}
 	if len(syncResp.Policies) > 0 {
-		c.policies = syncResp.Policies
 	}
 }
 
