@@ -50,7 +50,7 @@ type Client struct {
 
 	privateKey string            // Ed25519 private key (base64, stored locally)
 	publicKey  string            // Ed25519 public key (base64, sent to server)
-	publicKeys map[string]string // name → public_key (synced)
+	publicKeys map[string][]string // name → public_key (synced)
 	groups     []ServiceGroup
 	policies   []Policy
 	blocklist  []BlocklistEntry
@@ -97,7 +97,7 @@ func New(cfg Config) (*Client, error) {
 		cfg:        cfg,
 		gatewayURL: gatewayURL,
 		httpClient: httpClient,
-		publicKeys: make(map[string]string),
+		publicKeys: make(map[string][]string),
 		keyDir:     keyDir(),
 		ipChecker:  ipChecker,
 		ctx:        ctx,
