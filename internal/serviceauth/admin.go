@@ -279,59 +279,6 @@ func (s *Service) DeletePolicy(ctx context.Context, id string) error {
 	return nil
 }
 
-// ─── Policy Engine ───
-
-// EvaluatePolicy checks whether a caller is allowed to perform an action on a target.
-// Returns true if allowed, false if denied. Unmatched → defaultPolicy applies.
-//
-// Deprecated: Guard no longer evaluates policies (it only checks blocklist + identity).
-// This function is kept for reference but is NOT called anywhere in production code.
-// Policy evaluation is the responsibility of the service's own middleware.
-func EvaluatePolicy(callerName string, groups []ServiceGroup, policies []Policy, targetService, action, defaultPolicy string) bool {
-	// Check if caller matches any policy subject.
-	for _, p := range policies {
-		if !matchSubject(callerName, p.Subject, groups) { continue }
-		if p.TargetService != "*" && p.TargetService != targetService { continue }
-		if p.Action != "*" && p.Action != action { continue }
-		if p.Effect == "deny" { return false }
-		return true
-	}
-	// No policy matched — apply default.
-	return defaultPolicy == "allow"
-}
-
-func matchSubject(callerName, subject string, groups []ServiceGroup) bool {
-	if subject == "*" { return true }
-	if subject == callerName { return true }
-	for _, g := range groups {
-		if g.Name == subject {
-			for _, m := range g.Members {
-				if m == callerName { return true }
-			}
-		}
-	}
-	return false
-}
-
-// InGroup returns true if the service is a member of the named group.
-func InGroup(serviceName string, groups []ServiceGroup, groupName string) bool {
-	for _, g := range groups {
-		if g.Name != groupName { continue }
-		for _, m := range g.Members {
-			if m == serviceName { return true }
-		}
-	}
-	return false
-}
-
-// ListGroupMembers returns all members of the named group.
-func ListGroupMembers(groups []ServiceGroup, groupName string) []string {
-	for _, g := range groups {
-		if g.Name == groupName { return g.Members }
-	}
-	return nil
-}
-
 // LookupServiceByName returns the first active instance of a named service.
 func (s *Service) LookupServiceByName(ctx context.Context, name string) (*ServiceRecord, error) {
 	instances, err := s.deps.Repo.FindByName(name)
