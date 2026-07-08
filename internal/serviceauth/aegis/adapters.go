@@ -1,6 +1,6 @@
 // Package aegis contains adapter implementations that connect the
 // serviceauth core to Aegis infrastructure (secrets, node, logs).
-// When running serviceauthd instead, cmd/serviceauthd/providers.go
+// (embedded in Aegis)
 // provides alternative implementations backed by the filesystem and CIDR lists.
 package aegis
 

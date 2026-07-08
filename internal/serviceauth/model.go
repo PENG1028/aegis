@@ -1,7 +1,7 @@
 // Package serviceauth provides zero-config service-to-service authentication
 // within a trusted cluster. Services register on startup and receive a shared
 // cluster secret. Every inter-service call carries an HMAC ticket that the
-// receiver verifies locally — the auth server (Aegis or serviceauthd) is never
+// receiver verifies locally — Aegis is never
 // in the data path.
 //
 //	v1: cluster-wide mutual trust — any registered service may call any API

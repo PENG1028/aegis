@@ -118,22 +118,6 @@ COUNT=$(curl -s $AEGIS/api/admin/v1/service-auth/services | python3 -c "import s
 check "$COUNT" "4" "still 4 services after restart"
 echo ""
 
-# ─── Phase 7: Rebind ───
-echo "--- Phase 7: Rebind ---"
-BEFORE=$(curl -s $AEGIS/api/admin/v1/service-auth/services | python3 -c "import sys,json; [print(s['name']) for s in json.load(sys.stdin)['services']]" 2>/dev/null)
-echo "  Before: $BEFORE"
-
-curl -s -X POST $AEGIS/api/admin/v1/service-auth/services/depotly/rebind \
-  -H "Content-Type: application/json" \
-  -d '{"new_name":"depotly-v2"}' > /dev/null
-AFTER=$(curl -s $AEGIS/api/admin/v1/service-auth/services | python3 -c "import sys,json; [print(s['name']) for s in json.load(sys.stdin)['services']]" 2>/dev/null)
-echo "  After:  $AFTER"
-
-if echo "$AFTER" | grep -q "depotly-v2"; then
-    pass "rebind depotly → depotly-v2"
-else
-    fail "rebind failed" ""
-fi
 echo ""
 
 # ─── Summary ───

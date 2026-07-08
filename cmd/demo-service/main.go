@@ -134,7 +134,7 @@ func main() {
 	log.Printf("   3. Guard(handler)             保护端点")
 	log.Printf("   4. CallerFromContext()         获取调用方身份")
 	log.Printf("")
-	log.Printf("   详细文档见 docs/service-api-reference.md")
+	log.Printf("   详细文档见 docs/serviceauth.md")
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("❌ serve: %v", err)
