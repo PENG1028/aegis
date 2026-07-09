@@ -237,6 +237,52 @@ func (r *Repository) TopologyEdges(since time.Time) ([]TopologyEdge, error) {
 	return edges, rows.Err()
 }
 
+// CallersOf returns services that have called the given service, aggregated.
+func (r *Repository) CallersOf(name string, since time.Time) ([]TopologyEdge, error) {
+	rows, err := r.DB.Query(
+		`SELECT caller_service, target_service, target_api, COUNT(*) as cnt, MAX(called_at) as last_seen FROM svc_auth_call_logs WHERE target_service=? AND called_at >= ? GROUP BY caller_service, target_api ORDER BY cnt DESC`,
+		name, since.Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("callers of %s: %w", name, err)
+	}
+	defer rows.Close()
+	var edges []TopologyEdge
+	for rows.Next() {
+		var e TopologyEdge
+		var lastSeen string
+		if err := rows.Scan(&e.Caller, &e.Target, &e.API, &e.Count, &lastSeen); err != nil {
+			return nil, fmt.Errorf("scan caller edge: %w", err)
+		}
+		e.LastSeen = lastSeen
+		edges = append(edges, e)
+	}
+	return edges, rows.Err()
+}
+
+// DepsOf returns services that the given service has called, aggregated.
+func (r *Repository) DepsOf(name string, since time.Time) ([]TopologyEdge, error) {
+	rows, err := r.DB.Query(
+		`SELECT caller_service, target_service, target_api, COUNT(*) as cnt, MAX(called_at) as last_seen FROM svc_auth_call_logs WHERE caller_service=? AND called_at >= ? GROUP BY target_service, target_api ORDER BY cnt DESC`,
+		name, since.Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("deps of %s: %w", name, err)
+	}
+	defer rows.Close()
+	var edges []TopologyEdge
+	for rows.Next() {
+		var e TopologyEdge
+		var lastSeen string
+		if err := rows.Scan(&e.Caller, &e.Target, &e.API, &e.Count, &lastSeen); err != nil {
+			return nil, fmt.Errorf("scan dep edge: %w", err)
+		}
+		e.LastSeen = lastSeen
+		edges = append(edges, e)
+	}
+	return edges, rows.Err()
+}
+
 // ─── Blocklist ────────────────────────────────────────────────────────────
 
 func (r *Repository) AddBlock(entry *BlocklistEntry) error {

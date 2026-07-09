@@ -221,6 +221,8 @@ func (c *Client) Delete(ctx context.Context, url string) (*http.Response, error)
 
 // Do sends an HTTP request with an auto-signed service ticket attached.
 // The ticket proves the caller's identity via Ed25519 signature.
+// After a successful (2xx) response, automatically reports the call
+// to the ServiceAuth cluster so the target service can see who called it.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	c.mu.RLock()
 	privKey := c.privateKey
@@ -232,7 +234,23 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	req.Header.Set("X-Service-Ticket", ticket)
 	req.Header.Set("X-Caller-Service", caller)
 
-	return c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
+	if err == nil && resp.StatusCode < 300 {
+		// Fire-and-forget report: the SDK records who it called.
+		target := req.URL.Host
+		api := req.URL.Path
+		go func() {
+			reportReq := ReportRequest{
+				CallerService: caller,
+				TargetService: target,
+				TargetAPI:     api,
+				Allowed:       true,
+			}
+			data, _ := json.Marshal(reportReq)
+			c.httpClient.Post(c.gatewayURL+"/api/service-auth/v1/report", "application/json", bytes.NewReader(data))
+		}()
+	}
+	return resp, err
 }
 
 // ============================================================================
@@ -300,45 +318,58 @@ func (c *Client) SetIPChecker(checker IPChecker) {
 
 // Policies returns the current policies.
 
-// ─── Service discovery ──────────────────────────────────────────────────
+// ─── Scoped service discovery ───────────────────────────────────────────
 
-// KnownServices returns all known service names from the synced key cache.
-// The list reflects whatever the server last sent — removed services disappear
-// after the next sync cycle (max 30s).
-func (c *Client) KnownServices() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	names := make([]string, 0, len(c.publicKeys))
-	for name := range c.publicKeys {
-		names = append(names, name)
-	}
-	return names
+// CallerEdge is one caller relationship.
+type CallerEdge struct {
+	Service  string `json:"service"`
+	API      string `json:"api"`
+	Count    int64  `json:"count"`
+	LastSeen string `json:"last_seen"`
 }
 
-// ServiceStatus is the basic health info for a registered service.
-type ServiceStatus struct {
-	Name       string `json:"name"`
-	Status     string `json:"status"`      // active | inactive | blocked
-	LastSeen   string `json:"last_seen"`   // RFC3339
-	InstanceID string `json:"instance_id"`
+// DepEdge is one dependency relationship.
+type DepEdge struct {
+	Service  string `json:"service"`
+	API      string `json:"api"`
+	Count    int64  `json:"count"`
+	LastSeen string `json:"last_seen"`
 }
 
-// FetchServiceStatus returns the current status of all registered services.
-// Calls the dedicated /api/service-auth/v1/services endpoint.
-func (c *Client) FetchServiceStatus(ctx context.Context) ([]ServiceStatus, error) {
-	resp, err := c.Get(ctx, c.gatewayURL+"/api/service-auth/v1/services")
+// Callers returns services that have called this service.
+func (c *Client) Callers(ctx context.Context, window string) ([]CallerEdge, error) {
+	url := c.gatewayURL + "/api/service-auth/v1/services?window=" + window
+	resp, err := c.Get(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("fetch service status: %w", err)
+		return nil, fmt.Errorf("callers: %w", err)
 	}
 	defer resp.Body.Close()
 	var result struct {
-		Services []ServiceStatus `json:"services"`
-		Count    int             `json:"count"`
+		Service string       `json:"service"`
+		Callers []CallerEdge `json:"callers"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("fetch service status: decode: %w", err)
+		return nil, fmt.Errorf("callers: decode: %w", err)
 	}
-	return result.Services, nil
+	return result.Callers, nil
+}
+
+// Deps returns services that this service depends on (has called).
+func (c *Client) Deps(ctx context.Context, window string) ([]DepEdge, error) {
+	url := c.gatewayURL + "/api/service-auth/v1/services?window=" + window
+	resp, err := c.Get(ctx, url)
+	if err != nil {
+		return nil, fmt.Errorf("deps: %w", err)
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Service string    `json:"service"`
+		Deps    []DepEdge `json:"deps"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("deps: decode: %w", err)
+	}
+	return result.Deps, nil
 }
 
 // InGroup returns true if the named service belongs to the group. Local lookup.

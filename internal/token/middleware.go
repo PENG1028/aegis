@@ -65,7 +65,7 @@ func isPublicPath(path, method string) bool {
 		return true
 	}
 	// v1.9A: Service-Auth SDK endpoints — protected by isInCluster() IP check
-	if strings.HasPrefix(path, "/api/service-auth/v1/") {
+	if strings.HasPrefix(path, "/api/service-auth/v1/") && path != "/api/service-auth/v1/services" {
 		return true
 	}
 	if path == "/api/healthz" || path == "/api/readyz" {

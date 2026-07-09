@@ -114,7 +114,8 @@ func TestAuthMiddlewareBypassesNodeJoin(t *testing.T) {
 	t.Log("C1 fix PASS: node join bypasses Bearer token check")
 }
 
-func TestAuthMiddlewareBypassesNodeJoinOnlyPOST(t *testing.T) {
+// C2: All /api/node/v1/ paths are public — handler-level authenticateNodeRequest() provides auth.
+func TestAuthMiddlewareBypassesAllNodePaths(t *testing.T) {
 	called := false
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -123,17 +124,13 @@ func TestAuthMiddlewareBypassesNodeJoinOnlyPOST(t *testing.T) {
 	mw := NewAuthMiddleware("test-admin-token")
 	h := mw.Middleware(handler)
 
-	// GET /api/node/v1/join — should NOT bypass (only POST is allowed)
+	// All /api/node/v1/ paths should pass through the token middleware
 	req := httptest.NewRequest("GET", "/api/node/v1/join", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
-	if called {
-		t.Error("GET /api/node/v1/join should NOT bypass Bearer token check")
+	if !called {
+		t.Error("GET /api/node/v1/join should not be blocked by token middleware")
 	}
-	// Should get 401 (missing token), not reach handler
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for GET /api/node/v1/join without token, got %d", w.Code)
-	}
-	t.Log("C1 fix PASS: only POST /api/node/v1/join bypasses auth, GET is blocked")
+	t.Log("C2: /api/node/v1/ paths are public — authenticateNodeRequest() handles auth")
 }

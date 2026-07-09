@@ -352,7 +352,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("GET /api/service-auth/v1/sync", h.ServiceAuthSync)
 		mux.HandleFunc("POST /api/service-auth/v1/report", h.ServiceAuthReport)
 		mux.HandleFunc("POST /api/service-auth/v1/heartbeat", h.ServiceAuthHeartbeat)
-		mux.HandleFunc("GET /api/service-auth/v1/services", h.ServiceAuthListServices)
+		mux.HandleFunc("GET /api/service-auth/v1/services", h.ServiceAuthScopedServices)
 
 		mux.HandleFunc("GET /api/admin/v1/service-auth/services", h.AdminListServiceAuthServices)
 		mux.HandleFunc("GET /api/admin/v1/service-auth/services/{id}", h.AdminGetServiceAuthService)
