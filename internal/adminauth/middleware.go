@@ -59,7 +59,7 @@ func (m *AdminAuthMiddleware) Middleware(next http.Handler) http.Handler {
 		// Extract session cookie
 		cookie, err := r.Cookie("aegis_admin_session")
 		if err != nil || cookie.Value == "" {
-			writeAdminError(w, http.StatusUnauthorized, "UNAUTHORIZED", "admin session required")
+			next.ServeHTTP(w, r)
 			return
 		}
 
