@@ -41,12 +41,6 @@ export default function GatewayServicePanel() {
     refetchInterval: 60_000,
   });
 
-  const { data: svcData } = useQuery({
-    queryKey: ['gw-svcs'],
-    queryFn: () => adminApi.listAuthServices(),
-    refetchInterval: 15_000,
-  });
-
   const { data: myRoutes } = useQuery({
     queryKey: ['gw-routes'],
     queryFn: () => adminApi.callMyRoutes(''),
@@ -59,43 +53,52 @@ export default function GatewayServicePanel() {
     refetchInterval: 30_000,
   });
 
-  // ── Build service objects ──
+  // ── Build service objects from topology ──
 
-  const allServices: any[] = svcData?.services || [];
+  const topoNodes: any[] = topoData?.nodes || [];
   const topoEdges: any[] = topoData?.edges || [];
   const routes: any[] = myRoutes?.routes || [];
 
-  // Active callers: services that called Action API endpoints
-  const actionApis = ['bind-http-domain', 'bind-tls-backend', 'update-target', 'disable-domain', 'delete-domain'];
+  // Callers: edges where target is aegis-gateway (someone called Aegis)
+  // Deps: edges where caller is aegis-gateway (Aegis called someone)
   const callerEdgeMap = new Map<string, { count: number; last: string }>();
+  const depEdgeMap = new Map<string, { count: number; last: string }>();
 
   for (const e of topoEdges) {
-    if (!actionApis.some(p => e.api?.includes(p))) continue;
-    const existing = callerEdgeMap.get(e.caller) || { count: 0, last: '' };
-    existing.count += e.count;
-    if (e.last_seen > existing.last) existing.last = e.last_seen;
-    callerEdgeMap.set(e.caller, existing);
+    if (e.target === 'aegis-gateway') {
+      const existing = callerEdgeMap.get(e.caller) || { count: 0, last: '' };
+      existing.count += e.count;
+      if (e.last_seen > existing.last) existing.last = e.last_seen;
+      callerEdgeMap.set(e.caller, existing);
+    }
+    if (e.caller === 'aegis-gateway') {
+      const existing = depEdgeMap.get(e.target) || { count: 0, last: '' };
+      existing.count += e.count;
+      if (e.last_seen > existing.last) existing.last = e.last_seen;
+      depEdgeMap.set(e.target, existing);
+    }
   }
 
-  // Merge into ServiceObj[]
+  // Merge topology nodes into ServiceObj[]
   const services: ServiceObj[] = [];
   const seen = new Set<string>();
 
-  for (const svc of allServices) {
-    const edge = callerEdgeMap.get(svc.name);
+  for (const n of topoNodes) {
+    if (n.name === 'aegis-gateway') continue; // don't show self
+    const edge = callerEdgeMap.get(n.name);
     services.push({
-      name: svc.name,
-      status: svc.status,
-      lastSeen: svc.last_seen,
-      instanceID: svc.instance_id,
-      publicKey: svc.public_key,
+      name: n.name,
+      status: n.status,
+      lastSeen: '',
+      instanceID: '',
+      publicKey: '',
       callCount: edge?.count || 0,
       lastCall: edge?.last || '',
     });
-    seen.add(svc.name);
+    seen.add(n.name);
   }
 
-  // Add callers not in service list (zombie edges)
+  // Add callers from topology edges that aren't in nodes
   for (const [name, edge] of callerEdgeMap) {
     if (!seen.has(name)) {
       services.push({
@@ -118,7 +121,7 @@ export default function GatewayServicePanel() {
     return !isNaN(ls.getTime()) && (Date.now() - ls.getTime()) < 5 * 60 * 1000;
   });
 
-  const isLoading = !svcData;
+  const isLoading = !topoData;
 
   // ── Domain objects ──
 
