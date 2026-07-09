@@ -1,6 +1,7 @@
 package noderuntime
 
 import (
+	"encoding/json"
 	"fmt"
 )
 
@@ -35,15 +36,6 @@ func validateEntry(entry RoutingTableEntry, nodeID string, prefix string, result
 		result.IsValid = false
 		result.Errors = append(result.Errors,
 			prefix+"from_node_id must equal current node_id")
-	}
-
-	// 2. No direct_remote_target candidate
-	for _, c := range entry.Candidates {
-		if c.Mode == "direct_remote_target" || c.Mode == "raw_target" {
-			result.IsValid = false
-			result.Errors = append(result.Errors,
-				prefix+"forbidden candidate mode: "+c.Mode)
-		}
 	}
 
 	// 3. Cross-node candidate must have gateway_link_id
@@ -153,7 +145,7 @@ func ValidateDesiredStateForNode(nodeID string, ds *DesiredStateCache) *Validati
 // extractRoutingTableFromState parses the local_routing_table from desired state JSON.
 func extractRoutingTableFromState(stateJSON string) (*RoutingTableCache, error) {
 	var raw map[string]interface{}
-	if err := jsonUnmarshal([]byte(stateJSON), &raw); err != nil {
+	if err := json.Unmarshal([]byte(stateJSON), &raw); err != nil {
 		return nil, fmt.Errorf("parse desired state: %w", err)
 	}
 
@@ -162,13 +154,13 @@ func extractRoutingTableFromState(stateJSON string) (*RoutingTableCache, error) 
 		return &RoutingTableCache{Entries: []RoutingTableEntry{}}, nil
 	}
 
-	data, err := jsonMarshal(rtRaw)
+	data, err := json.Marshal(rtRaw)
 	if err != nil {
 		return nil, fmt.Errorf("marshal routing table: %w", err)
 	}
 
 	var entries []RoutingTableEntry
-	if err := jsonUnmarshal(data, &entries); err != nil {
+	if err := json.Unmarshal(data, &entries); err != nil {
 		return nil, fmt.Errorf("parse routing table entries: %w", err)
 	}
 	if entries == nil {

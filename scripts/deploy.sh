@@ -84,11 +84,13 @@ info "Building Aegis binary with embedded UI (linux/amd64)..."
 
 cd "$(dirname "$0")/.."
 
-# Build UI
-(cd ui && npm run build 2>&1) | tail -3
-# Embed UI
-rm -rf internal/uiassets/dist
-cp -r ui/dist internal/uiassets/dist
+# Build UI if not already embedded (deploy.sh can be called standalone)
+if [ ! -d "internal/uiassets/dist" ] || [ -z "$(ls -A internal/uiassets/dist 2>/dev/null)" ]; then
+  info "UI dist not found — building..."
+  (cd ui && npm run build 2>&1) | tail -3
+  rm -rf internal/uiassets/dist
+  cp -r ui/dist internal/uiassets/dist
+fi
 # Build Go binary
 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ${BINARY} ./cmd/aegis/
 

@@ -35,18 +35,3 @@ func (p *InMemorySecretProvider) GetGatewayLinkToken(gatewayLinkID string) (stri
 	}
 	return token, nil
 }
-
-// SecretProviderFactory creates secret providers based on configuration.
-// In production, this will use the master key to decrypt secrets from the database.
-// For v1.8C-5, the in-memory provider is used for testing.
-type SecretProviderFactory struct{}
-
-// NewSecretProviderFactory creates a new secret provider factory.
-func NewSecretProviderFactory() *SecretProviderFactory {
-	return &SecretProviderFactory{}
-}
-
-// CreateInMemoryProvider creates an in-memory secret provider.
-func (f *SecretProviderFactory) CreateInMemoryProvider() *InMemorySecretProvider {
-	return NewInMemorySecretProvider()
-}

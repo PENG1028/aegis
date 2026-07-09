@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -190,7 +191,7 @@ func (h *RelayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 8. Forward to 127.0.0.1:target_port
-	targetAddr := fmt.Sprintf("127.0.0.1:%d", targetPort)
+	targetAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(targetPort))
 
 	h.logRelayEvent("relay_forward", routeID, sourceNodeID, gatewayID, "forwarding", reqID)
 
@@ -201,10 +202,7 @@ func (h *RelayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		targetPath = r.URL.Path
 	}
 	targetQuery := r.Header.Get(HeaderOriginalQuery)
-	targetURL := fmt.Sprintf("http://%s%s", targetAddr, targetPath)
-	if targetQuery != "" {
-		targetURL += "?" + targetQuery
-	}
+	targetURL := (&url.URL{Scheme: "http", Host: targetAddr, Path: targetPath, RawQuery: targetQuery}).String()
 
 	// Use original method if provided (v1.8C-8A), fall back to r.Method for backward compat
 	targetMethod := r.Header.Get(HeaderOriginalMethod)

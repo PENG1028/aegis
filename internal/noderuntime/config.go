@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Default paths for node runtime.
@@ -53,38 +55,43 @@ func LoadConfig(path string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read config: %w", err)
 		}
-		// TODO: parse YAML when yaml dependency is available
-		// For now, use simple line-based parsing as placeholder
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) != 2 {
-				continue
-			}
-			key := strings.TrimSpace(parts[0])
-			val := strings.TrimSpace(parts[1])
-			switch key {
-			case "control_plane_url":
-				cfg.ControlPlaneURL = val
-			case "node_id":
-				cfg.NodeID = val
-			case "node_token_file":
-				cfg.NodeTokenFile = val
-			case "cache_dir":
-				cfg.CacheDir = val
-			case "runtime_dir":
-				cfg.RuntimeDir = val
-			case "heartbeat_interval_seconds":
-				fmt.Sscanf(val, "%d", &cfg.HeartbeatIntervalSec)
-			case "sync_interval_seconds":
-				fmt.Sscanf(val, "%d", &cfg.SyncIntervalSec)
-			case "reconcile_mode":
-				cfg.ReconcileMode = val
-			}
+		type configFile struct {
+			ControlPlaneURL      string `yaml:"control_plane_url"`
+			NodeID               string `yaml:"node_id"`
+			NodeTokenFile        string `yaml:"node_token_file"`
+			CacheDir             string `yaml:"cache_dir"`
+			RuntimeDir           string `yaml:"runtime_dir"`
+			HeartbeatIntervalSec int    `yaml:"heartbeat_interval_seconds"`
+			SyncIntervalSec      int    `yaml:"sync_interval_seconds"`
+			ReconcileMode        string `yaml:"reconcile_mode"`
+		}
+		var fc configFile
+		if err := yaml.Unmarshal(data, &fc); err != nil {
+			return nil, fmt.Errorf("parse YAML: %w", err)
+		}
+		if fc.ControlPlaneURL != "" {
+			cfg.ControlPlaneURL = fc.ControlPlaneURL
+		}
+		if fc.NodeID != "" {
+			cfg.NodeID = fc.NodeID
+		}
+		if fc.NodeTokenFile != "" {
+			cfg.NodeTokenFile = fc.NodeTokenFile
+		}
+		if fc.CacheDir != "" {
+			cfg.CacheDir = fc.CacheDir
+		}
+		if fc.RuntimeDir != "" {
+			cfg.RuntimeDir = fc.RuntimeDir
+		}
+		if fc.HeartbeatIntervalSec > 0 {
+			cfg.HeartbeatIntervalSec = fc.HeartbeatIntervalSec
+		}
+		if fc.SyncIntervalSec > 0 {
+			cfg.SyncIntervalSec = fc.SyncIntervalSec
+		}
+		if fc.ReconcileMode != "" {
+			cfg.ReconcileMode = fc.ReconcileMode
 		}
 	}
 

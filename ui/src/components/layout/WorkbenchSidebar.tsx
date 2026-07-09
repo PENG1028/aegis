@@ -2,7 +2,7 @@
 // Left sidebar with 8 workspace groups, expandable sub-navigation.
 
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { WORKSPACES, WORKSPACE_NAV } from '@/lib/constants';
 import type { WorkspaceId } from '@/lib/constants';
@@ -27,6 +27,14 @@ const ICONS: Record<string, string> = {
 export function WorkbenchSidebar({ collapsed, onToggle }: WorkbenchSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [version, setVersion] = useState('');
+
+  useEffect(() => {
+    fetch('/api/system/status')
+      .then(r => r.json())
+      .then(d => setVersion(d.version || ''))
+      .catch(() => {});
+  }, []);
 
   // Determine active workspace from URL
   const activeWs = WORKSPACES.find(w =>
@@ -114,7 +122,7 @@ export function WorkbenchSidebar({ collapsed, onToggle }: WorkbenchSidebarProps)
 
       {/* Footer */}
       <div className="px-3 py-2 border-t border-a-border text-[10px] text-a-muted">
-        Aegis v2
+        {version || 'Aegis'}
       </div>
     </aside>
   );

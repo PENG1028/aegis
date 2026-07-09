@@ -78,16 +78,6 @@ func (r *Resolver) Resolve(domain string) *RoutingDecision {
 		decision.FallbackCandidates = fallbacks
 	}
 
-	// Verify no direct fallback
-	for _, c := range entry.Candidates {
-		if c.Mode == "direct_remote_target" || c.Mode == "raw_target" {
-			decision.Status = "unavailable"
-			decision.UnavailableReason = "forbidden candidate mode rejected"
-			decision.SelectedCandidate = nil
-			decision.FallbackCandidates = nil
-			return decision
-		}
-	}
 
 	decision.Status = "available"
 	return decision

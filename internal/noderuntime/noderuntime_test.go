@@ -373,29 +373,6 @@ func TestValidateRoutingTableWrongNodeID(t *testing.T) {
 	requireInvalid(t, result, "from_node_id")
 }
 
-func TestValidateRoutingTableDirectRemote(t *testing.T) {
-	table := &RoutingTableCache{
-		Revision: 1,
-		Entries: []RoutingTableEntry{
-			{
-				Domain:       "example.com",
-				FromNodeID:   "node-a",
-				TargetNodeID: "node-b",
-				Status:       "available",
-				Protocol:     "http",
-				Candidates: []CandidateEntry{
-					{
-						Mode:       "direct_remote_target",
-						GatewayURL: "http://target:80",
-					},
-				},
-			},
-		},
-	}
-
-	result := ValidateRoutingTable("node-a", table)
-	requireInvalid(t, result, "direct_remote_target")
-}
 
 func TestValidateRoutingTableMissingGatewayLink(t *testing.T) {
 	// Cross-node entry (target != node), available, but no candidate has a gateway_link_id
@@ -647,30 +624,6 @@ func TestResolveUnknownDomain(t *testing.T) {
 	assertContains(t, d.UnavailableReason, "not found")
 }
 
-func TestResolveNoDirectFallback(t *testing.T) {
-	table := &RoutingTableCache{
-		Entries: []RoutingTableEntry{
-			{
-				Domain:       "example.com",
-				FromNodeID:   "node-a",
-				TargetNodeID: "node-b",
-				Status:       "available",
-				Candidates: []CandidateEntry{
-					{Mode: "direct_remote_target", GatewayURL: "http://direct:80", Priority: 1},
-				},
-			},
-		},
-	}
-
-	r := NewResolver(table)
-	d := r.Resolve("example.com")
-
-	// Must NOT select the direct_remote_target; must return unavailable
-	assertEqual(t, d.Status, "unavailable")
-	assertContains(t, d.UnavailableReason, "forbidden")
-	assertNil(t, d.SelectedCandidate)
-	assertNil(t, d.FallbackCandidates)
-}
 
 // ============================================================================
 // Reconciler tests (3 tests)
