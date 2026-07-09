@@ -38,3 +38,5 @@ _notes/
 serviceauthd.exe
 *.exe
 aegis-linux-*
+tmp_fix/
+tmp_genhash/
