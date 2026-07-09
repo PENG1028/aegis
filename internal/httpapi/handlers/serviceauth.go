@@ -309,32 +309,3 @@ func (h *Handlers) AdminServiceAuthCallLogs(w http.ResponseWriter, r *http.Reque
 
 
 
-// AdminGetGatewayCallers handles GET /api/admin/v1/service-auth/gateway/callers
-// Aegis 自身通过 ServiceAuth 的查看逻辑查询谁在调自己。
-func (h *Handlers) AdminGetGatewayCallers(w http.ResponseWriter, r *http.Request) {
-	if h.ServiceAuthSvc == nil {
-		writeError(w, http.StatusNotImplemented, "service auth not available")
-		return
-	}
-	window := 1 * time.Hour
-	if w := r.URL.Query().Get("window"); w != "" {
-		if d, err := time.ParseDuration(w); err == nil {
-			window = d
-		}
-	}
-	callers, err := h.ServiceAuthSvc.CallersOf(r.Context(), "aegis-gateway", window)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	deps, err := h.ServiceAuthSvc.DepsOf(r.Context(), "aegis-gateway", window)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"service": "aegis-gateway",
-		"callers": callers,
-		"deps":    deps,
-	})
-}
