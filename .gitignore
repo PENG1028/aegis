@@ -36,3 +36,5 @@ __pycache__/
 *.pyc
 _notes/
 serviceauthd.exe
+*.exe
+aegis-linux-*
