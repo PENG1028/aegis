@@ -102,6 +102,11 @@ export default function EntryList() {
         <Btn primary onClick={() => nav('/exposure/new')}>添加域名</Btn>
       </div>
 
+      {/* ── Quick Publish ──
+           @design: 1-click form to publish a domain without the 5-step flow.
+           Calls POST /api/admin/v1/quick-publish and shows result inline. */}
+      <QuickPublishForm onPublished={() => qc.invalidateQueries({ queryKey: ['routes'] })} />
+
       <div className="flex items-center gap-1 flex-wrap">
         {scopes.map(s => (
           <button key={s} onClick={() => setScope(s)}
@@ -167,6 +172,77 @@ export default function EntryList() {
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+// ─── QuickPublishForm ────────────────────────────────────────────────────
+// @design: Inline form that collapses the 5-step Apply flow into one click.
+// Calls POST /api/admin/v1/quick-publish with {domain, target_host, target_port}.
+//
+// Backend: internal/httpapi/handlers/quick_publish.go
+// The handler auto-creates project → service → endpoint → route → apply.
+function QuickPublishForm({ onPublished }: { onPublished: () => void }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [domain, setDomain] = useState('');
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState('3000');
+  const [loading, setLoading] = useState(false);
+
+  const handlePublish = async () => {
+    if (!domain || !host) { toast('请填写域名和后端地址', 'error'); return; }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/v1/quick-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ domain, target_host: host, target_port: parseInt(port) || 3000 }),
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        toast(data.message);
+        setDomain(''); setHost(''); setPort('3000');
+        setOpen(false);
+        onPublished();
+      } else {
+        toast(data.message || '发布失败', 'error');
+      }
+    } catch (e: any) {
+      toast(e.message || '请求失败', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="border border-a-border/30 rounded-a-sm mb-4">
+      <button onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-a-fg hover:bg-a-border/10 w-full text-left cursor-pointer">
+        <span className="text-a-muted">{open ? '▾' : '▸'}</span>
+        快速接入
+        <span className="text-[10px] text-a-muted font-normal">— 域名 + 后端地址，一步发布</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pt-1 border-t border-a-border/20">
+          <div className="grid grid-cols-4 gap-2 mb-2">
+            <input value={domain} onChange={e => setDomain(e.target.value)}
+              placeholder="example.com" className="col-span-2 px-2 py-1.5 text-xs bg-a-bg border border-a-border/50 rounded-a-sm text-a-fg placeholder:text-a-muted/30 focus:outline-none focus:border-a-accent/50" />
+            <input value={host} onChange={e => setHost(e.target.value)}
+              placeholder="127.0.0.1" className="px-2 py-1.5 text-xs bg-a-bg border border-a-border/50 rounded-a-sm text-a-fg placeholder:text-a-muted/30 focus:outline-none focus:border-a-accent/50" />
+            <div className="flex gap-2">
+              <input value={port} onChange={e => setPort(e.target.value)}
+                placeholder="3000" className="w-20 px-2 py-1.5 text-xs bg-a-bg border border-a-border/50 rounded-a-sm text-a-fg placeholder:text-a-muted/30 focus:outline-none focus:border-a-accent/50" />
+              <button onClick={handlePublish} disabled={loading}
+                className="px-3 py-1.5 text-xs font-medium rounded-a-sm bg-a-accent text-white hover:brightness-110 disabled:opacity-50 cursor-pointer whitespace-nowrap">
+                {loading ? '发布中...' : '发布'}
+              </button>
+            </div>
+          </div>
+          <p className="text-[10px] text-a-muted">自动创建服务、端点、路由并执行 Apply。支持 HTTPS。</p>
+        </div>
+      )}
     </div>
   );
 }

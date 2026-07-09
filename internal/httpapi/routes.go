@@ -128,6 +128,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/apply/dry-run", h.ApplyDryRun)
 	mux.HandleFunc("POST /api/rollback", h.Rollback)
 	mux.HandleFunc("GET /api/apply/history", h.ApplyHistory)
+		mux.HandleFunc("POST /api/admin/v1/quick-publish", h.AdminQuickPublish)
 
 	// Exposures
 	mux.HandleFunc("GET /api/exposures", h.ListExposures)

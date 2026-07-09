@@ -1,12 +1,13 @@
 // ─── Advanced Settings ───
-// Consolidated: SecurityPage, MaintenancePage, ActionsPage
+// Security info, quick links to common operations.
+// Maintenance operations removed — they were disabled stubs.
 
-import { Card, PageHeader, Btn } from '@/components/shared';
+import { Card, PageHeader } from '@/components/shared';
 
 export default function AdvancedSettings() {
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="高级设置" subtitle="安全 · 维护 · 操作" />
+      <PageHeader title="高级设置" subtitle="安全 · 管理操作" />
 
       <Card title="安全信息" subtitle="网关链路和 API 密钥的存储与保护">
         <div className="grid grid-cols-2 gap-3 text-xs">
@@ -26,34 +27,6 @@ export default function AdvancedSettings() {
             <p className="font-medium text-a-fg mb-1">Session</p>
             <p className="text-a-muted">HTTP-only Cookie，bcrypt 密码 + rate limiting</p>
           </div>
-        </div>
-      </Card>
-
-      <Card title="维护操作" subtitle="备份、WAL 检查点、快照">
-        <div className="grid grid-cols-3 gap-2">
-          {['备份数据库', 'WAL 检查点', '配置快照', '导出诊断', '一致性检查', '清理日志'].map(item => (
-            <button
-              key={item}
-              disabled
-              className="p-3 rounded-a-sm border border-a-border bg-a-bg text-xs text-a-muted text-center cursor-not-allowed opacity-50"
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-        <p className="text-[10px] text-a-muted mt-3">维护操作将在后续版本中接入 API</p>
-      </Card>
-
-      <Card title="受控操作" subtitle="绑定域名 · TLS · 更新目标">
-        <div className="grid grid-cols-3 gap-2">
-          {['绑定 HTTP 域名', '绑定 TLS 后端', '更新目标', '禁用域名', '删除域名', '中继测试'].map(item => (
-            <button
-              key={item}
-              className="p-3 rounded-a-sm border border-a-border bg-a-bg text-xs text-a-fg text-center hover:bg-a-border/20 transition-colors cursor-pointer"
-            >
-              {item}
-            </button>
-          ))}
         </div>
       </Card>
     </div>

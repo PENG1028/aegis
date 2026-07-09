@@ -36,7 +36,6 @@ import NodeDetail from '@/pages/runtime/NodeDetail';
 import DeployNode from '@/pages/runtime/DeployNode';
 import Updates from '@/pages/runtime/Updates';
 import SyncStatus from '@/pages/runtime/SyncStatus';
-import Binaries from '@/pages/runtime/Binaries';
 
 // ── Release ──
 import Changes from '@/pages/release/Changes';
@@ -148,7 +147,6 @@ export default function App() {
                   <Route path="deploy" element={<DeployNode />} />
                   <Route path="updates" element={<Updates />} />
                   <Route path="sync" element={<SyncStatus />} />
-                  <Route path="binaries" element={<Binaries />} />
                 </Route>
 
                 {/* ── Workspace 5: Release / 配置发布 ── */}
