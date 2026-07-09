@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"aegis/internal/config"
 	"aegis/internal/nodeagent"
@@ -93,4 +92,3 @@ func NewNodeCommand() *cobra.Command {
 }
 
 
-var _ = os.Stderr

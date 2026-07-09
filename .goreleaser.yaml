@@ -1,0 +1,80 @@
+# GoReleaser config for Aegis
+# Builds multi-platform binaries and publishes to GitHub Releases.
+#
+# Usage:
+#   goreleaser release --clean
+#
+# Triggered automatically by .github/workflows/release.yml on tag push.
+
+version: 2
+
+project_name: aegis
+
+before:
+  hooks:
+    - cd ui && npm ci && npm run build
+    - rm -rf internal/uiassets/dist && cp -r ui/dist internal/uiassets/dist
+
+builds:
+  - main: ./cmd/aegis/
+    binary: aegis
+    ldflags:
+      - -s -w
+      - -X main.Version={{ .Version }}
+      - -X main.BuildTime={{ .Date }}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: arm64
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: gz
+    name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    format: binary
+    # gzip compression (matching deploy.sh pattern for cross-sea transfer)
+    wrap_in_directory: false
+    files:
+      - none*
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: PENG1028
+    name: aegis
+  name_template: "v{{ .Version }}"
+  header: |
+    # Aegis {{ .Version }}
+
+    ## 下载
+
+    | 平台 | 文件 | 大小 |
+    |------|------|------|
+    | Linux amd64 | `aegis-{{ .Version }}-linux-amd64` | — |
+    | Linux arm64 | `aegis-{{ .Version }}-linux-arm64` | — |
+    | macOS amd64 | `aegis-{{ .Version }}-darwin-amd64` | — |
+    | Windows amd64 | `aegis-{{ .Version }}-windows-amd64.exe` | — |
+
+    ## 变更
+  footer: |
+    ---
+    完整提交历史请见 [对比](https://github.com/PENG1028/aegis/compare/{{ .PreviousTag }}...{{ .Tag }})

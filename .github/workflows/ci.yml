@@ -1,0 +1,37 @@
+# Aegis CI — test, vet, build on push and PR
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Build UI
+        run: |
+          cd ui && npm ci && npm run build
+
+      - name: Embed UI
+        run: |
+          rm -rf internal/uiassets/dist
+          cp -r ui/dist internal/uiassets/dist
+
+      - name: Go vet
+        run: go vet ./cmd/aegis ./internal/... ./pkg/...
+
+      - name: Go build
+        run: go build -o aegis ./cmd/aegis/
+
+      - name: Go test
+        run: go test ./cmd/aegis ./internal/... ./pkg/... -count=1 -timeout=120s

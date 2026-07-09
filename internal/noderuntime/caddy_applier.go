@@ -25,9 +25,9 @@ func NewCaddyApplier(provReg *provider.Registry) CaddyfileApplier {
 // Apply converts routing table entries to a Plan, renders a Caddyfile via
 // CaddyProvider, and applies the config (validate → backup → write → reload).
 func (a *caddyApplier) Apply(entries []RoutingTableEntry) error {
-	caddy := a.provReg.Get("caddy")
+	caddy := a.provReg.FindByCapability(provider.CapAutoCert)
 	if caddy == nil {
-		return fmt.Errorf("caddy provider not registered")
+		return fmt.Errorf("no provider with auto-cert capability registered (expected Caddy)")
 	}
 
 	routes := routingTableToRouteSpecs(entries)
