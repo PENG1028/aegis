@@ -62,7 +62,10 @@ export default function PanelSettings() {
           </div>
           <Btn
             primary
-            onClick={() => saveMutation.mutate({ gateway_domain: domain, acme_email: email })}
+            onClick={() => saveMutation.mutate({
+              managed_domain: { gateway_domain: domain },
+              proxy: { email: email }
+            })}
             disabled={saveMutation.isPending}
           >
             {saveMutation.isPending ? '保存中...' : '保存'}
