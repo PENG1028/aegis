@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"aegis/internal/action"
@@ -322,18 +325,42 @@ func main() {
 					})
 				})
 
-			// Aegis self-registration
+			// Aegis self-registration with persistent key
 			go func() {
 				ctx := context.Background()
-				pubKey, _, err := serviceauth.GenerateKeyPair()
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "warning: aegis self-registration key generation failed: %v\n", err)
-					return
-				}
 				const aegisName = "aegis-gateway"
 				instanceID := "aegis-" + core.NewID("id")[3:]
 
-				_, err = serviceAuthSvc.Register(ctx, serviceauth.RegisterRequest{
+				// Load or generate persistent Ed25519 key at /var/lib/aegis/keys/
+				keyDir := "/var/lib/aegis/keys"
+				keyPath := filepath.Join(keyDir, aegisName+".key")
+				os.MkdirAll(keyDir, 0700)
+
+				privKeyB64 := ""
+				if data, err := os.ReadFile(keyPath); err == nil && len(data) > 0 {
+					privKeyB64 = string(data)
+				}
+				var pubKey string
+				if privKeyB64 != "" {
+					privBytes, err := base64.StdEncoding.DecodeString(privKeyB64)
+					if err == nil {
+						priv := ed25519.PrivateKey(privBytes)
+						pub := priv.Public().(ed25519.PublicKey)
+						pubKey = base64.StdEncoding.EncodeToString(pub)
+					}
+				}
+				if pubKey == "" {
+					pub, priv, err := ed25519.GenerateKey(nil)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "warning: aegis self-registration key generation failed: %v\n", err)
+						return
+					}
+					pubKey = base64.StdEncoding.EncodeToString(pub)
+					privKeyB64 = base64.StdEncoding.EncodeToString(priv)
+					os.WriteFile(keyPath, []byte(privKeyB64), 0600)
+				}
+
+				_, err := serviceAuthSvc.Register(ctx, serviceauth.RegisterRequest{
 					ServiceName: aegisName,
 					PublicKey:   pubKey,
 					InstanceID:  instanceID,
@@ -342,7 +369,7 @@ func main() {
 					fmt.Fprintf(os.Stderr, "warning: aegis self-registration failed: %v\n", err)
 					return
 				}
-				fmt.Fprintf(os.Stderr, "info: aegis self-registered as %s (%s)\n", aegisName, instanceID)
+				fmt.Fprintf(os.Stderr, "info: aegis self-registered as %s (%s) key=%s\n", aegisName, instanceID, keyPath)
 
 				ticker := time.NewTicker(30 * time.Second)
 				defer ticker.Stop()

@@ -68,6 +68,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		Name:       req.ServiceName,
 		PublicKey:  req.PublicKey,
 		InstanceID: req.InstanceID,
+		Host:       clientIP,
 		Status:     "active",
 		LastSeen:   now,
 		CreatedAt:  now,

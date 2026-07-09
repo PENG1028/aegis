@@ -13,13 +13,12 @@ type ServiceRecord struct {
 	PublicKey  string    `json:"public_key"`  // Ed25519 public key (base64)
 	InstanceID string    `json:"instance_id"` // unique per instance, heartbeat tracking
 	Status     string    `json:"status"`      // "active" | "blocked" | "inactive"
+	Host       string    `json:"host,omitempty"`       // caller IP
+	Port       int       `json:"port,omitempty"`       // caller port
+	NodeHost   string    `json:"node_host,omitempty"`  // node identifier
 	LastSeen   time.Time `json:"last_seen"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
-	// Deprecated: kept for DB scan compatibility, not populated on register.
-	Host     string `json:"-"`
-	Port     int    `json:"-"`
-	NodeHost string `json:"-"`
 	APIsJSON string `json:"-"`
 }
 
@@ -55,6 +54,7 @@ type RegisterRequest struct {
 	ServiceName string `json:"service_name"`
 	PublicKey   string `json:"public_key"`  // Ed25519 public key (base64)
 	InstanceID  string `json:"instance_id"` // optional, for heartbeat tracking
+	Host        string `json:"host,omitempty"`   // caller IP (set by server)
 }
 
 // RegisterResponse is returned after successful registration.

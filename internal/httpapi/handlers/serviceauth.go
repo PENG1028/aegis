@@ -255,6 +255,22 @@ func (h *Handlers) AdminUnblockServiceAuth(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unblocked"})
 }
 
+// AdminDeleteServiceAuthService handles POST /api/admin/v1/service-auth/services/{id}/delete
+func (h *Handlers) AdminDeleteServiceAuthService(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil {
+		writeError(w, http.StatusNotImplemented, "service auth not available")
+		return
+	}
+
+	id := r.PathValue("id")
+	if err := h.ServiceAuthSvc.DeleteService(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 // AdminServiceAuthTopology handles GET /api/admin/v1/service-auth/topology
 func (h *Handlers) AdminServiceAuthTopology(w http.ResponseWriter, r *http.Request) {
 	if h.ServiceAuthSvc == nil {

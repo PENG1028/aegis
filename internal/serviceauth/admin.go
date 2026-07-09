@@ -228,3 +228,8 @@ func (s *Service) LookupServiceByName(ctx context.Context, name string) (*Servic
 	}
 	return &instances[0], nil
 }
+
+// DeleteService removes a registered service by its DB ID.
+func (s *Service) DeleteService(ctx context.Context, id string) error {
+	return s.deps.Repo.DeleteService(id)
+}
