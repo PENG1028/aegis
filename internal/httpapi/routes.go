@@ -359,7 +359,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("POST /api/admin/v1/service-auth/services/{id}/block", h.AdminBlockServiceAuthService)
 		mux.HandleFunc("POST /api/admin/v1/service-auth/blocklist/{id}/unblock", h.AdminUnblockServiceAuth)
 		mux.HandleFunc("GET /api/admin/v1/service-auth/topology", h.AdminServiceAuthTopology)
-		mux.HandleFunc("GET /api/admin/v1/service-auth/gateway/callers", h.AdminGetGatewayCallers)
 
 		// v1.9D groups + policies
 	}
