@@ -2,7 +2,7 @@
 import { useApiList } from '@/hooks/use-api';
 import { useNavigate } from 'react-router-dom';
 import { fetchNodes } from '@/lib/api-bridge';
-import { Card, PageHeader, QueryGuard, StatusBadge, CapabilityBadge } from '@/components/shared';
+import { Card, PageHeader, QueryGuard, StatusBadge, CapabilityBadge, Btn } from '@/components/shared';
 
 export default function Nodes() {
   const nav = useNavigate();
@@ -10,7 +10,8 @@ export default function Nodes() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="节点列表" subtitle={`${nodes.length} 个节点`} />
+      <PageHeader title="节点列表" subtitle={`${nodes.length} 个节点`}
+        actions={<Btn primary onClick={() => nav('/runtime/deploy')} className="text-xs">部署节点</Btn>} />
       <QueryGuard items={nodes} isLoading={isLoading} error={error} refetch={refetch} emptyMessage="暂无节点">
         {(items) => (
           <Card>

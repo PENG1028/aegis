@@ -1566,6 +1566,26 @@ export const adminApi = {
 
   modeCurrent: (): Promise<{ current: any; available_modes: any[] }> =>
     get('/api/system/runtime-mode'),
+
+  // ── Deploy ──
+  // @ui: DeployNode.tsx calls this to start a remote deployment.
+  // See internal/httpapi/handlers/deploy_node.go for the matching handler.
+  deployNode: (req: {
+    target_ip: string;
+    ssh_user?: string;
+    ssh_port?: number;
+    auth_method: string;
+    ssh_key?: string;
+    ssh_password?: string;
+    join_token?: string;
+    node_name?: string;
+  }): Promise<{
+    success: boolean;
+    node_id?: string;
+    message: string;
+    log_output?: string;
+    manual_command?: string;
+  }> => post('/api/admin/v1/nodes/deploy', req),
 };
 
 // ─── Transparent Proxy (v1.8F) ───
