@@ -172,3 +172,19 @@ func (s *Service) Report(ctx context.Context, req ReportRequest) error {
 	}
 	return nil
 }
+
+// ─── Caller / Dep queries (per-service scope) ─────────────────────────────
+
+func (s *Service) CallersOf(ctx context.Context, name string, window time.Duration) ([]TopologyEdge, error) {
+	if window <= 0 {
+		window = 1 * time.Hour
+	}
+	return s.deps.Repo.CallersOf(name, time.Now().Add(-window))
+}
+
+func (s *Service) DepsOf(ctx context.Context, name string, window time.Duration) ([]TopologyEdge, error) {
+	if window <= 0 {
+		window = 1 * time.Hour
+	}
+	return s.deps.Repo.DepsOf(name, time.Now().Add(-window))
+}

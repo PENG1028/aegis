@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"aegis/internal/action"
 	"aegis/internal/serviceauth"
 )
 
@@ -131,44 +132,53 @@ func (h *Handlers) ServiceAuthHeartbeat(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status":"ok"})
 }
 
-// ServiceAuthListServices handles GET /api/service-auth/v1/services
-// Returns lightweight service list for SDK consumption (no admin auth needed).
-func (h *Handlers) ServiceAuthListServices(w http.ResponseWriter, r *http.Request) {
+// ServiceAuthScopedServices handles GET /api/service-auth/v1/services
+// Returns per-service scoped view (callers + deps), identified via X-Service-Ticket.
+func (h *Handlers) ServiceAuthScopedServices(w http.ResponseWriter, r *http.Request) {
 	if h.ServiceAuthSvc == nil {
 		writeError(w, http.StatusNotImplemented, "service auth not available")
 		return
 	}
-	services, err := h.ServiceAuthSvc.ListServices(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	ac := action.GetActionContext(r.Context())
+	if ac == nil || !ac.IsService() {
+		writeError(w, http.StatusUnauthorized, "service auth required")
 		return
 	}
-	type svcBrief struct {
-		Name       string `json:"name"`
-		Status     string `json:"status"`
-		LastSeen   string `json:"last_seen"`
-		InstanceID string `json:"instance_id"`
+	serviceName := ac.SpaceID
+	if serviceName == "" {
+		writeError(w, http.StatusBadRequest, "unknown caller")
+		return
 	}
-	result := make([]svcBrief, 0, len(services))
-	for _, s := range services {
-		result = append(result, svcBrief{
-			Name:       s.Name,
-			Status:     s.Status,
-			LastSeen:   s.LastSeen.Format(time.RFC3339),
-			InstanceID: s.InstanceID,
-		})
+	window := 1 * time.Hour
+	if w := r.URL.Query().Get("window"); w != "" {
+		if d, err := time.ParseDuration(w); err == nil {
+			window = d
+		}
+	}
+	callers, _ := h.ServiceAuthSvc.CallersOf(r.Context(), serviceName, window)
+	deps, _ := h.ServiceAuthSvc.DepsOf(r.Context(), serviceName, window)
+	type relEntry struct {
+		Service  string `json:"service"`
+		API      string `json:"api"`
+		Count    int64  `json:"count"`
+		LastSeen string `json:"last_seen"`
+	}
+	callerList := make([]relEntry, 0, len(callers))
+	for _, e := range callers {
+		callerList = append(callerList, relEntry{Service: e.Caller, API: e.API, Count: e.Count, LastSeen: e.LastSeen})
+	}
+	depList := make([]relEntry, 0, len(deps))
+	for _, e := range deps {
+		depList = append(depList, relEntry{Service: e.Target, API: e.API, Count: e.Count, LastSeen: e.LastSeen})
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"services": result,
-		"count":    len(result),
+		"service": serviceName,
+		"callers": callerList,
+		"deps":    depList,
 	})
 }
-
-// ============================================================================
-// Admin API
-// ============================================================================
-
-// AdminListServiceAuthServices handles GET /api/admin/v1/service-auth/services
+// ServiceAuthScopedServices handles GET /api/service-auth/v1/services
+// Returns per-service scoped view (callers + deps), identified via X-Service-Ticket.
 func (h *Handlers) AdminListServiceAuthServices(w http.ResponseWriter, r *http.Request) {
 	if h.ServiceAuthSvc == nil {
 		writeError(w, http.StatusNotImplemented, "service auth not available")
