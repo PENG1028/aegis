@@ -1507,6 +1507,9 @@ export const adminApi = {
   unblockAuthService: (id: string): Promise<any> =>
     post(`/api/admin/v1/service-auth/blocklist/${id}/unblock`),
 
+  deleteAuthService: (id: string): Promise<any> =>
+    post(`/api/admin/v1/service-auth/services/${id}/delete`),
+
   getAuthTopology: (window?: string): Promise<{ nodes: any[]; edges: any[] }> =>
     get(`/api/admin/v1/service-auth/topology${window ? '?window=' + encodeURIComponent(window) : ''}`),
 

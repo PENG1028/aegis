@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils';
 type ServiceRecord = any;
 type CallLogEntry = any;
 type TopoEdge = { caller: string; target: string; api: string; count: number; last_seen: string };
-type Tab = 'services' | 'groups';
 
 export default function AuthServices() {
   const toast = useToast();
@@ -22,7 +21,7 @@ export default function AuthServices() {
   const [blockTarget, setBlockTarget] = useState<ServiceRecord | null>(null);
   const [blockReason, setBlockReason] = useState('');
   const [showBlockModal, setShowBlockModal] = useState(false);
-  const [tab, setTab] = useState<Tab>('services');
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   // ── Data ──
 
@@ -47,26 +46,6 @@ export default function AuthServices() {
   });
   const topoEdges: TopoEdge[] = topologyData?.edges || [];
 
-  // ── Groups ──
-  const { data: groupsData } = useQuery({
-    queryKey: ['auth-groups'], queryFn: () => adminApi.listAuthGroups(), refetchInterval: 30_000,
-  });
-  const groups: any[] = groupsData?.groups || [];
-
-  const [showGroupModal, setShowGroupModal] = useState(false);
-  const [groupForm, setGroupForm] = useState({ name: '', description: '', members: '' });
-
-  const upsertGroup = useMutation({
-    mutationFn: (g: any) => adminApi.upsertAuthGroup(g),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['auth-groups'] }); toast('组已保存'); setShowGroupModal(false); },
-    onError: (e: any) => toast(e.message, 'error'),
-  });
-  const deleteGroup = useMutation({
-    mutationFn: (id: string) => adminApi.deleteAuthGroup(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['auth-groups'] }); toast('已删除'); },
-    onError: (e: any) => toast(e.message, 'error'),
-  });
-
   // ── Mutations ──
 
   const blockSvc = useMutation({
@@ -79,6 +58,12 @@ export default function AuthServices() {
     mutationFn: (id: string) => adminApi.unblockAuthService(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['auth-services'] }); toast('已解封'); },
     onError: (e: any) => toast(e.message || '解封失败', 'error'),
+  });
+
+  const deleteSvc = useMutation({
+    mutationFn: (id: string) => adminApi.deleteAuthService(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['auth-services'] }); toast('已删除'); },
+    onError: (e: any) => toast(e.message || '删除失败', 'error'),
   });
 
   // ── Stats ──
@@ -95,24 +80,17 @@ export default function AuthServices() {
     return s.name?.toLowerCase().includes(search.toLowerCase());
   });
 
+  // ── Group by name ──
+  const grouped = new Map<string, ServiceRecord[]>();
+  for (const s of filtered) {
+    const list = grouped.get(s.name) || [];
+    list.push(s);
+    grouped.set(s.name, list);
+  }
+
   return (
     <div className="p-6 space-y-5">
       <PageHeader title="服务认证 · Service Auth" subtitle={`${activeCount} 在线 · ${blockedCount} 已封锁 · ${todayCalls} 调用/24h`} />
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-a-border/30 pb-0">
-        {(['services', 'groups'] as Tab[]).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={cn('px-3 py-1.5 text-xs border-b-2 transition-colors cursor-pointer',
-              tab === t ? 'border-a-accent text-a-accent font-medium' : 'border-transparent text-a-muted hover:text-a-fg')}>
-            {{services: '服务', groups: '服务组'}[t]}
-          </button>
-        ))}
-        <div className="flex-1" />
-        <a href="/auth/callgraph" className="px-3 py-1.5 text-xs text-a-accent hover:underline">完整拓扑图 →</a>
-      </div>
-
-      {tab === 'services' && (<>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -137,41 +115,83 @@ export default function AuthServices() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-a-border text-a-muted text-left">
-                  <th className="py-2 px-3 font-medium">名称</th>
+                  <th className="py-2 px-3 font-medium">名称/实例</th>
+                  <th className="py-2 px-3 font-medium">客户端</th>
                   <th className="py-2 px-3 font-medium">公钥</th>
-                  <th className="py-2 px-3 font-medium">实例</th>
                   <th className="py-2 px-3 font-medium">状态</th>
                   <th className="py-2 px-3 font-medium">最后心跳</th>
                   <th className="py-2 px-3 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((s: ServiceRecord) => {
-                  const isBlocked = s.status === 'blocked';
-                  return (
-                    <tr key={s.id}
-                      onClick={() => { setSelected(s); setDrawerOpen(true); }}
-                      className="border-b border-a-border/50 hover:bg-a-border/10 transition-colors cursor-pointer">
-                      <td className="py-2 px-3 font-semibold text-a-fg">{s.name}</td>
-                      <td className="py-2 px-3 font-mono text-[10px] text-a-muted max-w-[120px] truncate">{s.public_key ? s.public_key.slice(0, 20) + '...' : '-'}</td>
-                      <td className="py-2 px-3 font-mono text-[10px] text-a-muted">{s.instance_id || '-'}</td>
-                      <td className="py-2 px-3">
-                        <StatusBadge status={isBlocked ? 'disabled' : 'active'} />
-                      </td>
-                      <td className="py-2 px-3 text-[10px] text-a-muted whitespace-nowrap">{fmtTimeShort(s.last_seen)}</td>
-                      <td className="py-2 px-3">
-                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          <Btn onClick={() => { setSelected(s); setDrawerOpen(true); }} className="text-[10px]">详情</Btn>
-                          {isBlocked ? (
-                            <Btn onClick={() => unblockSvc.mutate(s.id)} className="text-[10px]">解封</Btn>
-                          ) : (
-                            <Btn onClick={() => { setBlockTarget(s); setShowBlockModal(true); }} className="text-[10px]" danger>封锁</Btn>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {(() => {
+                  const rows: any[] = [];
+                  for (const [name, instances] of grouped) {
+                    const first = instances[0];
+                    const isMulti = instances.length > 1;
+                    const isExp = expanded[name];
+
+                    // Group header row
+                    rows.push(
+                      <tr key={'g-' + name}
+                        onClick={() => isMulti && setExpanded({...expanded, [name]: !isExp})}
+                        className={cn(
+                          'border-b border-a-border/50 transition-colors',
+                          isMulti ? 'bg-a-surface/40 hover:bg-a-border/10 cursor-pointer' : 'hover:bg-a-border/10 cursor-pointer',
+                        )}>
+                        <td className="py-2 px-3">
+                          <span className="font-semibold text-a-fg">
+                            {isMulti && <span className="text-[9px] text-a-muted mr-1">{isExp ? '▾' : '▸'}</span>}
+                            {name}
+                            {isMulti && <span className="text-[10px] text-a-muted font-normal ml-1">({instances.length})</span>}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 font-mono text-[10px] text-a-muted">
+                          {instances.map(s => s.host || '?').filter((v,i,a) => a.indexOf(v)===i).join(', ') || '-'}
+                        </td>
+                        <td className="py-2 px-3 font-mono text-[10px] text-a-muted max-w-[110px] truncate">
+                          {first.public_key ? first.public_key.slice(0, 16) + '...' : '-'}
+                        </td>
+                        <td className="py-2 px-3"><StatusBadge status={first.status === 'blocked' ? 'disabled' : 'active'} /></td>
+                        <td className="py-2 px-3 text-[10px] text-a-muted whitespace-nowrap">{fmtTimeShort(first.last_seen)}</td>
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <Btn onClick={() => { setSelected(instances.length === 1 ? first : instances.find((s:any) => s.id === first.id) || first); setDrawerOpen(true); }} className="text-[10px]">详情</Btn>
+                            {first.status === 'blocked'
+                              ? <Btn onClick={() => unblockSvc.mutate(first.id)} className="text-[10px]">解封</Btn>
+                              : <Btn onClick={() => { setBlockTarget(first); setShowBlockModal(true); }} className="text-[10px]" danger>封锁</Btn>}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+
+                    // Expanded child rows for multi-instance
+                    if (isMulti && isExp) {
+                      for (const inst of instances) {
+                        rows.push(
+                          <tr key={inst.id}
+                            onClick={() => { setSelected(inst); setDrawerOpen(true); }}
+                            className="border-b border-a-border/20 hover:bg-a-border/10 transition-colors cursor-pointer bg-a-bg/30">
+                            <td className="py-1.5 px-6 font-mono text-[10px] text-a-muted">{inst.instance_id ? inst.instance_id.slice(0, 14) + '...' : '-'}</td>
+                            <td className="py-1.5 px-3 font-mono text-[10px] text-a-muted">{inst.host || '-'}</td>
+                            <td className="py-1.5 px-3 font-mono text-[9px] text-a-muted break-all max-w-[110px] truncate">{inst.public_key ? inst.public_key.slice(0, 20) + '...' : '-'}</td>
+                            <td className="py-1.5 px-3"><StatusBadge status={inst.status === 'blocked' ? 'disabled' : 'active'} /></td>
+                            <td className="py-1.5 px-3 text-[10px] text-a-muted">{fmtTimeShort(inst.last_seen)}</td>
+                            <td className="py-1.5 px-3">
+                              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                <Btn onClick={() => { setSelected(inst); setDrawerOpen(true); }} className="text-[9px]">详情</Btn>
+                                {inst.status === 'blocked'
+                                  ? <Btn onClick={() => unblockSvc.mutate(inst.id)} className="text-[9px]">解封</Btn>
+                                  : <Btn onClick={() => { setBlockTarget(inst); setShowBlockModal(true); }} className="text-[9px]" danger>封锁</Btn>}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    }
+                  }
+                  return rows;
+                })()}
               </tbody>
             </table>
           </div>
@@ -190,45 +210,10 @@ export default function AuthServices() {
             topoEdges={topoEdges}
             onBlock={() => { setBlockTarget(selected); setShowBlockModal(true); }}
             onUnblock={() => unblockSvc.mutate(selected.id)}
+            onDelete={() => deleteSvc.mutate(selected.id)}
           />
         )}
       </Drawer>
-
-      {/* End services tab */}
-      </>)}
-
-      {tab === 'groups' && (
-        <Card title="服务组" subtitle="将服务分组管理">
-          <div className="mb-3 flex items-center gap-2">
-            <Btn primary onClick={() => { setGroupForm({ name: '', description: '', members: '' }); setShowGroupModal(true); }} className="text-xs">新建服务组</Btn>
-            <span className="text-[10px] text-a-muted ml-auto">{groups.length} 个组</span>
-          </div>
-          {groups.length === 0 ? <EmptyState title="暂无服务组" /> : (
-            <div className="space-y-2">
-              {groups.map((g: any) => (
-                <div key={g.id} className="flex items-center gap-3 px-3 py-2 rounded-a-sm border border-a-border/20 bg-a-surface text-xs">
-                  <span className="font-medium text-a-fg w-32">{g.name}</span>
-                  <span className="text-a-muted flex-1">{g.description || '—'}</span>
-                  <span className="text-[10px] text-a-muted">{g.members?.length || 0} 个成员</span>
-                  <Btn onClick={() => deleteGroup.mutate(g.id)} className="text-[9px]" danger>删除</Btn>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* Group modal */}
-      {showGroupModal && (
-        <Modal onClose={() => setShowGroupModal(false)} title="服务组"
-          footer={<div className="flex gap-2 justify-end"><Btn onClick={() => setShowGroupModal(false)} className="text-xs">取消</Btn><Btn primary onClick={() => upsertGroup.mutate({...groupForm, members: groupForm.members.split(',').map((s: string) => s.trim()).filter(Boolean)})} className="text-xs">保存</Btn></div>}>
-          <div className="space-y-3 text-xs">
-            <input value={groupForm.name} onChange={e => setGroupForm({...groupForm, name: e.target.value})} placeholder="组名（如 storage-group）" className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg" />
-            <input value={groupForm.description} onChange={e => setGroupForm({...groupForm, description: e.target.value})} placeholder="描述（可选）" className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg" />
-            <input value={groupForm.members} onChange={e => setGroupForm({...groupForm, members: e.target.value})} placeholder="成员（逗号分隔）" className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg" />
-          </div>
-        </Modal>
-      )}
 
       {/* Block modal */}
       {showBlockModal && (
@@ -260,19 +245,18 @@ export default function AuthServices() {
 // Service Detail (inside Drawer)
 // ══════════════════════════════════════════════════════════════════
 
-function ServiceDetailContent({ svc, callLogs, topoEdges, onBlock, onUnblock }: {
+function ServiceDetailContent({ svc, callLogs, topoEdges, onBlock, onUnblock, onDelete }: {
   svc: ServiceRecord;
   callLogs: CallLogEntry[];
   topoEdges: TopoEdge[];
   onBlock: () => void;
   onUnblock: () => void;
+  onDelete: () => void;
 }) {
   const isBlocked = svc.status === 'blocked';
   const svcLogs = callLogs.filter((l: CallLogEntry) => l.caller_service === svc.name || l.target_service === svc.name).slice(0, 20);
 
-  // Dependency edges: this service calls others
   const callsOut = topoEdges.filter(e => e.caller === svc.name);
-  // Who calls this service
   const callsIn = topoEdges.filter(e => e.target === svc.name);
 
   return (
@@ -290,6 +274,14 @@ function ServiceDetailContent({ svc, callLogs, topoEdges, onBlock, onUnblock }: 
               <HealthDot status={isBlocked ? 'failed' : 'healthy'} />
               <span className={isBlocked ? 'text-[#ff5c72]' : 'text-[#4cd964]'}>{isBlocked ? '已封锁' : '活跃'}</span>
             </div>
+          </div>
+          <div>
+            <div className="text-a-muted mb-0.5">客户端 IP</div>
+            <div className="font-mono text-a-fg">{svc.host || '—'}</div>
+          </div>
+          <div>
+            <div className="text-a-muted mb-0.5">端口</div>
+            <div className="font-mono text-a-fg">{svc.port || '—'}</div>
           </div>
           <div>
             <div className="text-a-muted mb-0.5">公钥</div>
@@ -422,6 +414,7 @@ function ServiceDetailContent({ svc, callLogs, topoEdges, onBlock, onUnblock }: 
         ) : (
           <Btn onClick={onBlock} danger className="text-xs">封锁服务</Btn>
         )}
+        <Btn onClick={onDelete} danger className="text-xs">删除注册</Btn>
       </div>
     </div>
   );
