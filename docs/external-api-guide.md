@@ -106,7 +106,6 @@ curl -H "X-Service-Ticket: <base64_ed25519_ticket>" http://host:7380/api/v1/acti
   "public_keys": {"other-service": ["<pubkey>"]},
   "blocklist": [],
   "bl_version": 0,
-  "cat_version": 1,
   "sync_interval": 30,
   "warnings": []
 }
@@ -129,9 +128,7 @@ curl -H "X-Service-Ticket: <base64_ed25519_ticket>" http://host:7380/api/v1/acti
 | `/api/admin/v1/service-auth/topology` | GET | 调用拓扑（`?window=1h`） |
 | `/api/admin/v1/service-auth/call-logs` | GET | 调用日志（`?since=&limit=`） |
 | `/api/admin/v1/service-auth/groups` | GET/POST | 服务组管理 |
-| `/api/admin/v1/service-auth/groups/{id}` | DELETE | 删除服务组 |
 | `/api/admin/v1/service-auth/policies` | GET/POST | 权限策略管理（⚠️ 仅展示，引擎已移除） |
-| `/api/admin/v1/service-auth/policies/{id}` | DELETE | 删除策略 |
 
 ### 管理员
 

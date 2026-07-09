@@ -3,6 +3,8 @@
 服务间身份认证。一个服务注册后，用 Ed25519 签名证明"我是谁"。
 其他服务通过调用方名字做权限判断。
 
+**ServiceAuth 不处理权限。** 它只回答"谁在调你"。权限是服务自己的中间件决定的。
+
 ---
 
 ## 概念
@@ -12,10 +14,10 @@
 ticket       Ed25519 签名的身份凭证，固定 5 分钟有效
 Guard        验证 ticket 的中间件。验证通过后注入调用方名字
 Post(url)    调用另一个服务时自动签 ticket
+Do()         自动报告调用日志 → 拓扑数据
 sync         客户端每 30s 拉取注册表变更（公钥、封禁列表）
+WrapHTTP     把认证注入标准 http.Client，业务 SDK 零感知
 ```
-
-**ServiceAuth 不处理权限。** 它只回答"谁在调你"。权限是服务自己的中间件决定的。
 
 ---
 
@@ -38,19 +40,57 @@ client.Register(ctx)
 ## 调用另一个服务
 
 ```go
-// 知道 URL 就行。ticket 自动签、自动放 X-Service-Ticket header
-resp, err := client.Post(ctx, "http://auth-service:8080/api/verify", body)
+// 方式 A：直接用 client 调（ticket 自动签）
+resp, err := client.Post(ctx, "http://target-service:8080/api/action", body)
 resp, err := client.Get(ctx, "http://target-service/api/data")
 resp, err := client.Put(ctx, "http://target-service/api/resource", body)
 resp, err := client.Delete(ctx, "http://target-service/api/resource")
 
+// 方式 B：WrapHTTP — 把认证注入 http.Client，业务 SDK 零感知
+httpClient := client.WrapHTTP(http.DefaultClient)
+sdk := usermgmt.New("http://user-mgmt:8080", sdk.WithHTTPClient(httpClient))
+// sdk.CheckUser() 发出的每个请求自动带 ticket
+// 业务 SDK 不知道 ServiceAuth 的存在
+
 // 健康检查
-if client.Healthy("http://auth-service:8080/healthz") {
-    log.Println("auth-service 在线")
+if client.Healthy("http://target-service:8080/healthz") {
+    log.Println("target-service 在线")
 }
 ```
 
 URL 可以是内部地址（`http://service-name:port/path`）或域名（走内部 DNS）。推荐域名。
+
+---
+
+## 服务端双路径认证
+
+一个服务可以同时接受两种认证，外部调用方看不到 ServiceAuth 的存在：
+
+```go
+func authMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // 路径 A：ServiceAuth ticket（内部服务间调用）
+        if ticket := r.Header.Get("X-Service-Ticket"); ticket != "" {
+            caller := verifyTicket(ticket, publicKeys)
+            if caller != "" {
+                ctx := context.WithValue(r.Context(), "caller", caller)
+                next.ServeHTTP(w, r.WithContext(ctx))
+                return
+            }
+        }
+        // 路径 B：API Key（外部调用）
+        if key := r.Header.Get("X-API-Key"); key != "" {
+            if validateAPIKey(key) {
+                next.ServeHTTP(w, r)
+                return
+            }
+        }
+        http.Error(w, "unauthorized", http.StatusUnauthorized)
+    })
+}
+```
+
+两种认证在同一层——ServiceAuth 和 API Key 是并列关系，不是包含关系。
 
 ---
 
@@ -67,7 +107,36 @@ mux.Handle("POST /api/verify", client.Guard(
 ```
 
 ---
-	
+
+## 自动调用报告
+
+`client.Do()` 在每次 2xx 响应后，会自动 POST `/api/service-auth/v1/report` 记录调用关系。
+这是拓扑数据的来源——谁调了谁、调了多少次、最后调用时间。
+
+不需要额外配置。如果不需要报告调用日志，直接用标准 `http.Client` 代替。
+
+---
+
+## 调用关系查询（Callers / Deps）
+
+每个服务可以查"谁调了我"和"我调了谁"：
+
+```go
+// 谁调了我（返回 CallerEdge 列表）
+callers, _ := client.Callers(ctx, "24h")
+
+// 我调了谁（返回 DepEdge 列表）
+deps, _ := client.Deps(ctx, "24h")
+```
+
+数据来源：`client.Do()` 自动报告的调用日志。只返回有实际调用关系的服务。
+
+Scoped API（服务自己查）：`GET /api/service-auth/v1/services?window=24h`（需 X-Service-Ticket）
+
+Admin API（全景查看）：`GET /api/admin/v1/service-auth/topology?window=24h`（需 admin session）
+
+---
+
 ## 管理自己的域名和服务（Action API）
 
 带上 ServiceAuth ticket 可以调 Aegis Action API 来管理域名映射。
@@ -121,10 +190,10 @@ Content-Type: application/json
 
 ```bash
 # sync 端点在注册时返回的 sync_interval 秒内调用一次即可
-GET /api/service-auth/v1/sync?bl_version=0&cat_version=0
+GET /api/service-auth/v1/sync?bl_version=0
 
 → 200 { "public_keys": {"auth-service": "<base64>", ...},
-         "blocklist": [...], "groups": [...], "policies": [...] }
+         "blocklist": [...] }
 → 304 （无变更）
 ```
 
@@ -153,14 +222,13 @@ function signTicket(serviceName, privateKeyBase64) {
 ```typescript
 // Next.js Route Handler
 const ticket = signTicket("my-service", process.env.SERVICE_PRIVATE_KEY!)
-const resp = await fetch("http://auth-service:8080/api/verify", {
+const resp = await fetch("http://target-service:8080/api/action", {
     method: "POST",
     headers: {
         "Content-Type": "application/json",
         "X-Service-Ticket": ticket,
-        "X-Caller-Service": "my-service"
     },
-    body: JSON.stringify({ token: "..." })
+    body: JSON.stringify({ ... })
 })
 ```
 
@@ -191,78 +259,14 @@ function verifyIncomingTicket(req: Request, publicKeys: Record<string, string>) 
 
 ---
 
-## 检测新服务 + 自动放置
-
-这是提供服务侧最常见的问题：**一个新服务注册后，我怎么知道它来了？把它放哪？**
-
-### 发现
+## 检测新服务
 
 发现靠 topology（调用日志聚合），**不依赖全局服务名单**。
 只看有调用关系的服务——你调过谁、谁调过你——才是真正需要关心的。
 
 ```go
-// 方案 A：topology API（推荐）
-type TopologyEdge struct {
-    Caller string `json:"caller"`
-    Target string `json:"target"`
-    Count  int64  `json:"count"`
-}
-// 返回的边集就是有调用关系的服务对，天然范围限制
-
-// 调用方式（admin API）：
-// GET /api/admin/v1/service-auth/topology?window=24h
-
-// 方案 B：sync 数据的 groups/policies（范围有限，仅同组或策略关联）
-// client.Groups()  — 与你同组的服务
-// client.Policies() — 策略里引用了你的服务
-```
-
-### 放置
-
-```go
-func handleNewService(name string) {
-    switch classifyService(name) {
-    case "infra":
-        // 基础设施服务（aegis, auth, gateway）→ 放到 admin 项目，自动放行
-        project := getOrCreateAdminProject()
-        bindingSvc.Bind(project.ID, name, name)
-        policySvc.Create(Policy{Subject: name, Effect: "allow"})
-
-    case "external":
-        // 外部服务 → 放到对应项目，默认拒绝
-        project := getOrCreateProjectForService(name)
-        bindingSvc.Bind(project.ID, name, name)
-        // 不创建 policy，默认 deny，等管理员确认
-
-    case "unknown":
-        // 未知服务 → UI 显示"待接入"
-        queueForApproval(name)
-    }
-}
-
-func classifyService(name string) string {
-    // 服务自己决定分类规则
-    infraPrefixes := []string{"aegis", "auth", "gateway"}
-    for _, p := range infraPrefixes {
-        if strings.HasPrefix(name, p) { return "infra" }
-    }
-    return "unknown"
-}
-```
-
-### 在 UI 里的展示
-
-```
-┌── 服务注册表 ───────────────────────────────────┐
-│                                                  │
-│  服务名            状态    已绑定项目    操作      │
-│  aetherion-authn  ● 在线  admin         —        │
-│  privacy-policy   ● 在线  项目 A        配置     │
-│  billing           ○ 离线  项目 B       配置     │
-│                                                  │
-│  ⏳ 待处理                                         │
-│  frontend-app（新出现）  [确认放置] [忽略]         │
-└──────────────────────────────────────────────────┘
+// Topology API — 返回有调用关系的服务对
+// Admin API: GET /api/admin/v1/service-auth/topology?window=24h
 ```
 
 ---
@@ -325,57 +329,6 @@ func authMiddleware(next http.Handler) http.Handler {
 
 ---
 
-## 三种典型提供策略
-
-### 全局放行（Aegis 自己）
-
-```go
-// 任何服务注册进来，自动放行。不需要审批，不需要隔离。
-func handleCall(w http.ResponseWriter, r *http.Request) {
-    caller := CallerFromContext(r.Context())
-    // 不检查权限，直接执行业务
-    doOperation(w, r)
-}
-```
-
-### 按项目隔离（aetherion）
-
-```go
-// 每个服务有一个归属项目。只能操作自己项目内的资源。
-func handleCreateDomain(w http.ResponseWriter, r *http.Request) {
-    caller := CallerFromContext(r.Context())
-
-    // 第一次遇到这个服务 → 自动创建项目
-    project := autoProvision(caller.ServiceName)
-    // 资源自动归到这个项目
-    createDomainUnderProject(project.ID, body)
-}
-```
-
-### 按 API Key Scope（传统模式）
-
-```go
-// ServiceAuth 和 API Key 走同一个权限判断
-func handleDeleteResource(w http.ResponseWriter, r *http.Request) {
-    identity := r.Context().Value("identity").(*Identity)
-
-    switch identity.Source {
-    case "serviceauth":
-        // 内部服务用 ServiceAuth → 检查服务级别的权限
-        if !isInternalAllowed(identity.Name, "delete") {
-            http.Error(w, "forbidden", 403); return
-        }
-    case "api_key":
-        // 外部开发者用 API Key → 检查 key 的 scope
-        if identity.Role != "admin" {
-            http.Error(w, "forbidden", 403); return
-        }
-    }
-}
-```
-
----
-
 ## 密钥丢失和身份恢复
 
 ### 场景
@@ -395,67 +348,16 @@ C 重新 Register({Name: "c-service", PublicKey: 新公钥})
          → 新公钥覆盖旧公钥
 ↓
 C 的新 ticket（新私钥签的）→ 其他服务验签通过 ✅
-旧 ticket（旧私钥签的，传输中）→ 验签失败 ❌（最多 30s）
-↓
-资源：C 之前创建的路由和域名不变（因为名字没变）
 ```
 
-### 恢复步骤
-
-```bash
-# 1. 服务自动恢复（重新 Register），不需要人工操作
-# 2. 资源不丢，因为资源绑定的是「名字」不是「公钥」
-# 3. 如果有备份 .key 文件，直接放回去覆盖，重启即可
-# 4. 没有备份 → 正常运行。只是旧 ticket 会失败几十秒
-```
-
-### 稳定性总结
-
-| 场景 | 影响 | 恢复方式 |
-|------|------|---------|
-| 正常重启（密钥文件在） | 零影响 | 自动 |
-| 密钥丢失 | 旧 ticket 失败 ≤30s | 自动重新注册 |
-| 双机部署 | 共享密钥即可 | 复制 .key 文件 |
-| 服务下线 | Post(url) 超时 | 调用方处理重试 |
-| 灰度更新 | 当前不支持多公钥 | 需要改 Guard 遍历逻辑 |
-
 ---
 
-## 安全模型
+## 多公钥支持
 
-| 防护 | 能防 | 不能防 |
-|------|------|--------|
-| 服务端被黑 | ✅ 只有公钥，签不了 ticket | — |
-| 重放攻击 | ✅ ticket 5 分钟过期 | — |
-| 单机被黑 | ✅ 只泄露本机服务的密钥 | — |
-| 密钥丢失 | ✅ 重新注册即可 | — |
-| 内网攻击者注册同名服务 | — | ❌ 需要额外的身份溯源机制 |
-| 请求体篡改 | — | ❌ ticket 不签请求体 |
-| DDoS | — | ❌ 不是认证层的事 |
+Guard 会遍历所有匹配 name 的公钥验签。同名多 key（灰度、密钥轮换、多实例）自动支持，不需要改代码。
 
----
+## 注册警告
 
-## 当前限制
-
-| 限制 | 说明 |
-|------|------|
-| Exposure API 无空间隔离 | TCP/UDP 端口转发 API（`/api/exposures/*`）未实现 ServiceAuth 空间隔离，需要 admin 权限。外部服务请用 Action API 管理域名 |
-| Apply API 无 ServiceAuth 检查 | `POST /api/apply` 当前仅受 AuthMiddleware 保护（Bearer/ticket 均可触发）。建议保持 admin token 调用 |
-| 策略引擎已移除 | `EvaluatePolicy` 函数已删除。Guard 只验证身份，权限由服务自己的中间件决定。Groups/Policies 的 UI 管理界面保留供参考 |
-
----
-
-## 术语
-
-| 术语 | 含义 |
-|------|------|
-| ServiceAuth | 服务间身份认证系统 |
-| 服务注册表 | 所有已注册服务的名单（名字 + 公钥） |
-| ticket | Ed25519 签名的身份凭证 |
-| Guard | 验证 ticket 的 HTTP 中间件 |
-| Post/Get/Put/Delete | HTTP 方法，自动签 ticket |
-| 调用方 | 发起请求的服务 |
-| 接收方 | 处理请求的服务 |
-| 封禁 | 将某个服务从注册表中禁用 |
-| sync | 客户端每 30s 拉取注册表变更 |
-| 放置 | 新服务检测到后，分配到项目/空间的过程 |
+Register 返回 `Warnings` 字段：
+- 同名已有不同公钥 → "可能是密钥轮换或多实例"
+- 同公钥用于不同名字 → "两个服务共享同一私钥"
