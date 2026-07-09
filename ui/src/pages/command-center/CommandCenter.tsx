@@ -102,11 +102,18 @@ export default function CommandCenter() {
     refetchInterval: 30_000,
   });
 
+  const { data: sysStatus } = useQuery({
+    queryKey: ['sys-status'],
+    queryFn: () => fetch('/api/system/status').then(r => r.json()),
+    refetchInterval: 60_000,
+  });
+
   const d = data as DashboardData | undefined;
 
   const issues = deriveIssues(d);
 
   const hasIssues = issues.length > 0;
+  const noData = !isLoading && d && d.nodes_total === 0 && d.managed_routes === 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -114,6 +121,35 @@ export default function CommandCenter() {
         title="Command Center"
         subtitle={isLoading ? '加载中...' : hasIssues ? '⚠️ 系统存在需要注意的问题' : '✅ 所有系统运行正常'}
       />
+
+      {/* Version & Build Info */}
+      {sysStatus && (
+        <div className="flex items-center gap-3 text-[11px] text-a-muted -mt-3 mb-2">
+          <span>版本 <span className="font-mono text-a-fg">{sysStatus.version || '—'}</span></span>
+          <span className="text-a-border/40">|</span>
+          <span>构建于 <span className="font-mono text-a-fg">{sysStatus.build_time ? new Date(sysStatus.build_time).toLocaleString() : '—'}</span></span>
+        </div>
+      )}
+
+      {/* First-run empty state */}
+      {noData && (
+        <Card title="欢迎使用 Aegis" subtitle="当前系统还没有数据，快速开始">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: '创建域名映射', desc: '添加第一个 HTTP 路由', path: '/exposure/new', icon: '→' },
+              { label: '部署远程节点', desc: '添加第二台 VPS', path: '/runtime/deploy', icon: '⛁' },
+              { label: '查看服务认证', desc: '管理服务间通信', path: '/auth', icon: '◈' },
+            ].map(item => (
+              <button key={item.path} onClick={() => navigate(item.path)}
+                className="p-4 rounded-a-md border border-dashed border-a-border/40 bg-a-bg hover:bg-a-border/10 hover:border-a-accent/30 text-center transition-all cursor-pointer">
+                <div className="text-lg mb-1">{item.icon}</div>
+                <div className="text-sm font-semibold text-a-fg mb-0.5">{item.label}</div>
+                <div className="text-[10px] text-a-muted">{item.desc}</div>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Status Cards */}
       <div className="grid grid-cols-4 gap-3">
