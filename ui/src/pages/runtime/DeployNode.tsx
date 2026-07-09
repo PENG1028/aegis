@@ -118,7 +118,7 @@ export default function DeployNode() {
             <div className="col-span-2">
               <label className="text-xs text-a-muted block mb-1">SSH 地址</label>
               <Input value={form.targetIp} onChange={e => setForm({...form, targetIp: e.target.value})}
-                placeholder="<SERVER_B_IP>" />
+                placeholder="192.168.1.100" />
             </div>
             <div>
               <label className="text-xs text-a-muted block mb-1">端口</label>
