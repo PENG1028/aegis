@@ -144,6 +144,14 @@ func (h *Handlers) AdminDeployNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── Determine control plane URL ──
+	// @ui: The frontend doesn't need to set this — it's auto-detected from
+	// the request's Host header. Falls back to 127.0.0.1:7380 for dev.
+	cpURL := req.TargetIP // backward compat
+	if r.Host != "" {
+		cpURL = r.Host
+	}
+
 	// ── Deploy ──────────────────────────────────────────────────────────────
 	// @ui: Deployment steps are logged to LogOutput, which the frontend polls.
 	// Each step starts with a [N/7] marker — frontend renders these as:
@@ -156,7 +164,7 @@ func (h *Handlers) AdminDeployNode(w http.ResponseWriter, r *http.Request) {
 		logBuf.WriteString(fmt.Sprintf(format+"\n", args...))
 	}
 
-	result, err := h.executeDeploy(r.Context(), req, logf)
+	result, err := h.executeDeploy(r.Context(), req, cpURL, logf)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -174,7 +182,7 @@ func (h *Handlers) AdminDeployNode(w http.ResponseWriter, r *http.Request) {
 //	Phase 2: Prereqs     → steps 2-3
 //	Phase 3: Install     → steps 4-5
 //	Phase 4: Service     → steps 6-7
-func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, logf func(string, ...interface{})) (*DeployNodeResponse, error) {
+func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, cpURL string, logf func(string, ...interface{})) (*DeployNodeResponse, error) {
 	// ── Connect ──
 	// @ui: If this step fails, the form stays visible with the error.
 	// If it succeeds, the form transitions to the log view.
@@ -249,14 +257,14 @@ func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, log
 	logf("[5/7] Writing configuration...")
 
 	// Write node.yaml
-	cfgYAML := fmt.Sprintf(`control_plane_url: http://%s:7380
+	cfgYAML := fmt.Sprintf(`control_plane_url: http://%s
 node_token_file: /etc/aegis/node.token
 cache_dir: /var/lib/aegis
 runtime_dir: /run/aegis
 heartbeat_interval_seconds: 15
 sync_interval_seconds: 15
 reconcile_mode: apply
-`, req.TargetIP)
+`, cpURL)
 	result = conn.Executor.Run(ctx, fmt.Sprintf("cat > /etc/aegis/node.yaml << 'CFG'\n%s\nCFG", cfgYAML))
 	if result.Error != nil {
 		logf("  Warning: write config: %s", result.Error)
