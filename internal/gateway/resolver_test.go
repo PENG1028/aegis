@@ -89,10 +89,10 @@ func (s *stubNodeRepo) FindByNodeID(nodeID string) (*node.NodeRecord, error) {
 }
 
 type stubGWLinkRepo struct {
-	links []gatewaylink.TrustedGateway
+	links []TrustedGateway
 }
 
-func (s *stubGWLinkRepo) FindByID(id string) (*gatewaylink.TrustedGateway, error) {
+func (s *stubGWLinkRepo) FindByID(id string) (*TrustedGateway, error) {
 	for i := range s.links {
 		if s.links[i].ID == id {
 			return &s.links[i], nil
@@ -165,8 +165,8 @@ func makeEndpoint(id, serviceID, typ, address, nodeID string, enabled bool) endp
 	}
 }
 
-func makeGWLink(id, targetNodeID, authValue string) gatewaylink.TrustedGateway {
-	return gatewaylink.TrustedGateway{
+func makeGWLink(id, targetNodeID, authValue string) TrustedGateway {
+	return TrustedGateway{
 		ID:           id,
 		Name:         "test-gw",
 		AuthValue:    authValue,
@@ -198,7 +198,7 @@ func createResolver(
 	services []service.Service,
 	endpoints []endpoint.Endpoint,
 	nodes []node.NodeRecord,
-	gwLinks []gatewaylink.TrustedGateway,
+	gwLinks []TrustedGateway,
 	listeners []listener.Listener,
 ) *Resolver {
 	return NewResolver(Dependencies{
@@ -269,7 +269,7 @@ func TestResolvePrivateGateway(t *testing.T) {
 
 	r := createResolver(
 		[]route.Route{rt}, []service.Service{svc}, []endpoint.Endpoint{ep},
-		[]node.NodeRecord{nodeA, nodeB}, []gatewaylink.TrustedGateway{gwLink}, listeners,
+		[]node.NodeRecord{nodeA, nodeB}, []TrustedGateway{gwLink}, listeners,
 	)
 	res := r.ResolveManagedRelay("test.remote", "nd_a")
 
@@ -300,7 +300,7 @@ func TestResolvePublicGatewayWithGatewayLink(t *testing.T) {
 
 	r := createResolver(
 		[]route.Route{rt}, []service.Service{svc}, []endpoint.Endpoint{ep},
-		[]node.NodeRecord{nodeA, nodeB}, []gatewaylink.TrustedGateway{gwLink}, listeners,
+		[]node.NodeRecord{nodeA, nodeB}, []TrustedGateway{gwLink}, listeners,
 	)
 	res := r.ResolveManagedRelay("test.public", "nd_a")
 
@@ -462,7 +462,7 @@ func TestResolvePrivateGatewayWithGWLink_Pass(t *testing.T) {
 
 	r := createResolver(
 		[]route.Route{rt}, []service.Service{svc}, []endpoint.Endpoint{ep},
-		[]node.NodeRecord{nodeA, nodeB}, []gatewaylink.TrustedGateway{gwLink}, listeners,
+		[]node.NodeRecord{nodeA, nodeB}, []TrustedGateway{gwLink}, listeners,
 	)
 	res := r.ResolveManagedRelay("test.gw", "nd_a")
 
@@ -511,7 +511,7 @@ func TestResolvePublicGatewayWithGWLink_Pass(t *testing.T) {
 
 	r := createResolver(
 		[]route.Route{rt}, []service.Service{svc}, []endpoint.Endpoint{ep},
-		[]node.NodeRecord{nodeA, nodeB}, []gatewaylink.TrustedGateway{gwLink}, listeners,
+		[]node.NodeRecord{nodeA, nodeB}, []TrustedGateway{gwLink}, listeners,
 	)
 	res := r.ResolveManagedRelay("test.pubgw", "nd_a")
 

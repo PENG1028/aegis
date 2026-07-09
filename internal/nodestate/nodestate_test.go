@@ -7,7 +7,6 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"aegis/internal/core"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
@@ -406,5 +405,4 @@ func TestMustComputeHash(t *testing.T) {
 	if h == "" {
 		t.Error("expected non-empty hash")
 	}
-	_ = id.New // reference to avoid import cycle — just ensure id package compiles
 }

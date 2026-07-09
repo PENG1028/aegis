@@ -15,6 +15,7 @@ import (
 	"aegis/internal/config"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
+"aegis/internal/gateway"
 	"aegis/internal/logs"
 	"aegis/internal/project"
 	"aegis/internal/provider"
