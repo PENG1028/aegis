@@ -8,6 +8,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import ProviderConfigModal from '@/components/settings/ProviderConfigModal';
 import { providerApi, runtimeModeApi, infraApi, transparentApi, dnsApi, acmeApi } from '@/lib/api-bridge';
 import type { InfraItem } from '@/lib/api-bridge';
 import type { RuntimeModeDef, RuntimeAtom, AtomSlot, ProviderAtoms, Composition } from '@/lib/api-bridge';
@@ -705,6 +706,7 @@ function BindingMatrix({ mode, providers, onCellClick }: {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function CellDrawer({ cell, open, onClose }: { cell: EvaluatedCell | null; open: boolean; onClose: () => void }) {
+  const [configProvider, setConfigProvider] = useState<string | null>(null);
   if (!cell) return null;
   const st = STATUS_STYLES[cell.status];
 
@@ -782,9 +784,19 @@ function CellDrawer({ cell, open, onClose }: { cell: EvaluatedCell | null; open:
                 {cell.providerId === 'haproxy' ? 'Use Nginx fallback' : 'Switch Mode'}
               </Btn>
             )}
+            <Btn onClick={() => { setConfigProvider(cell.providerId); }} className="text-[10px]">
+              查看配置
+            </Btn>
           </div>
         </div>
       </div>
+      {configProvider && (
+        <ProviderConfigModal
+          providerId={configProvider}
+          providerName={configProvider}
+          onClose={() => setConfigProvider(null)}
+        />
+      )}
     </Drawer>
   );
 }
