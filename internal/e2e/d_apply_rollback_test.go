@@ -148,7 +148,7 @@ e2e-test.aegis.local {
 		SafetySvc:        safetySvc,
 		MasterKey:        masterKey,
 	})
-	workflow := apply.NewWorkflow(topoPlanner, provReg, applyRepo, cfg, logSvc)
+	workflow := apply.NewWorkflow(topoPlanner, provReg, applyRepo, cfg, logSvc, nil)
 	applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 
 	pendingState := cluster.NewPendingState(st.DB)

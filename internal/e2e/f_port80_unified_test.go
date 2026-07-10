@@ -60,7 +60,7 @@ func setupApplySvc(t *testing.T, db *sql.DB, cfg *config.Config, gwLinkRepo *gat
 		SafetySvc:        safetySvc,
 		MasterKey:        masterKey,
 	})
-	workflow := apply.NewWorkflow(topoPlanner, provReg, applyRepo, cfg, logSvc)
+	workflow := apply.NewWorkflow(topoPlanner, provReg, applyRepo, cfg, logSvc, nil)
 	applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 	applySvc.SetPendingState(cluster.NewPendingState(db))
 	return applySvc

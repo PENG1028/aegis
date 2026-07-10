@@ -194,7 +194,7 @@ func TestFullFlow_SingleNode(t *testing.T) {
 		SafetySvc:        safetySvc,
 		MasterKey:        masterKey,
 	})
-	workflow := apply.NewWorkflow(topoPlanner, provReg, applyRepo, cfg, logSvc)
+	workflow := apply.NewWorkflow(topoPlanner, provReg, applyRepo, cfg, logSvc, nil)
 	applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 
 	// Wire up pending state (used by mutation hooks to MarkPending)

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"aegis/internal/certstore"
 	"aegis/internal/config"
 	"aegis/internal/logs"
 	"aegis/internal/provider"
@@ -33,6 +34,7 @@ type Workflow struct {
 	applyRepo *Repository
 	cfg       *config.Config
 	logSvc    logs.Logger
+	certStore *certstore.Service
 	mu        sync.Mutex
 }
 
@@ -43,11 +45,13 @@ func NewWorkflow(
 	applyRepo *Repository,
 	cfg *config.Config,
 	logSvc logs.Logger,
+	certStore *certstore.Service,
 ) *Workflow {
 	return &Workflow{
 		planner:   planner,
 		registry:  registry,
 		applyRepo: applyRepo,
+		certStore: certStore,
 		cfg:       cfg,
 		logSvc:    logSvc,
 	}
@@ -215,6 +219,20 @@ func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error
 
 	result.Status = "success"
 	result.Completed = time.Now()
+
+	// Sync auto-certs into CertStore after successful apply.
+	// Caddy may have obtained new certs during reload.
+	if w.certStore != nil {
+		if n, ids, err := w.certStore.SyncAutoCerts(""); err == nil && n > 0 {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("cert_sync: imported %d auto-certs: %v", n, ids))
+		}
+	}
+	// Bind imported auto-certs to routes that have no cert_id yet.
+	if bound, err := w.planner.BindAutoCerts(); err == nil && bound > 0 {
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("cert_bind: bound %d routes to auto-certs", bound))
+	}
 
 	w.logApply(ctx, "all", "success", "")
 	return result, nil

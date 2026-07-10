@@ -134,3 +134,122 @@ func (s *Service) GetPaths(id string) (certPath, keyPath string, err error) {
 	}
 	return cert.CertPath, cert.KeyPath, nil
 }
+
+// SyncAutoCerts scans Caddy's certificate directory and imports discovered
+// certs into CertStore. Existing certs for the same domains are updated
+// if the discovered cert is newer. Returns count and IDs of imported/updated.
+func (s *Service) SyncAutoCerts(caddyDataDir string) (int, []string, error) {
+	discovered, err := DiscoverCaddyCerts(caddyDataDir)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	var certIDs []string
+	count := 0
+	for _, dc := range discovered {
+		cert, err := s.upsertAutoCert(dc)
+		if err != nil {
+			continue
+		}
+		certIDs = append(certIDs, cert.ID)
+		count++
+	}
+	return count, certIDs, nil
+}
+
+// upsertAutoCert imports one discovered auto-cert. If a cert for the same
+// domains already exists, it's updated if newer; otherwise inserted.
+func (s *Service) upsertAutoCert(dc DiscoveredCert) (*Certificate, error) {
+	var domains []string
+	json.Unmarshal([]byte(dc.Domains), &domains)
+	if len(domains) == 0 {
+		return nil, fmt.Errorf("no domains in discovered cert")
+	}
+
+	existing, _ := s.repo.FindByDomain(domains[0])
+	for _, e := range existing {
+		var ed []string
+		json.Unmarshal([]byte(e.Domains), &ed)
+		if stringSlicesEqual(domains, ed) {
+			if dc.NotAfter > e.NotAfter {
+				e.NotBefore = dc.NotBefore
+				e.NotAfter = dc.NotAfter
+				e.Issuer = dc.Issuer
+				e.UpdatedAt = time.Now()
+				if err := s.repo.Update(&e); err != nil {
+					return nil, err
+				}
+			}
+			return &e, nil
+		}
+	}
+
+	// New cert — copy files from Caddy's directory
+	certID := core.NewID("cert")
+	certPath := filepath.Join(s.certDir, certID+".crt")
+	keyPath := filepath.Join(s.certDir, certID+".key")
+
+	caddyCert, caddyKey := findCaddyFiles(dc)
+	if caddyCert == "" {
+		return nil, fmt.Errorf("caddy cert file not found")
+	}
+
+	certPEM, _ := os.ReadFile(caddyCert)
+	keyPEM, _ := os.ReadFile(caddyKey)
+	os.WriteFile(certPath, certPEM, 0600)
+	os.WriteFile(keyPath, keyPEM, 0600)
+
+	now := time.Now()
+	c := &Certificate{
+		ID:        certID,
+		Domains:   dc.Domains,
+		Issuer:    dc.Issuer,
+		NotBefore: dc.NotBefore,
+		NotAfter:  dc.NotAfter,
+		CertPath:  certPath,
+		KeyPath:   keyPath,
+		Source:    SourceGatewayAuto,
+		Note:      "Caddy 自动签发",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.repo.Create(c); err != nil {
+		os.Remove(certPath)
+		os.Remove(keyPath)
+		return nil, err
+	}
+	return c, nil
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func findCaddyFiles(dc DiscoveredCert) (certPath, keyPath string) {
+	base := "/var/lib/caddy/.local/share/caddy/certificates"
+	var domains []string
+	json.Unmarshal([]byte(dc.Domains), &domains)
+	if len(domains) == 0 {
+		return "", ""
+	}
+	domain := domains[0]
+	entries, _ := os.ReadDir(base)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		certFile := filepath.Join(base, e.Name(), domain, domain+".crt")
+		if _, err := os.Stat(certFile); err == nil {
+			return certFile, filepath.Join(base, e.Name(), domain, domain+".key")
+		}
+	}
+	return "", ""
+}

@@ -107,6 +107,15 @@ func (r *Repository) Delete(id string) error {
 	return err
 }
 
+// Update updates an existing certificate record's expiry and issuer fields.
+func (r *Repository) Update(cert *Certificate) error {
+	_, err := r.db.Exec(
+		`UPDATE certificates SET not_before=?, not_after=?, issuer=?, updated_at=? WHERE id=?`,
+		cert.NotBefore, cert.NotAfter, cert.Issuer, cert.UpdatedAt.Format(time.RFC3339), cert.ID,
+	)
+	return err
+}
+
 // matchDomain checks if pattern (which may start with "*.") covers domain.
 func matchDomain(pattern, domain string) bool {
 	if strings.HasPrefix(pattern, "*.") {

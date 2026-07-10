@@ -239,7 +239,7 @@ func main() {
 		MasterKey:        masterKey,
 		CertStore:        certStoreSvc,
 	})
-	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc)
+	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc, certStoreSvc)
 
 		applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 

@@ -11,11 +11,14 @@ import (
 // ─── Certificate handlers ───
 
 // AdminListCertificates handles GET /api/admin/v1/certificates
-// Returns ALL certificates: CertStore (manual + ACME) + Caddy auto-discovered.
+// Syncs Caddy auto-certs into CertStore, then returns ALL certificates.
 func (h *Handlers) AdminListCertificates(w http.ResponseWriter, r *http.Request) {
-	var all []map[string]interface{}
+	// Sync auto-certs into CertStore before listing
+	if h.CertStore != nil {
+		h.CertStore.SyncAutoCerts("")
+	}
 
-	// CertStore certs (manual upload + local ACME)
+	var all []map[string]interface{}
 	if h.CertStore != nil {
 		certs, _ := h.CertStore.List()
 		for _, c := range certs {
@@ -27,29 +30,11 @@ func (h *Handlers) AdminListCertificates(w http.ResponseWriter, r *http.Request)
 				"not_after":  c.NotAfter,
 				"source":     c.Source,
 				"note":       c.Note,
-				"managed":    true, // in CertStore DB
+				"managed":    true,
 				"auto_renew": c.Source == certstore.SourceGatewayAuto,
 				"created_at": c.CreatedAt,
 			})
 		}
-	}
-
-	// Caddy auto-discovered certs (not in CertStore)
-	caddyCerts, _ := certstore.DiscoverCaddyCerts("")
-	for _, dc := range caddyCerts {
-		all = append(all, map[string]interface{}{
-			"id":         "", // no DB ID
-			"domains":    dc.Domains,
-			"issuer":     dc.Issuer,
-			"not_before": dc.NotBefore,
-			"not_after":  dc.NotAfter,
-			"source":     dc.Source,
-			"note":       "Caddy 自动管理",
-			"managed":    false, // not in CertStore
-			"auto_renew": true,  // Caddy renews automatically
-			"acme_path":  dc.ACMEPath,
-			"created_at": nil,
-		})
 	}
 
 	if all == nil {

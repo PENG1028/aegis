@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"aegis/internal/certstore"
@@ -39,6 +40,46 @@ type Dependencies struct {
 	SafetySvc        *safety.Service
 	MasterKey        *secrets.MasterKey
 	CertStore        *certstore.Service // v1.9C: resolve CertID → file paths
+}
+
+// BindAutoCerts matches routes with empty cert_id to CertStore auto-certs
+// by domain, and updates the route with the cert ID. Called after Apply
+// to ensure newly imported auto-certs are linked to their routes.
+func (p *Planner) BindAutoCerts() (bound int, _ error) {
+	if p.deps.CertStore == nil || p.deps.RouteRepo == nil {
+		return 0, nil
+	}
+
+	certs, err := p.deps.CertStore.List()
+	if err != nil {
+		return 0, err
+	}
+
+	routes, err := p.deps.RouteRepo.FindActive()
+	if err != nil {
+		return 0, err
+	}
+
+	for _, rt := range routes {
+		if rt.CertID != nil && *rt.CertID != "" {
+			continue // already has a cert
+		}
+		for _, cert := range certs {
+			var domains []string
+			json.Unmarshal([]byte(cert.Domains), &domains)
+			for _, d := range domains {
+				if d == rt.Domain {
+					certID := cert.ID
+					rt.CertID = &certID
+					if err := p.deps.RouteRepo.Update(&rt); err == nil {
+						bound++
+					}
+					break
+				}
+			}
+		}
+	}
+	return bound, nil
 }
 
 // ============================================================================
