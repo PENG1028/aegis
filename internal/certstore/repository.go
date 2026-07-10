@@ -21,11 +21,11 @@ func NewRepository(db *sql.DB) *Repository {
 // Create inserts a new certificate record.
 func (r *Repository) Create(cert *Certificate) error {
 	_, err := r.db.Exec(
-		`INSERT INTO certificates (id, domains, issuer, not_before, not_after, cert_path, key_path, note, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO certificates (id, domains, issuer, not_before, not_after, cert_path, key_path, source, note, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cert.ID, cert.Domains, cert.Issuer, cert.NotBefore, cert.NotAfter,
-		cert.CertPath, cert.KeyPath, cert.Note,
-		cert.CreatedAt.Format(time.RFC3339), cert.UpdatedAt.Format(time.RFC3339),
+		cert.CertPath, cert.KeyPath, cert.Source,
+		cert.Note, cert.CreatedAt.Format(time.RFC3339), cert.UpdatedAt.Format(time.RFC3339),
 	)
 	return err
 }
@@ -33,7 +33,7 @@ func (r *Repository) Create(cert *Certificate) error {
 // FindAll returns all certificates ordered by creation time descending.
 func (r *Repository) FindAll() ([]Certificate, error) {
 	rows, err := r.db.Query(
-		`SELECT id, domains, issuer, not_before, not_after, cert_path, key_path, note, created_at, updated_at
+		`SELECT id, domains, issuer, not_before, not_after, cert_path, key_path, source, note, created_at, updated_at
 		 FROM certificates ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -46,7 +46,7 @@ func (r *Repository) FindAll() ([]Certificate, error) {
 		var c Certificate
 		var ca, ua string
 		if err := rows.Scan(&c.ID, &c.Domains, &c.Issuer, &c.NotBefore, &c.NotAfter,
-			&c.CertPath, &c.KeyPath, &c.Note, &ca, &ua); err != nil {
+			&c.CertPath, &c.KeyPath, &c.Source, &c.Note, &ca, &ua); err != nil {
 			return nil, fmt.Errorf("scan certificate: %w", err)
 		}
 		c.CreatedAt, _ = time.Parse(time.RFC3339, ca)
@@ -64,10 +64,10 @@ func (r *Repository) FindByID(id string) (*Certificate, error) {
 	var c Certificate
 	var ca, ua string
 	err := r.db.QueryRow(
-		`SELECT id, domains, issuer, not_before, not_after, cert_path, key_path, note, created_at, updated_at
+		`SELECT id, domains, issuer, not_before, not_after, cert_path, key_path, source, note, created_at, updated_at
 		 FROM certificates WHERE id = ?`, id,
 	).Scan(&c.ID, &c.Domains, &c.Issuer, &c.NotBefore, &c.NotAfter,
-		&c.CertPath, &c.KeyPath, &c.Note, &ca, &ua)
+		&c.CertPath, &c.KeyPath, &c.Source, &c.Note, &ca, &ua)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

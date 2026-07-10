@@ -379,6 +379,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// v1.9C Certificate store — user-uploaded TLS certificates
 	if svcs.CertStore != nil {
 		mux.HandleFunc("GET /api/admin/v1/certificates", h.AdminListCertificates)
+			mux.HandleFunc("GET /api/admin/v1/certificates/auto", h.AdminListAutoCertificates)
 		mux.HandleFunc("POST /api/admin/v1/certificates", h.AdminUploadCertificate)
 		mux.HandleFunc("DELETE /api/admin/v1/certificates/{id}", h.AdminDeleteCertificate)
 		// ACME endpoints

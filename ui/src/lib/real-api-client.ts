@@ -1784,11 +1784,15 @@ export interface CertificateItem {
   issuer: string;
   not_before: string;
   not_after: string;
-  cert_path: string;
-  key_path: string;
-  note: string;
-  created_at: string;
-  updated_at: string;
+  cert_path?: string;
+  key_path?: string;
+  source: string;       // gateway_auto | local_acme | manual_upload | external
+  managed: boolean;     // in CertStore DB vs auto-discovered
+  auto_renew: boolean;  // provider auto-renews
+  acme_path?: string;
+  note?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export const certApi = {

@@ -71,7 +71,8 @@ func (m *ACMEManager) Obtain(ctx context.Context, req ObtainRequest) (certID str
 
 	cert, err := m.CertStore.Upload(certstore.UploadRequest{
 		CertPEM: certPEM, KeyPEM: keyPEM,
-		Note: fmt.Sprintf("ACME auto-issued via certbot for %s", strings.Join(req.Domains, ", ")),
+		Source: certstore.SourceLocalACME,
+		Note:   fmt.Sprintf("ACME auto-issued via certbot for %s", strings.Join(req.Domains, ", ")),
 	})
 	if err != nil {
 		return "", fmt.Errorf("store certificate: %w", err)

@@ -11,15 +11,63 @@ import (
 // ─── Certificate handlers ───
 
 // AdminListCertificates handles GET /api/admin/v1/certificates
+// Returns ALL certificates: CertStore (manual + ACME) + Caddy auto-discovered.
 func (h *Handlers) AdminListCertificates(w http.ResponseWriter, r *http.Request) {
-	if h.CertStore == nil {
-		writeError(w, http.StatusNotImplemented, "certificate store not available")
-		return
+	var all []map[string]interface{}
+
+	// CertStore certs (manual upload + local ACME)
+	if h.CertStore != nil {
+		certs, _ := h.CertStore.List()
+		for _, c := range certs {
+			all = append(all, map[string]interface{}{
+				"id":         c.ID,
+				"domains":    c.Domains,
+				"issuer":     c.Issuer,
+				"not_before": c.NotBefore,
+				"not_after":  c.NotAfter,
+				"source":     c.Source,
+				"note":       c.Note,
+				"managed":    true, // in CertStore DB
+				"auto_renew": c.Source == certstore.SourceGatewayAuto,
+				"created_at": c.CreatedAt,
+			})
+		}
 	}
-	certs, err := h.CertStore.List()
+
+	// Caddy auto-discovered certs (not in CertStore)
+	caddyCerts, _ := certstore.DiscoverCaddyCerts("")
+	for _, dc := range caddyCerts {
+		all = append(all, map[string]interface{}{
+			"id":         "", // no DB ID
+			"domains":    dc.Domains,
+			"issuer":     dc.Issuer,
+			"not_before": dc.NotBefore,
+			"not_after":  dc.NotAfter,
+			"source":     dc.Source,
+			"note":       "Caddy 自动管理",
+			"managed":    false, // not in CertStore
+			"auto_renew": true,  // Caddy renews automatically
+			"acme_path":  dc.ACMEPath,
+			"created_at": nil,
+		})
+	}
+
+	if all == nil {
+		all = []map[string]interface{}{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"certificates": all, "count": len(all)})
+}
+
+// AdminListAutoCertificates handles GET /api/admin/v1/certificates/auto
+// Returns only provider auto-issued certificates discovered from Caddy's cert store.
+func (h *Handlers) AdminListAutoCertificates(w http.ResponseWriter, r *http.Request) {
+	certs, err := certstore.DiscoverCaddyCerts("")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if certs == nil {
+		certs = []certstore.DiscoveredCert{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"certificates": certs, "count": len(certs)})
 }

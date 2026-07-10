@@ -217,6 +217,11 @@ func AllMigrations() []Migration {
 			Name:    "serviceauth_instance_heartbeat",
 			UpSQL:   migration040,
 		},
+		{
+			Version: "041",
+			Name:    "certificate_source",
+			UpSQL:   migration041,
+		},
 	}
 }
 
@@ -1197,4 +1202,10 @@ CREATE INDEX IF NOT EXISTS idx_svc_auth_last_seen ON svc_auth_services(last_seen
 const migration040 = `
 ALTER TABLE svc_auth_services ADD COLUMN instance_id TEXT NOT NULL DEFAULT "";
 CREATE INDEX IF NOT EXISTS idx_svc_auth_instance ON svc_auth_services(name, instance_id);
+`
+
+// migration041 adds source column to certificates for tracking cert origin.
+const migration041 = `
+ALTER TABLE certificates ADD COLUMN source TEXT NOT NULL DEFAULT 'manual_upload';
+CREATE INDEX IF NOT EXISTS idx_certificates_source ON certificates(source);
 `

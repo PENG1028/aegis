@@ -25,6 +25,7 @@ func NewService(repo *Repository, certDir string) *Service {
 type UploadRequest struct {
 	CertPEM []byte `json:"cert_pem"` // raw PEM certificate
 	KeyPEM  []byte `json:"key_pem"`  // raw PEM private key
+	Source  string `json:"source"`   // override source; defaults to manual_upload
 	Note    string `json:"note,omitempty"`
 }
 
@@ -67,6 +68,11 @@ func (s *Service) Upload(req UploadRequest) (*Certificate, error) {
 		return nil, fmt.Errorf("write key file: %w", err)
 	}
 
+	source := req.Source
+	if source == "" {
+		source = SourceManualUpload
+	}
+
 	now := time.Now()
 	c := &Certificate{
 		ID:        certID,
@@ -76,6 +82,7 @@ func (s *Service) Upload(req UploadRequest) (*Certificate, error) {
 		NotAfter:  cert.NotAfter.Format(time.RFC3339),
 		CertPath:  certPath,
 		KeyPath:   keyPath,
+		Source:    source,
 		Note:      req.Note,
 		CreatedAt: now,
 		UpdatedAt: now,

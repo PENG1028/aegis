@@ -27,10 +27,19 @@ type Certificate struct {
 	NotAfter  string    `json:"not_after"`  // RFC3339
 	CertPath  string    `json:"cert_path"`  // filesystem path to PEM certificate
 	KeyPath   string    `json:"key_path"`   // filesystem path to PEM private key
+	Source    string    `json:"source"`     // gateway_auto | local_acme | manual_upload | external
 	Note      string    `json:"note,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// Certificate source constants.
+const (
+	SourceGatewayAuto  = "gateway_auto"  // auto-issued by provider (Caddy Let's Encrypt)
+	SourceLocalACME    = "local_acme"    // obtained via Aegis certbot ACME
+	SourceManualUpload = "manual_upload" // user uploaded PEM
+	SourceExternal     = "external"      // external channel (Cloudflare, DigiCert, etc.)
+)
 
 // ValidatePEM checks that the provided bytes are valid PEM-encoded cert + key.
 // Returns the parsed x509 certificate (for domain/expiry extraction) or an error.

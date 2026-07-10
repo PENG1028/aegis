@@ -1,11 +1,31 @@
 // ─── TLS 证书管理 (v1.9C) ───
-// 集中证书中心：上传 PEM 证书、查看列表、过期提醒、删除。
+// 统一证书中心：Caddy 自动证书 + 手动上传 + ACME 申请。
+// 每条证书标注来源渠道和续期方式。
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { certApi, acmeApi, type CertificateItem } from '@/lib/api-bridge';
 import { PageHeader, Card, Btn, useToast, LoadingState, ErrorBanner, Modal } from '@/components/shared';
 import { cn } from '@/lib/utils';
+
+// ─── Source labels & colors ───
+
+const SOURCE_META: Record<string, { label: string; color: string; desc: string }> = {
+  gateway_auto:   { label: '网关自动',  color: 'bg-purple-500/10 text-purple-400 border-purple-500/20', desc: 'Caddy 自动向 Let\'s Encrypt 签发，到期自动续期' },
+  local_acme:     { label: '本地 ACME', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20',   desc: '通过 Aegis certbot 申请，需手动续期' },
+  manual_upload:  { label: '手动导入',  color: 'bg-a-border/10 text-a-muted border-a-border/20',    desc: '用户上传 PEM，需手动续期' },
+  external:       { label: '外部渠道',  color: 'bg-[#e8b830]/10 text-[#e8b830] border-[#e8b830]/20', desc: '外部渠道获取（Cloudflare/DigiCert 等）' },
+};
+
+function sourceBadge(source: string) {
+  const m = SOURCE_META[source] || { label: source, color: 'bg-a-border/10 text-a-muted border-a-border/20' };
+  return (
+    <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border whitespace-nowrap', m.color)}
+      title={m.desc}>
+      {m.label}
+    </span>
+  );
+}
 
 // ─── Helpers ───
 
@@ -29,11 +49,14 @@ function expiryStatus(notAfter: string): { label: string; date: string; accent: 
   return { label: '有效', date: dateStr, accent: true, warn: false, danger: false };
 }
 
+type Tab = 'all' | 'auto' | 'manual';
+
 // ══════════════════════════════════════════════════════════════════
 
 export default function Certificates() {
   const toast = useToast();
   const qc = useQueryClient();
+  const [tab, setTab] = useState<Tab>('all');
   const [showUpload, setShowUpload] = useState(false);
   const [showACME, setShowACME] = useState(false);
   const [acmeDomain, setAcmeDomain] = useState('');
@@ -53,6 +76,13 @@ export default function Certificates() {
     refetchInterval: 60_000,
   });
   const certs: CertificateItem[] = (data as any)?.certificates || [];
+
+  // ── Filter by tab ──
+  const filtered = useMemo(() => {
+    if (tab === 'auto') return certs.filter(c => c.source === 'gateway_auto');
+    if (tab === 'manual') return certs.filter(c => c.source !== 'gateway_auto');
+    return certs;
+  }, [certs, tab]);
 
   const uploadMut = useMutation({
     mutationFn: () => certApi.uploadText(certPEM, keyPEM, note),
@@ -79,6 +109,8 @@ export default function Certificates() {
   const expired = certs.filter(c => expiryStatus(c.not_after).danger).length;
   const expiringSoon = certs.filter(c => expiryStatus(c.not_after).warn).length;
   const valid = certs.filter(c => expiryStatus(c.not_after).accent && !expiryStatus(c.not_after).warn && !expiryStatus(c.not_after).danger).length;
+  const autoCount = certs.filter(c => c.source === 'gateway_auto').length;
+  const manualCount = certs.filter(c => c.source !== 'gateway_auto').length;
 
   const acmeMut = useMutation({
     mutationFn: (domain: string) => acmeApi.obtain([domain]),
@@ -94,7 +126,7 @@ export default function Certificates() {
     <div className="p-6 space-y-5">
       <PageHeader
         title="TLS 证书"
-        subtitle="集中管理 TLS 证书，手动上传或 ACME 自动签发"
+        subtitle="统一管理所有 TLS 证书 — 自动签发、手动导入、ACME 申请"
         actions={
           <div className="flex items-center gap-2">
             <span className={cn('flex items-center gap-1 text-[10px]', acmeAvailable ? 'text-[#4cd964]' : 'text-a-muted')}>
@@ -107,8 +139,24 @@ export default function Certificates() {
         }
       />
 
+      {/* ── Tabs ── */}
+      <div className="flex gap-1 bg-a-surface border border-a-border/30 rounded-a-sm p-0.5 w-fit">
+        {([
+          { key: 'all' as Tab, label: '全部', count: certs.length },
+          { key: 'auto' as Tab, label: '网关自动', count: autoCount },
+          { key: 'manual' as Tab, label: '手动管理', count: manualCount },
+        ]).map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={cn('px-3 py-1 rounded-a-sm text-xs font-medium transition-colors',
+              tab === t.key ? 'bg-a-bg text-a-fg shadow-sm' : 'text-a-muted hover:text-a-fg')}>
+            {t.label} {t.count > 0 && <span className="text-[10px] opacity-60">({t.count})</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Stats ── */}
       {certs.length > 0 && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-5 gap-3">
           <div className="bg-a-surface border border-a-border/30 rounded-a-sm px-3 py-2 text-center">
             <div className="text-lg font-bold text-a-fg">{certs.length}</div>
             <div className="text-[10px] text-a-muted">总数</div>
@@ -125,21 +173,32 @@ export default function Certificates() {
             <div className={cn('text-lg font-bold', expired > 0 ? 'text-[#ff5c72]' : 'text-a-muted')}>{expired}</div>
             <div className="text-[10px] text-a-muted">已过期</div>
           </div>
+          <div className="bg-a-surface border border-a-border/30 rounded-a-sm px-3 py-2 text-center">
+            <div className="text-lg font-bold text-purple-400">{autoCount}</div>
+            <div className="text-[10px] text-a-muted">自动续期</div>
+          </div>
         </div>
       )}
 
-      {isLoading ? <LoadingState /> : error ? <ErrorBanner message="加载失败" onRetry={refetch} /> : certs.length === 0 ? (
+      {/* ── Certificate list ── */}
+      {isLoading ? <LoadingState /> : error ? <ErrorBanner message="加载失败" onRetry={refetch} /> : filtered.length === 0 ? (
         <Card>
           <div className="py-10 text-center text-a-muted">
             <p className="text-lg mb-2">🔐</p>
-            <p className="text-sm">暂无证书</p>
-            <p className="text-xs mt-1 opacity-60 mb-4">上传 PEM 证书和私钥，或通过 ACME 自动签发</p>
-            <div className="flex items-center justify-center gap-3">
-              <Btn primary onClick={() => setShowUpload(true)}>上传证书</Btn>
-              {acmeAvailable ? <Btn onClick={() => setShowACME(true)}>🔑 ACME 申请</Btn> : (
-                <span className="text-[10px] text-a-muted">{acmeMsg}</span>
-              )}
-            </div>
+            <p className="text-sm">{tab === 'auto' ? '暂无网关自动签发的证书' : tab === 'manual' ? '暂无手动管理的证书' : '暂无证书'}</p>
+            <p className="text-xs mt-1 opacity-60 mb-4">
+              {tab === 'auto' ? '为域名创建 HTTPS 路由后，Caddy 会自动签发 Let\'s Encrypt 证书' :
+               tab === 'manual' ? '上传 PEM 证书和私钥，或通过 ACME 自动签发' :
+               '上传 PEM 证书和私钥，或通过 ACME 自动签发'}
+            </p>
+            {tab !== 'auto' && (
+              <div className="flex items-center justify-center gap-3">
+                <Btn primary onClick={() => setShowUpload(true)}>上传证书</Btn>
+                {acmeAvailable ? <Btn onClick={() => setShowACME(true)}>🔑 ACME 申请</Btn> : (
+                  <span className="text-[10px] text-a-muted">{acmeMsg}</span>
+                )}
+              </div>
+            )}
           </div>
         </Card>
       ) : (
@@ -149,19 +208,23 @@ export default function Certificates() {
               <thead>
                 <tr className="border-b border-a-border/30 text-a-muted text-left">
                   <th className="py-1.5 pr-2 font-medium">域名</th>
+                  <th className="py-1.5 px-2 font-medium">来源</th>
                   <th className="py-1.5 px-2 font-medium">签发者</th>
                   <th className="py-1.5 px-2 font-medium text-center">到期</th>
-                  <th className="py-1.5 px-2 font-medium">备注</th>
+                  <th className="py-1.5 px-2 font-medium">续期</th>
                   <th className="py-1.5 pl-2 font-medium w-16"></th>
                 </tr>
               </thead>
               <tbody>
-                {certs.map((c) => {
+                {filtered.map((c) => {
                   const es = expiryStatus(c.not_after);
                   return (
-                    <tr key={c.id} className="border-b border-a-border/20 hover:bg-a-border/10 transition-colors">
+                    <tr key={c.id || parseDomains(c)} className="border-b border-a-border/20 hover:bg-a-border/10 transition-colors">
                       <td className="py-1.5 pr-2 font-mono text-a-fg text-[11px]">{parseDomains(c)}</td>
-                      <td className="py-1.5 px-2 font-mono text-[10px] text-a-muted max-w-[160px] truncate" title={c.issuer}>{c.issuer.split(',')[0]?.replace('CN=', '') || c.issuer}</td>
+                      <td className="py-1.5 px-2">{sourceBadge(c.source)}</td>
+                      <td className="py-1.5 px-2 font-mono text-[10px] text-a-muted max-w-[160px] truncate" title={c.issuer}>
+                        {c.issuer.split(',')[0]?.replace('CN=', '') || c.issuer}
+                      </td>
                       <td className="py-1.5 px-2 text-center">
                         <span className={cn(
                           'px-1.5 py-0.5 rounded text-[10px] font-medium',
@@ -170,9 +233,20 @@ export default function Certificates() {
                           'bg-[#4cd964]/10 text-[#4cd964]',
                         )} title={`到期: ${es.date}`}>{es.label}</span>
                       </td>
-                      <td className="py-1.5 px-2 text-a-muted text-[11px]">{c.note || '—'}</td>
+                      <td className="py-1.5 px-2">
+                        {c.auto_renew ? (
+                          <span className="text-[10px] text-purple-400" title="Provider 自动续期，无需干预">🔄 自动</span>
+                        ) : (
+                          <span className="text-[10px] text-a-muted">手动</span>
+                        )}
+                      </td>
                       <td className="py-1.5 pl-2 text-right">
-                        <Btn onClick={() => setDeleteId(c.id)} className="text-[9px]" danger>删除</Btn>
+                        {c.managed && !c.auto_renew && (
+                          <Btn onClick={() => setDeleteId(c.id)} className="text-[9px]" danger>删除</Btn>
+                        )}
+                        {c.auto_renew && (
+                          <span className="text-[9px] text-a-muted/50" title="网关自动管理的证书，由 Provider 控制">网关管理</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -211,9 +285,19 @@ export default function Certificates() {
                 className="w-full bg-a-bg border border-a-border rounded-a-sm px-3 py-2 text-a-fg text-xs font-mono resize-none outline-none focus:border-a-accent/50" />
             </div>
             <div>
-              <label className="text-a-muted block mb-1 font-medium">备注（可选）</label>
-              <input value={note} onChange={e => setNote(e.target.value)} placeholder="例如：Cloudflare Origin CA / DigiCert 购买"
-                className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1 text-a-fg text-xs" />
+              <label className="text-a-muted block mb-1 font-medium">渠道（可选）</label>
+              <select value={note.startsWith('CF:') ? 'cloudflare' : note.startsWith('DC:') ? 'digicert' : 'other'}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === 'cloudflare') setNote('CF: Cloudflare Origin CA');
+                  else if (v === 'digicert') setNote('DC: DigiCert');
+                  else setNote('');
+                }}
+                className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1 text-a-fg text-xs">
+                <option value="other">通用 / 不标注</option>
+                <option value="cloudflare">Cloudflare Origin CA</option>
+                <option value="digicert">DigiCert</option>
+              </select>
             </div>
             <p className="text-[10px] text-a-muted">直接粘贴 PEM 文本内容。导入后可在创建路由时选择此证书替代 Let's Encrypt 自动签发。</p>
           </div>
