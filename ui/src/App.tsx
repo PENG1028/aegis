@@ -32,6 +32,7 @@ import GatewayLinks from '@/pages/fabric/GatewayLinks';
 import Listeners from '@/pages/fabric/Listeners';
 import Topology from '@/pages/fabric/Topology';
 import RoutingTable from '@/pages/fabric/RoutingTable';
+import InfraManagement from '@/pages/fabric/InfraManagement';
 
 // ── Service Auth ──
 import AuthServices from '@/pages/fabric/AuthServices';
@@ -151,6 +152,7 @@ export default function App() {
                   <Route path="listeners" element={<Listeners />} />
                   <Route path="topology" element={<Topology />} />
                   <Route path="routing-table" element={<RoutingTable />} />
+                  <Route path="infra" element={<InfraManagement />} />
                 </Route>
 
                 {/* ── Workspace 3b: Service Auth / 服务认证 ── */}

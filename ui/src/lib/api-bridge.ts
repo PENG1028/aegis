@@ -38,6 +38,7 @@ export {
   gatewayLinkApi,
   nodeApi,
   providerApi,
+  infraApi,
   exposureApi,
   adminApi,
   dnsApi,
@@ -53,7 +54,6 @@ export {
   distnodeApi,
   certApi,
   acmeApi,
-  infraApi,
 } from './real-api-client';
 export type { InfraItem } from './real-api-client';
 export type { CertificateItem } from './real-api-client';

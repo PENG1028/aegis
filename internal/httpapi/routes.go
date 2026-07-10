@@ -391,6 +391,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("POST /api/admin/v1/acme/obtain", h.AdminACMEObtain)
 		mux.HandleFunc("GET /api/admin/v1/acme/status", h.AdminACMEStatus)
 		mux.HandleFunc("GET /api/admin/v1/infra/status", h.AdminInfraStatus)
+		mux.HandleFunc("POST /api/admin/v1/infra/{name}/install", h.InfraInstall)
+		mux.HandleFunc("DELETE /api/admin/v1/infra/{name}", h.InfraUninstall)
 	}
 
 	// v1.8J Embedded UI — catch-all for SPA routes not matching any API path.
