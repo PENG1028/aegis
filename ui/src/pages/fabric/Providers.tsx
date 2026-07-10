@@ -49,6 +49,8 @@ interface EvaluatedCell {
   atom: RuntimeAtom;
   problem?: string;
   impact?: string;
+  providerInstalled?: boolean;
+  providerRunning?: boolean;
 }
 
 function evaluateAtomSlots(
@@ -62,29 +64,35 @@ function evaluateAtomSlots(
     providerId,
     providerName: provider?.name || providerId,
     atom,
+    providerInstalled: provider?.installed || false,
+    providerRunning: provider?.running || false,
   };
 
   if (!slots || slots.length === 0) {
     return { ...base, status: 'na', problem: undefined, impact: undefined };
   }
 
-  const installed = provider?.installed && provider?.running;
+  const isInstalled = provider?.installed || false;
+  const isRunning = provider?.running || false;
+  const installed = isInstalled && isRunning;
   const hasRequired = slots.some(s => s.required);
 
-  if (!installed) {
+  if (!isInstalled || !isRunning) {
     if (!hasRequired) {
+      const reason = !isInstalled ? '未安装（可选原子）' : '未启动（可选原子）';
       return {
         ...base,
         status: 'optional',
-        problem: `${provider?.name || providerId} 未安装（可选原子）`,
+        problem: `${provider?.name || providerId} ${reason}`,
         impact: `可选能力 ${atom.label} 不可用，不影响核心功能`,
       };
     }
     const name = provider?.name || providerId;
+    const reason = !isInstalled ? '未安装' : '未启动';
     return {
       ...base,
       status: 'missing',
-      problem: `${name} 未安装`,
+      problem: `${name} ${reason}`,
       impact: `${atom.label} 无法提供，依赖此原子的流量受阻`,
     };
   }
@@ -756,9 +764,15 @@ function CellDrawer({ cell, open, onClose }: { cell: EvaluatedCell | null; open:
           <span className="text-[10px] text-a-muted uppercase tracking-wider block mb-2">Actions</span>
           <div className="flex flex-wrap gap-2">
             {cell.status === 'missing' && cell.providerId === 'haproxy' && (
-              <Btn primary onClick={() => { providerApi.install('haproxy').then(() => onClose()).catch(() => {}); }} className="text-[10px]">
-                Install HAProxy
-              </Btn>
+              cell.providerInstalled ? (
+                <Btn primary onClick={() => { providerApi.install('haproxy').then(() => onClose()).catch(() => {}); }} className="text-[10px]">
+                  Start HAProxy
+                </Btn>
+              ) : (
+                <Btn primary onClick={() => { providerApi.install('haproxy').then(() => onClose()).catch(() => {}); }} className="text-[10px]">
+                  Install HAProxy
+                </Btn>
+              )
             )}
             {cell.status === 'conflict' && (
               <Btn onClick={() => {}} className="text-[10px]">Resolve Conflict</Btn>
