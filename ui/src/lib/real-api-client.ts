@@ -1155,7 +1155,7 @@ export async function updateSettings(data: Record<string, any>): Promise<Record<
 }
 
 export async function fetchSettings(): Promise<Record<string, any>> {
-  const settings = await get<any>('/api/settings');
+  const settings = await get<any>('/api/admin/v1/settings');
   return settings;
 }
 
