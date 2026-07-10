@@ -87,6 +87,20 @@ func (p *HAProxyProvider) State() ProviderState {
 
 	// Port allocations now come from RuntimeMode (the single source of truth).
 	// HAProxy serves :443 in EdgeMux mode; in Legacy mode it may not be running at all.
+		// Ready check: can start right now?
+		if !state.Running {
+			state.Ready = p.canStart()
+			if !state.Ready {
+				for _, iss := range p.startupIssues() {
+					state.Issues = append(state.Issues, Issue{
+						Code: iss.code, Message: iss.message, Detail: iss.detail,
+					})
+				}
+			}
+		} else {
+			state.Ready = true
+		}
+
 
 	return state
 }
@@ -286,4 +300,36 @@ func (p *HAProxyProvider) GetCurrentConfig() (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+type haIssue struct{ code, message, detail string }
+
+func (p *HAProxyProvider) canStart() bool { return len(p.startupIssues()) == 0 }
+
+func (p *HAProxyProvider) startupIssues() []haIssue {
+	var issues []haIssue
+	if p.configPath != "" {
+		if _, err := os.Stat(p.configPath); os.IsNotExist(err) {
+			issues = append(issues, haIssue{
+				code: "config_missing", message: "配置文件不存在",
+				detail: p.configPath,
+			})
+		} else if out, err := exec.Command(p.binaryPath, "-c", "-f", p.configPath).CombinedOutput(); err != nil {
+			issues = append(issues, haIssue{
+				code: "config_invalid", message: "配置文件语法错误",
+				detail: fmt.Sprintf("%v: %s", err, string(out)),
+			})
+		}
+	}
+	out, err := exec.Command("ss", "-tlnp", "sport", "=:443").CombinedOutput()
+	if err == nil {
+		line := string(out)
+		if strings.Contains(line, ":443") && !strings.Contains(line, "haproxy") {
+			issues = append(issues, haIssue{
+				code: "port_conflict", message: "端口 :443 已被占用，需切换到 EdgeMux 模式",
+				detail: strings.TrimSpace(line),
+			})
+		}
+	}
+	return issues
 }

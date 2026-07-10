@@ -24,6 +24,8 @@ interface MiddlewareItem {
   hasService: boolean;
   canInstall: boolean;
   canUninstall: boolean;
+  ready: boolean;
+  issues: Array<{ code: string; message: string; detail: string }>;
 }
 
 export default function InfraManagement() {
@@ -67,6 +69,8 @@ export default function InfraManagement() {
         hasService: true,
         canInstall: !p.installed && p.id !== 'caddy',
         canUninstall: p.installed && p.id !== 'caddy',
+        ready: p.ready || false,
+        issues: p.issues || [],
       });
     }
 
@@ -88,6 +92,8 @@ export default function InfraManagement() {
         hasService: false,
         canInstall: !inf.installed,
         canUninstall: inf.installed,
+        ready: inf.available || false,
+        issues: [],
       });
     }
 
@@ -115,10 +121,12 @@ export default function InfraManagement() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.status === 'failed') throw data;
+      return data;
     },
     onSuccess: () => { qc.invalidateQueries(); toast('操作成功'); },
-    onError: (e: any) => toast(e.message || '失败', 'error'),
+    onError: (e: any) => { toast(e.issues?.[0]?.message || e.error || e.message || '失败', 'error'); },
   });
 
   const uninstallMut = useMutation({
@@ -173,6 +181,14 @@ export default function InfraManagement() {
                        item.status === 'missing' ? '未安装' : item.status}
                     </span>
                     {item.message && <span className="text-[10px] text-a-muted ml-1.5">{item.message}</span>}
+                    {item.ready && item.installed && !item.running && (
+                      <span className="text-[9px] text-[#4cd964] ml-1">(可启动)</span>
+                    )}
+                    {item.issues && item.issues.length > 0 && item.issues.map((iss: any, i: number) => (
+                      <span key={i} className="text-[9px] text-[#e8b830] block mt-0.5" title={iss.detail}>
+                        ⚠ {iss.message}
+                      </span>
+                    ))}
                   </td>
                   <td className="py-2 px-3 font-mono text-[10px] text-a-muted max-w-[140px] truncate">{item.version}</td>
                   <td className="py-2 px-3 font-mono text-[10px] text-a-muted max-w-[160px] truncate">{item.path}</td>

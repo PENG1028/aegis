@@ -82,6 +82,7 @@ func (p *CaddyProvider) State() ProviderState {
 	state.Ports = []PortBinding{
 		{Port: 80, Owner: "caddy", Protocol: "tcp", Purpose: "http", Status: "active"},
 	}
+	state.Ready = state.Installed && state.Running
 
 	return state
 }

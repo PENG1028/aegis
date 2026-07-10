@@ -48,6 +48,14 @@ type PortBinding struct {
 // ProviderState — the single shared runtime snapshot across all 3 dimensions
 // ============================================================================
 
+// Issue describes why a provider cannot start or has a problem.
+// Provider-agnostic — codes are generic, messages come from the provider itself.
+type Issue struct {
+	Code    string `json:"code"`    // "port_conflict" | "config_invalid" | "binary_missing" | "service_error"
+	Message string `json:"message"` // human-readable
+	Detail  string `json:"detail"`  // raw error from systemctl / validator
+}
+
 // ProviderState is a point-in-time snapshot of a Provider's identity, health,
 // and capabilities. Dimension 3 (lifecycle) updates it after install/start/stop
 // operations. Dimensions 1 and 2 read it to make rendering and planning decisions.
@@ -59,6 +67,10 @@ type ProviderState struct {
 
 	// Status — derived from installed + running + diagnostic
 	Status string `json:"status"` // "ready" | "degraded" | "unavailable"
+
+	// Ready — true if the provider can be started right now (config valid, ports free)
+	Ready  bool    `json:"ready"`
+	Issues []Issue `json:"issues,omitempty"` // why not ready, or last start failure
 
 	// Installation status (dimension 3 populates these)
 	Installed  bool   `json:"installed"`
