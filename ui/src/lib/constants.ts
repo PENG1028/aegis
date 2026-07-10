@@ -66,6 +66,7 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   settings: [
     { path: '/settings', label: '面板' },
     { path: '/settings/dns', label: 'DNS' },
+    { path: '/settings/tls', label: 'TLS 证书' },
     { path: '/settings/advanced', label: '高级' },
   ],
 };

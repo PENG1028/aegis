@@ -22,9 +22,16 @@ import EntryPointDetail from '@/pages/exposure/EntryPointDetail';
 
 // ── Fabric ──
 import Providers from '@/pages/fabric/Providers';
+import ProvidersDetail from '@/pages/fabric/ProvidersDetail';
 import EgressGateway from '@/pages/fabric/EgressGateway';
 import ModeSwitch from '@/pages/fabric/ModeSwitch';
 import GatewayServicePanel from '@/pages/fabric/GatewayServicePanel';
+import Gateways from '@/pages/fabric/Gateways';
+import GatewayDetail from '@/pages/fabric/GatewayDetail';
+import GatewayLinks from '@/pages/fabric/GatewayLinks';
+import Listeners from '@/pages/fabric/Listeners';
+import Topology from '@/pages/fabric/Topology';
+import RoutingTable from '@/pages/fabric/RoutingTable';
 
 // ── Service Auth ──
 import AuthServices from '@/pages/fabric/AuthServices';
@@ -62,6 +69,7 @@ import Certificates from '@/pages/access/Certificates';
 // ── Settings ──
 import PanelSettings from '@/pages/settings/Panel';
 import DnsSettings from '@/pages/settings/DnsSettings';
+import TlsSettings from '@/pages/settings/TlsSettings';
 import AdvancedSettings from '@/pages/settings/Advanced';
 
 // ── Legacy ──
@@ -126,14 +134,22 @@ export default function App() {
                   <Route index element={<EntryList />} />
                   <Route path="new" element={<NewEntry />} />
                   <Route path="entry/:entryId" element={<EntryPointDetail />} />
+                  <Route path="service/:serviceId" element={<Navigate to="/exposure" replace />} />
                 </Route>
 
                 {/* ── Workspace 3: Fabric / 网关网络 ── */}
                 <Route path="/fabric" element={<OutletLayout />}>
                   <Route index element={<Providers />} />
+                  <Route path="provider/:providerId" element={<ProvidersDetail />} />
                   <Route path="egress" element={<EgressGateway />} />
                   <Route path="mode" element={<ModeSwitch />} />
                   <Route path="service" element={<GatewayServicePanel />} />
+                  <Route path="gateways" element={<Gateways />} />
+                  <Route path="gateway/:gatewayId" element={<GatewayDetail />} />
+                  <Route path="links" element={<GatewayLinks />} />
+                  <Route path="listeners" element={<Listeners />} />
+                  <Route path="topology" element={<Topology />} />
+                  <Route path="routing-table" element={<RoutingTable />} />
                 </Route>
 
                 {/* ── Workspace 3b: Service Auth / 服务认证 ── */}
@@ -185,6 +201,7 @@ export default function App() {
                 <Route path="/settings" element={<OutletLayout />}>
                   <Route index element={<PanelSettings />} />
                   <Route path="dns" element={<DnsSettings />} />
+                  <Route path="tls" element={<TlsSettings />} />
                   <Route path="advanced" element={<AdvancedSettings />} />
                 </Route>
 

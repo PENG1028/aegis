@@ -1,7 +1,7 @@
 // ─── New Entry — create domain/port mapping ───
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { runtimeModeApi, exposureApi, nodeApi, certApi } from '@/lib/api-bridge';
 import type { Composition, CertificateItem } from '@/lib/api-bridge';
 import { Btn, useToast } from '@/components/shared';
@@ -212,7 +212,7 @@ export default function NewEntry() {
             {certMode === 'manual' && certs.length === 0 && (
               <div className="mt-1.5 text-[10px] text-a-muted bg-a-border/5 border border-a-border/20 rounded-a-sm px-2 py-1.5">
                 暂无可用证书 ·
-                <a href="/access/certificates" className="text-a-accent hover:underline ml-0.5">前往证书管理 →</a>
+                <Link to="/access/certificates" className="text-a-accent hover:underline ml-0.5">前往证书管理 →</Link>
               </div>
             )}
           </div>

@@ -12,6 +12,7 @@
 // See internal/httpapi/handlers/deploy_node.go for the matching handler.
 
 import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, PageHeader, Btn, useToast, LoadingState } from '@/components/shared';
 import Input from '@/components/ui/Input';
 import { adminApi } from '@/lib/api-bridge';
@@ -253,7 +254,7 @@ export default function DeployNode() {
                 <span className="w-5 h-5 rounded-full bg-[#4cd964]/20 flex items-center justify-center text-[#4cd964] text-xs">✓</span>
                 <span>{result.message}</span>
               </div>
-              <div className="text-[10px] text-a-muted">节点将在 30 秒内出现在 <a href="/runtime" className="text-a-accent hover:underline">节点列表</a></div>
+              <div className="text-[10px] text-a-muted">节点将在 30 秒内出现在 <Link to="/runtime" className="text-a-accent hover:underline">节点列表</Link></div>
             </div>
           ) : result.manualCommand ? (
             <div className="space-y-3">
