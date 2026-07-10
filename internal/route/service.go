@@ -107,6 +107,31 @@ func (s *AppService) CreateRouteDirect(rt *Route) error {
 	return nil
 }
 
+
+// UpsertSystemRoute ensures a route exists for the panel's own domain.
+// This replaces the old bypass path (direct Caddyfile write) with the standard
+// Apply pipeline, so mode switching, TLS, and certificate management all work
+// consistently for the panel domain just like any other route.
+func (s *AppService) UpsertSystemRoute(ctx context.Context, domain string) error {
+	existing, err := s.repo.FindByDomain(domain)
+	if err == nil && existing != nil {
+		return nil
+	}
+	now := time.Now()
+	rt := &Route{
+		ID:          core.NewID("rt"),
+		Domain:      domain,
+		ServiceID:   "__panel",
+		Composition: "https_route",
+		TLSEnabled:  true,
+		Status:      "active",
+		OwnerType:   "system",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	return s.repo.Create(rt)
+}
+
 // ListRoutesBySpaceID returns all routes for a specific space.
 func (s *AppService) ListRoutesBySpaceID(ctx context.Context, spaceID string) ([]Route, error) {
 	routes, err := s.repo.FindBySpaceID(spaceID)

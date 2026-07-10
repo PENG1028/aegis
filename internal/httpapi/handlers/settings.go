@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -170,43 +167,28 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"config_path":        configPath,
 	}
 
-	// If domain changed, regenerate Caddyfile and reload Caddy
+	// If domain changed, create a system route via the Apply pipeline.
+	// Panel domain now goes through: route → Apply → planner → render → reload
 	if domainChanged {
-		caddyfilePath := h.Config.Proxy.CaddyfilePath
-		if caddyfilePath == "" {
-			caddyfilePath = filepath.Join(h.Config.Runtime.ConfigDir, "Caddyfile")
+		if domain := h.Config.ManagedDomain.GatewayDomain; domain != "" {
+			h.Route.UpsertSystemRoute(r.Context(), domain)
 		}
 
-		caddyContent := h.Config.PanelCaddyfile()
-		if err := os.WriteFile(caddyfilePath, []byte(caddyContent), 0640); err != nil {
-			result["caddyfile_error"] = err.Error()
+		// Run Apply pipeline — handles rendering, validation, Caddy reload
+		if _, err := h.Apply.Apply(r.Context()); err != nil {
+			result["apply_warning"] = fmt.Sprintf("route created but apply failed: %v", err)
 		} else {
-				os.Chmod(caddyfilePath, 0640)
-				if grp, err := user.LookupGroup("caddy"); err == nil {
-					if gid, err := strconv.Atoi(grp.Gid); err == nil {
-						os.Chown(caddyfilePath, 0, gid)
-					}
-				}
-			result["caddyfile_regenerated"] = true
-			result["caddyfile_path"] = caddyfilePath
-
-			// Reload Caddy to pick up the new config
-			if out, err := exec.Command("systemctl", "reload", "caddy").CombinedOutput(); err != nil {
-				result["caddy_reload_warning"] = fmt.Sprintf("Caddyfile written but reload failed: %v — %s", err, string(out))
-			} else {
-				result["caddy_reloaded"] = true
-			}
+			result["apply_success"] = true
 		}
 
 		// Tell the user the new access URL
-		if h.Config.ManagedDomain.GatewayDomain != "" {
-			result["panel_url"] = "https://" + h.Config.ManagedDomain.GatewayDomain
+		if domain := h.Config.ManagedDomain.GatewayDomain; domain != "" {
+			result["panel_url"] = "https://" + domain
 			result["tls"] = "automatic (Let's Encrypt via Caddy)"
 		} else {
 			result["panel_url"] = "http://<server-ip>"
 			result["tls"] = "disabled (no domain configured)"
 		}
 	}
-
 	writeJSON(w, http.StatusOK, result)
 }
