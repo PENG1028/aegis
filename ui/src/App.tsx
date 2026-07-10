@@ -40,6 +40,7 @@ import AuthCallGraph from '@/pages/fabric/AuthCallGraph';
 // ── Runtime ──
 import Nodes from '@/pages/runtime/Nodes';
 import NodeDetail from '@/pages/runtime/NodeDetail';
+import ClusterHealth from '@/pages/runtime/ClusterHealth';
 import DeployNode from '@/pages/runtime/DeployNode';
 import Updates from '@/pages/runtime/Updates';
 import SyncStatus from '@/pages/runtime/SyncStatus';
@@ -162,6 +163,7 @@ export default function App() {
                 <Route path="/runtime" element={<OutletLayout />}>
                   <Route index element={<Nodes />} />
                   <Route path="node/:nodeId" element={<NodeDetail />} />
+                  <Route path="cluster" element={<ClusterHealth />} />
                   <Route path="deploy" element={<DeployNode />} />
                   <Route path="updates" element={<Updates />} />
                   <Route path="sync" element={<SyncStatus />} />

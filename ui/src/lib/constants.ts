@@ -36,6 +36,7 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
   ],
   runtime: [
     { path: '/runtime', label: '节点' },
+    { path: '/runtime/cluster', label: '集群健康' },
     { path: '/runtime/deploy', label: '部署节点' },
     { path: '/runtime/updates', label: '更新' },
     { path: '/runtime/sync', label: '同步状态' },
