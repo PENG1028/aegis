@@ -153,6 +153,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 
 	// Settings (read is public with redacted token; write is admin-only)
 	mux.HandleFunc("GET /api/settings", h.GetSettings)
+		mux.HandleFunc("GET /api/admin/v1/settings", h.GetSettings)
 	mux.HandleFunc("PATCH /api/admin/v1/settings", h.UpdateSettings)
 
 	// v1.6 Action API
