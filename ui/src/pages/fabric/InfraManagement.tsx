@@ -107,11 +107,12 @@ export default function InfraManagement() {
         ? `/api/admin/v1/providers/${id}/install`
         : `/api/admin/v1/infra/${id}/install`;
       const res = await fetch(url, { method: 'POST', credentials: 'include' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
+      const data = await res.json();
+      if (data.status === 'failed') throw data;
+      return data;
     },
     onSuccess: () => { qc.invalidateQueries(); toast('安装成功'); },
-    onError: (e: any) => toast(e.message || '安装失败', 'error'),
+    onError: (e: any) => { toast(e.error || e.message || '安装失败', 'error'); },
   });
 
   const serviceMut = useMutation({
@@ -135,10 +136,12 @@ export default function InfraManagement() {
         ? `/api/admin/v1/providers/${id}`
         : `/api/admin/v1/infra/${id}`;
       const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.status === 'failed') throw data;
+      return data;
     },
     onSuccess: () => { qc.invalidateQueries(); toast('已卸载'); },
-    onError: (e: any) => toast(e.message || '卸载失败', 'error'),
+    onError: (e: any) => { toast(e.error || e.message || '卸载失败', 'error'); },
   });
 
   return (
