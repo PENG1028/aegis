@@ -39,7 +39,7 @@ func TestClassifyLoopback(t *testing.T) {
 
 func TestClassifyLoopbackPriority(t *testing.T) {
 	// Loopback is checked before private or public
-	selfIPs := []string{"10.0.0.5", "<SERVER_A_IP>"}
+	selfIPs := []string{"10.0.0.5", "192.168.1.100"}
 	c := ClassifyIP("127.0.0.1", selfIPs)
 	if c != IPLoopback {
 		t.Errorf("expected loopback (highest priority), got %s", c)
@@ -47,12 +47,12 @@ func TestClassifyLoopbackPriority(t *testing.T) {
 }
 
 func TestIsCurrentNodeAddress(t *testing.T) {
-	selfIPs := []string{"10.0.0.5", "<SERVER_A_IP>"}
+	selfIPs := []string{"10.0.0.5", "192.168.1.100"}
 	if !IsCurrentNodeAddress("10.0.0.5", selfIPs) {
 		t.Errorf("10.0.0.5 should be current node address")
 	}
-	if !IsCurrentNodeAddress("<SERVER_A_IP>", selfIPs) {
-		t.Errorf("<SERVER_A_IP> should be current node address")
+	if !IsCurrentNodeAddress("192.168.1.100", selfIPs) {
+		t.Errorf("192.168.1.100 should be current node address")
 	}
 	if IsCurrentNodeAddress("10.0.0.1", selfIPs) {
 		t.Errorf("10.0.0.1 should NOT be current node address")
@@ -131,7 +131,7 @@ func TestRiskPublicDomainBounceOnly(t *testing.T) {
 
 func TestRiskPublicTargetEgressAndBypass(t *testing.T) {
 	svc := NewService(Dependencies{})
-	risks := svc.GetPlannerWarnings("test.local", "<SERVER_B_IP>:80", "")
+	risks := svc.GetPlannerWarnings("test.local", "192.168.10.11:80", "")
 	hasPublic := false
 	hasBypass := false
 	for _, r := range risks {
@@ -155,7 +155,7 @@ func TestRiskPublicTargetEgressAndBypass(t *testing.T) {
 
 func TestRiskNoBypassWithGatewayLink(t *testing.T) {
 	svc := NewService(Dependencies{})
-	risks := svc.GetPlannerWarnings("test.local", "<SERVER_B_IP>:80", "gw_link_123")
+	risks := svc.GetPlannerWarnings("test.local", "192.168.10.11:80", "gw_link_123")
 	for _, r := range risks {
 		if r.Code == RiskGatewayLinkBypass {
 			t.Errorf("should not have GATEWAY_LINK_BYPASS_RISK when GatewayLink is provided")
@@ -319,7 +319,7 @@ func TestPlannerWarningsLoopbackListenerPort(t *testing.T) {
 
 func TestPlannerWarningsPublicWithGatewayLink(t *testing.T) {
 	svc := NewService(Dependencies{})
-	risks := svc.GetPlannerWarnings("test.local", "<SERVER_B_IP>:80", "gw_link_123")
+	risks := svc.GetPlannerWarnings("test.local", "192.168.10.11:80", "gw_link_123")
 	foundBypass := false
 	for _, risk := range risks {
 		if risk.Code == RiskGatewayLinkBypass {
@@ -343,7 +343,7 @@ func TestPlannerWarningsPublicWithGatewayLink(t *testing.T) {
 
 func TestPlannerWarningsPublicWithoutGatewayLink(t *testing.T) {
 	svc := NewService(Dependencies{})
-	risks := svc.GetPlannerWarnings("test.local", "<SERVER_B_IP>:80", "")
+	risks := svc.GetPlannerWarnings("test.local", "192.168.10.11:80", "")
 	foundBypass := false
 	for _, risk := range risks {
 		if risk.Code == RiskGatewayLinkBypass {

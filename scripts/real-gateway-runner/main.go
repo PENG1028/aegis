@@ -19,7 +19,7 @@ import (
 func main() {
 	serverB := os.Getenv("SERVER_B")
 	if serverB == "" {
-		serverB = "<SERVER_B_IP>"
+		serverB = "192.168.10.11"
 	}
 	domain := os.Getenv("TEST_DOMAIN")
 	if domain == "" {

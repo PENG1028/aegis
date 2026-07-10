@@ -217,7 +217,7 @@ func (s *Service) GetPlannerWarnings(domain, targetHost, gatewayLinkID string, e
 		nodeIPs = append(nodeIPs, externalNodeIPs...)
 	}
 
-	// Extract host and port from address (e.g., "127.0.0.1:3001" or "<SERVER_B_IP>:80")
+	// Extract host and port from address (e.g., "127.0.0.1:3001" or "192.168.10.11:80")
 	host := NormalizeHost(targetHost)
 	port := 0
 	if h, pStr, err := net.SplitHostPort(targetHost); err == nil {

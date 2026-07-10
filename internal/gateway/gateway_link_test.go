@@ -74,13 +74,13 @@ func TestVerifyAuthHeaderEmptyInputs(t *testing.T) {
 }
 
 func TestNewTrustedGateway(t *testing.T) {
-	gw := NewTrustedGateway("server-b", "<SERVER_B_IP>", "10.3.0.11", 443, "test-secret", TypeUpstream, true)
+	gw := NewTrustedGateway("server-b", "192.168.10.11", "10.3.0.11", 443, "test-secret", TypeUpstream, true)
 
 	if gw.Name != "server-b" {
 		t.Errorf("expected Name=server-b, got %s", gw.Name)
 	}
-	if gw.Host != "<SERVER_B_IP>" {
-		t.Errorf("expected Host=<SERVER_B_IP>, got %s", gw.Host)
+	if gw.Host != "192.168.10.11" {
+		t.Errorf("expected Host=192.168.10.11, got %s", gw.Host)
 	}
 	if gw.PrivateIP != "10.3.0.11" {
 		t.Errorf("expected PrivateIP=10.3.0.11, got %s", gw.PrivateIP)
@@ -183,7 +183,7 @@ func TestServiceCreateGateway(t *testing.T) {
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", nil)
 
-	gw, secret, err := svc.Register("server-b", "<SERVER_B_IP>", "10.3.0.11", 443, TypeUpstream, true)
+	gw, secret, err := svc.Register("server-b", "192.168.10.11", "10.3.0.11", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestServiceRotateSecret(t *testing.T) {
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", nil)
 
-	_, _, err := svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	_, _, err := svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestAuthHeaderRoundTrip(t *testing.T) {
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", nil)
 
-	_, secret, err := svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	_, secret, err := svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}

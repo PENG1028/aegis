@@ -183,7 +183,7 @@ func TestServiceCreateEncrypted(t *testing.T) {
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", mk)
 
-	gw, secret, err := svc.Register("server-b", "<SERVER_B_IP>", "10.3.0.11", 443, TypeUpstream, true)
+	gw, secret, err := svc.Register("server-b", "192.168.10.11", "10.3.0.11", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestServiceListDoesNotExposeRawToken(t *testing.T) {
 	svc := NewService(repo, "gw_self", "server-a", mk)
 
 	// Create gateway with encryption
-	svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 
 	// List should not include any secret fields
 	gateways, err := svc.List()
@@ -275,7 +275,7 @@ func TestServiceGetDoesNotExposeRawToken(t *testing.T) {
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", mk)
 
-	svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 
 	gateways, _ := svc.List()
 	if len(gateways) == 0 {
@@ -314,7 +314,7 @@ func TestServiceRotateIncrementsVersion(t *testing.T) {
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", mk)
 
-	svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 	gateways, _ := svc.List()
 	if len(gateways) == 0 {
 		t.Fatal("no gateways")
@@ -358,7 +358,7 @@ func TestCheckAuthEncryptedRelayPath(t *testing.T) {
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", mk)
 
-	gw, rawSecret, err := svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	gw, rawSecret, err := svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestLegacyHMACBackwardCompat(t *testing.T) {
 	// Use nil master key to simulate legacy mode
 	svc := NewService(repo, "gw_self", "server-a", nil)
 
-	gw, rawSecret, err := svc.Register("server-b-legacy", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	gw, rawSecret, err := svc.Register("server-b-legacy", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register (legacy) failed: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestBackfillEncrypted(t *testing.T) {
 	repo := NewRepository(db)
 	// Create legacy gateway first
 	svcLegacy := NewService(repo, "gw_self", "server-a", nil)
-	gw, _, err := svcLegacy.Register("server-b-legacy", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	gw, _, err := svcLegacy.Register("server-b-legacy", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register (legacy) failed: %v", err)
 	}
@@ -486,7 +486,7 @@ func TestBackfillAlreadyEncrypted(t *testing.T) {
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", mk)
 
-	gw, _, err := svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	gw, _, err := svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestMissingMasterKeyFailsClosed(t *testing.T) {
 	mk := secrets.DevMasterKey()
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", mk)
-	gw, rawSecret, err := svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	gw, rawSecret, err := svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestEncryptedSecretNotInLogs(t *testing.T) {
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", mk)
 
-	gw, secret, err := svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	gw, secret, err := svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -648,7 +648,7 @@ func TestLegacyHMACIsDegraded(t *testing.T) {
 
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", nil)
-	gw, _, err := svc.Register("server-b-legacy", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	gw, _, err := svc.Register("server-b-legacy", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register (legacy) failed: %v", err)
 	}
@@ -666,7 +666,7 @@ func TestLegacyHMACIsDegraded(t *testing.T) {
 	// Encrypted gateway should NOT be degraded
 	mk := secrets.DevMasterKey()
 	svc2 := NewService(repo, "gw_self2", "server-a2", mk)
-	gw2, _, err := svc2.Register("server-b-enc", "<SERVER_B_ALT_IP>", "", 443, TypeUpstream, true)
+	gw2, _, err := svc2.Register("server-b-enc", "192.168.10.12", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register with mk failed: %v", err)
 	}
@@ -686,7 +686,7 @@ func TestLegacyHMACFallbackWorksWithNilKey(t *testing.T) {
 
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", nil)
-	gw, rawSecret, err := svc.Register("server-b-legacy", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	gw, rawSecret, err := svc.Register("server-b-legacy", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register (legacy) failed: %v", err)
 	}
@@ -753,7 +753,7 @@ func TestServiceRotateEncryptedFailsWithoutMasterKey(t *testing.T) {
 	mk := secrets.DevMasterKey()
 	repo := NewRepository(db)
 	svc := NewService(repo, "gw_self", "server-a", mk)
-	gw, _, err := svc.Register("server-b", "<SERVER_B_IP>", "", 443, TypeUpstream, true)
+	gw, _, err := svc.Register("server-b", "192.168.10.11", "", 443, TypeUpstream, true)
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}

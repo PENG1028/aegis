@@ -8,15 +8,15 @@
 #   bash scripts/update-all.sh
 #
 # Environment variables (override defaults):
-#   SERVER_A=<SERVER_A_IP>    # Main gateway (panel)
-#   SERVER_B=<SERVER_B_IP>      # Remote target node
+#   SERVER_A=${SERVER_A:?set SERVER_A env var}    # Main gateway (panel)
+#   SERVER_B=${SERVER_B:?set SERVER_B env var}      # Remote target node
 #   SSH_USER=ubuntu             # SSH user for both servers
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVER_A="${SERVER_A:-<SERVER_A_IP>}"
-SERVER_B="${SERVER_B:-<SERVER_B_IP>}"
+SERVER_A="${SERVER_A:?set SERVER_A env var}"
+SERVER_B="${SERVER_B:?set SERVER_B env var}"
 SSH_USER="${SSH_USER:-ubuntu}"
 PANEL_PORT="7380"
 

@@ -38,7 +38,7 @@ pg-test.depotly.internal {
 
 runsping.vps2.internal {
     encode gzip
-    reverse_proxy http://<SERVER_A_IP>:80 {
+    reverse_proxy http://$${SERVER_A:?set SERVER_A}:80 {
         header_up X-Aegis-Gateway-Link "gw_ebaae1982975be7b"
         header_up Host "runsping.vps2.internal"
         header_up X-Aegis-Gateway-Token "9e10e1285081d22723013b4db0f1c870ed6258037107614c04b6cbd7b731b0da"

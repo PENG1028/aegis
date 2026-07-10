@@ -481,9 +481,9 @@ func TestServiceFullRegistrationFlow(t *testing.T) {
 		OS:           "linux",
 		Arch:         "amd64",
 		AgentVersion: "v1.8C",
-		PublicIP:     "<SERVER_A_NODE_IP>",
+		PublicIP:     "192.168.1.101",
 		PrivateIP:    "10.0.0.3",
-	}, "<CONTROL_PLANE_IP>")
+	}, "192.168.1.200")
 	if err != nil {
 		t.Fatalf("register node: %v", err)
 	}

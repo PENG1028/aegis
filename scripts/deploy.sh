@@ -9,8 +9,8 @@
 #   bash scripts/deploy.sh <target_ip> [ssh_user]
 #
 # Examples:
-#   bash scripts/deploy.sh <SERVER_A_IP>
-#   bash scripts/deploy.sh <SERVER_A_IP> ubuntu
+#   bash scripts/deploy.sh ${SERVER_A:?set SERVER_A env var}
+#   bash scripts/deploy.sh ${SERVER_A:?set SERVER_A env var} ubuntu
 #
 # What it does:
 #   1. Builds the aegis binary with embedded UI (linux/amd64)

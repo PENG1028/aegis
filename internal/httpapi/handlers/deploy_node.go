@@ -37,7 +37,7 @@ import (
 //	│  [测试连接]  [开始部署]                         │
 //	└────────────────────────────────────────────────┘
 type DeployNodeRequest struct {
-	TargetIP    string `json:"target_ip"`    // e.g. "<SERVER_B_IP>"
+	TargetIP    string `json:"target_ip"`    // e.g. "192.168.10.11"
 	SSHUser     string `json:"ssh_user"`     // e.g. "ubuntu", defaults to "root"
 	SSHPort     int    `json:"ssh_port"`     // SSH port, defaults to 22
 	AuthMethod  string `json:"auth_method"`  // "key" | "password" | "token"
@@ -73,7 +73,7 @@ type DeployNodeResponse struct {
 // @ui: Frontend call pattern (see ui/src/lib/real-api-client.ts):
 //
 //	await post('/api/admin/v1/nodes/deploy', {
-//	    target_ip: "<SERVER_B_IP>",
+//	    target_ip: "192.168.10.11",
 //	    auth_method: "key",
 //	    ssh_key: "-----BEGIN...",
 //	    join_token: "jt_xxx",  // optional
@@ -344,7 +344,7 @@ func isSSHAvailable() bool {
 //	┌─────────────────────────────────────────────────────────┐
 //	│ 面板检测到当前服务器没有 SSH 工具。请在目标机器上运行：  │
 //	│                                                         │
-//	│  ssh ubuntu@<SERVER_B_IP> 'sudo curl -sL ... | bash'     │
+//	│  ssh ubuntu@192.168.10.11 'sudo curl -sL ... | bash'     │
 //	│                                                         │
 //	│  [复制命令]                                              │
 //	└─────────────────────────────────────────────────────────┘

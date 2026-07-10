@@ -13,9 +13,9 @@
 #   6. Auto-rollback on failure
 #
 # Examples:
-#   bash scripts/update.sh <SERVER_B_IP>          # Update Server B
-#   bash scripts/update.sh <SERVER_A_IP>        # Update Server A
-#   bash scripts/update.sh <SERVER_A_IP> ubuntu
+#   bash scripts/update.sh ${SERVER_B:?set SERVER_B env var}          # Update Server B
+#   bash scripts/update.sh ${SERVER_A:?set SERVER_A env var}        # Update Server A
+#   bash scripts/update.sh ${SERVER_A:?set SERVER_A env var} ubuntu
 
 set -euo pipefail
 

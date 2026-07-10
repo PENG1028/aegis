@@ -7,7 +7,7 @@
 // Usage (see examples/ for real Aegis integration):
 //
 //	conn, _ := deploy.Connect(deploy.SSHConfig{
-//	    Host: "<SERVER_B_IP>",
+//	    Host: "192.168.10.11",
 //	    User: "ubuntu",
 //	    Key:  "-----BEGIN OPENSSH PRIVATE KEY-----...",
 //	})
@@ -68,7 +68,7 @@ const (
 // SSHConfig holds all parameters for connecting to a remote machine.
 // @ui: This struct maps directly to the DeployNode form fields:
 //
-//	ssh_user    → user@host input (e.g. "ubuntu@<SERVER_B_IP>")
+//	ssh_user    → user@host input (e.g. "ubuntu@192.168.10.11")
 //	auth_method → radio group: Key / Password / Token
 //	ssh_key     → <textarea> or file picker (when auth=key)
 //	ssh_password→ <input type=password> (when auth=password)

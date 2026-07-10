@@ -154,7 +154,7 @@ func TestPort80Unified_CrossMachineViaGatewayLink(t *testing.T) {
 	masterKey, _ := secrets.LoadMasterKey(true)
 
 	remoteGW, rawSecret, err := gateway.NewLinkService(gwLinkRepo, "gw_src", "source", masterKey).Register(
-		"machine-b", "<SERVER_B_IP>", "10.0.0.2", 80,
+		"machine-b", "192.168.10.11", "10.0.0.2", 80,
 		gateway.TypeUpstream, true,
 	)
 	if err != nil {
@@ -192,7 +192,7 @@ func TestPort80Unified_CrossMachineViaGatewayLink(t *testing.T) {
 		t.Errorf("FAIL: must NOT proxy to %s — only on Machine B", addr)
 	}
 	// Must proxy to Machine B's IP:80 via gateway link
-	if !strings.Contains(rendered, "<SERVER_B_IP>:80") && !strings.Contains(rendered, "10.0.0.2:80") {
+	if !strings.Contains(rendered, "192.168.10.11:80") && !strings.Contains(rendered, "10.0.0.2:80") {
 		t.Errorf("FAIL: must proxy to remote :80, got:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "X-Aegis-Gateway-Link") {
