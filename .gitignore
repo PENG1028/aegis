@@ -40,3 +40,4 @@ serviceauthd.exe
 aegis-linux-*
 tmp_fix/
 tmp_genhash/
+.git-rewrite/

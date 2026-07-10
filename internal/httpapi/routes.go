@@ -178,6 +178,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/routes", h.AdminListRoutes)
 	mux.HandleFunc("GET /api/admin/v1/edge-rules", h.AdminListEdgeRules)
 	mux.HandleFunc("GET /api/admin/v1/services", h.AdminListServices)
+		mux.HandleFunc("GET /api/admin/v1/services/{id}/endpoints", h.ListEndpoints)
+		mux.HandleFunc("GET /api/admin/v1/services/{id}", h.AdminGetService)
 	mux.HandleFunc("GET /api/admin/v1/scopes", h.AdminListScopes)
 	mux.HandleFunc("POST /api/admin/v1/scopes", h.AdminCreateSpace)
 	mux.HandleFunc("GET /api/admin/v1/operations", h.AdminListOperations)

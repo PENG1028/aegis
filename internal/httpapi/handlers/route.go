@@ -145,15 +145,23 @@ func (h *Handlers) RouteMaintenanceOff(w http.ResponseWriter, r *http.Request) {
 }
 
 func routeToMap(rt route.Route) map[string]interface{} {
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"id":                  rt.ID,
 		"domain":              rt.Domain,
+		"path_prefix":         rt.PathPrefix,
 		"service_id":          rt.ServiceID,
+		"composition":         rt.Composition,
 		"tls_enabled":         rt.TLSEnabled,
 		"status":              rt.Status,
 		"maintenance_enabled": rt.MaintenanceEnabled,
 		"maintenance_message": rt.MaintenanceMessage,
+		"owner_type":          rt.OwnerType,
+		"gateway_link_id":     rt.GatewayLinkID,
 		"created_at":          rt.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		"updated_at":          rt.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
+	if rt.CertID != nil && *rt.CertID != "" {
+		m["cert_id"] = *rt.CertID
+	}
+	return m
 }

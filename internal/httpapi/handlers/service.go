@@ -77,6 +77,11 @@ func (h *Handlers) UpdateService(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, serviceToMap(*s))
 }
 
+// AdminGetService handles GET /api/admin/v1/services/{id}
+func (h *Handlers) AdminGetService(w http.ResponseWriter, r *http.Request) {
+	h.GetService(w, r)
+}
+
 func (h *Handlers) EnableService(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.Service.EnableService(r.Context(), id); err != nil {
