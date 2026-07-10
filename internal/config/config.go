@@ -29,37 +29,37 @@ type EgressConfig struct {
 
 // ProxyConfig holds proxy adapter settings.
 type ProxyConfig struct {
-	Provider        string `yaml:"provider"`
-	CaddyfilePath   string `yaml:"caddyfile_path"`
-	CaddyBinary     string `yaml:"caddy_binary"`
-	ReloadCommand   string `yaml:"reload_command"`
-	ValidateCommand string `yaml:"validate_command"`
-	BackupDir       string `yaml:"backup_dir"`
-	Email           string `yaml:"email"`
-	TlsCertFile     string `yaml:"tls_cert_file"` // custom TLS certificate (PEM)
-	TlsKeyFile      string `yaml:"tls_key_file"`  // custom TLS private key (PEM)
+	Provider        string `yaml:"provider"         json:"provider"`
+	CaddyfilePath   string `yaml:"caddyfile_path"   json:"caddyfile_path"`
+	CaddyBinary     string `yaml:"caddy_binary"     json:"caddy_binary"`
+	ReloadCommand   string `yaml:"reload_command"   json:"reload_command"`
+	ValidateCommand string `yaml:"validate_command" json:"validate_command"`
+	BackupDir       string `yaml:"backup_dir"       json:"backup_dir"`
+	Email           string `yaml:"email"            json:"email"`
+	TlsCertFile     string `yaml:"tls_cert_file"    json:"tls_cert_file"`
+	TlsKeyFile      string `yaml:"tls_key_file"     json:"tls_key_file"`
 }
 
 // StoreConfig holds database settings.
 type StoreConfig struct {
-	SQLitePath        string `yaml:"sqlite_path"`
-	BackupEnabled     bool   `yaml:"backup_enabled"`
-	BackupDir         string `yaml:"backup_dir"`
-	BackupIntervalHrs int    `yaml:"backup_interval_hrs"`
-	BackupKeepCount   int    `yaml:"backup_keep_count"`
+	SQLitePath        string `yaml:"sqlite_path"         json:"sqlite_path"`
+	BackupEnabled     bool   `yaml:"backup_enabled"      json:"backup_enabled"`
+	BackupDir         string `yaml:"backup_dir"           json:"backup_dir"`
+	BackupIntervalHrs int    `yaml:"backup_interval_hrs"  json:"backup_interval_hrs"`
+	BackupKeepCount   int    `yaml:"backup_keep_count"    json:"backup_keep_count"`
 }
 
 // ServerConfig holds HTTP API server settings.
 type ServerConfig struct {
-	Addr           string   `yaml:"addr"`
-	AdminToken     string   `yaml:"admin_token"`
-	SessionSecure  bool     `yaml:"session_secure"`
-	AllowedOrigins []string `yaml:"allowed_origins"` // CORS origins (default: localhost only)
+	Addr           string   `yaml:"addr"            json:"addr"`
+	AdminToken     string   `yaml:"admin_token"     json:"admin_token"`
+	SessionSecure  bool     `yaml:"session_secure"  json:"session_secure"`
+	AllowedOrigins []string `yaml:"allowed_origins" json:"allowed_origins"`
 }
 
 // ManagedDomainConfig holds managed domain settings.
 type ManagedDomainConfig struct {
-	GatewayDomain string `yaml:"gateway_domain"`
+	GatewayDomain string `yaml:"gateway_domain" json:"gateway_domain"`
 }
 
 // DistNodeConfig holds distributed node runtime settings (v1.9B).
@@ -90,8 +90,8 @@ type DNSConfig struct {
 
 // RuntimeConfig holds runtime paths.
 type RuntimeConfig struct {
-	ConfigDir string `yaml:"config_dir"`
-	DataDir   string `yaml:"data_dir"`
+	ConfigDir string `yaml:"config_dir" json:"config_dir"`
+	DataDir   string `yaml:"data_dir"   json:"data_dir"`
 }
 
 // DefaultConfig returns a configuration with development defaults.
