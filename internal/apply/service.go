@@ -129,11 +129,6 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	}
 	renderedStr := rendered.String()
 
-	// PanelCaddyfile prepend
-	if s.cfg.ManagedDomain.GatewayDomain != "" {
-		panelBlock := s.cfg.PanelCaddyfile()
-		renderedStr = panelBlock + renderedStr
-	}
 
 	stepLog.record("render_config", "success", "provider config rendered")
 
