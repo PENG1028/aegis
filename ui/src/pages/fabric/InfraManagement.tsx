@@ -32,6 +32,8 @@ export default function InfraManagement() {
   const toast = useToast();
   const qc = useQueryClient();
   const [configId, setConfigId] = useState<string | null>(null);
+  const [installingId, setInstallingId] = useState<string | null>(null);
+  const [uninstallingId, setUninstallingId] = useState<string | null>(null);
 
   // Fetch provider states
   const { data: providers } = useQuery({
@@ -111,8 +113,8 @@ export default function InfraManagement() {
       if (data.status === 'failed') throw data;
       return data;
     },
-    onSuccess: () => { qc.invalidateQueries(); toast('安装成功'); },
-    onError: (e: any) => { toast(e.error || e.message || '安装失败', 'error'); },
+    onSuccess: () => { setInstallingId(null); qc.invalidateQueries(); toast("安装成功"); },
+    onError: (e: any) => { setInstallingId(null); toast(e.error || e.message || "安装失败", "error"); },
   });
 
   const serviceMut = useMutation({
@@ -197,9 +199,11 @@ export default function InfraManagement() {
                   <td className="py-2 px-3">
                     <div className="flex gap-1 flex-wrap">
                       {!item.installed && item.canInstall && (
-                        <Btn onClick={() => installMut.mutate({ id: item.id, cat: item.category })}
-                          disabled={installMut.isPending} className="text-[9px]" primary>
-                          安装
+                        <Btn
+                          onClick={() => { setInstallingId(item.id); installMut.mutate({ id: item.id, cat: item.category }); }}
+                          disabled={installingId === item.id} className="text-[9px]" primary
+                        >
+                          {installingId === item.id ? '安装中...' : '安装'}
                         </Btn>
                       )}
                       {item.installed && item.hasReload && (
