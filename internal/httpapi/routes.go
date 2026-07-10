@@ -380,6 +380,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	if svcs.CertStore != nil {
 		mux.HandleFunc("GET /api/admin/v1/certificates", h.AdminListCertificates)
 			mux.HandleFunc("GET /api/admin/v1/certificates/auto", h.AdminListAutoCertificates)
+			mux.HandleFunc("GET /api/admin/v1/certificates/expiry", h.AdminCheckCertExpiry)
+			mux.HandleFunc("POST /api/admin/v1/certificates/{id}/renew", h.AdminRenewCert)
 		mux.HandleFunc("POST /api/admin/v1/certificates", h.AdminUploadCertificate)
 		mux.HandleFunc("DELETE /api/admin/v1/certificates/{id}", h.AdminDeleteCertificate)
 		// ACME endpoints

@@ -177,6 +177,53 @@ func (h *Handlers) AdminACMEStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, infra.DetectCertbot(email))
 }
 
+// ─── Certificate Renewal ───
+
+// AdminCheckCertExpiry handles GET /api/admin/v1/certificates/expiry
+func (h *Handlers) AdminCheckCertExpiry(w http.ResponseWriter, r *http.Request) {
+	if h.CertStore == nil {
+		writeError(w, http.StatusNotImplemented, "certificate store not available")
+		return
+	}
+	email := ""
+	if h.Config != nil {
+		email = h.Config.Proxy.Email
+	}
+	checker := certstore.NewCertRenewalChecker(h.CertStore, email)
+	certs, err := checker.Check(r.Context(), 90) // check certs expiring within 90 days
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if certs == nil {
+		certs = []certstore.ExpiringCert{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"expiring": certs,
+		"count":    len(certs),
+	})
+}
+
+// AdminRenewCert handles POST /api/admin/v1/certificates/{id}/renew
+func (h *Handlers) AdminRenewCert(w http.ResponseWriter, r *http.Request) {
+	if h.CertStore == nil {
+		writeError(w, http.StatusNotImplemented, "certificate store not available")
+		return
+	}
+	id := r.PathValue("id")
+	email := ""
+	if h.Config != nil {
+		email = h.Config.Proxy.Email
+	}
+	checker := certstore.NewCertRenewalChecker(h.CertStore, email)
+	result, err := checker.Renew(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // AdminInfraStatus returns all infrastructure dependencies status.
 // GET /api/admin/v1/infra/status
 func (h *Handlers) AdminInfraStatus(w http.ResponseWriter, r *http.Request) {
