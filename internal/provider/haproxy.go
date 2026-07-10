@@ -80,7 +80,7 @@ func (p *HAProxyProvider) State() ProviderState {
 			state.Running = true
 			state.Status = "ready"
 		}
-		if verOut, verErr := exec.Command(p.binaryPath, "-v").CombinedOutput(); verErr == nil {
+		if verOut, verErr := exec.Command(p.binaryPath, "-v").Output(); verErr == nil {
 			state.Version = strings.TrimSpace(string(verOut))
 		}
 	}

@@ -180,7 +180,6 @@ export default function InfraManagement() {
                        item.status === 'degraded' ? '降级' :
                        item.status === 'missing' ? '未安装' : item.status}
                     </span>
-                    {item.message && <span className="text-[10px] text-a-muted ml-1.5">{item.message}</span>}
                     {item.ready && item.installed && !item.running && (
                       <span className="text-[9px] text-[#4cd964] ml-1">(可启动)</span>
                     )}

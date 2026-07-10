@@ -72,7 +72,7 @@ func (p *CaddyProvider) State() ProviderState {
 			state.Status = "ready"
 		}
 		// Get version
-		if verOut, verErr := exec.Command(p.binaryPath, "version").CombinedOutput(); verErr == nil {
+		if verOut, verErr := exec.Command(p.binaryPath, "version").Output(); verErr == nil {
 			state.Version = strings.TrimSpace(string(verOut))
 		}
 	}
