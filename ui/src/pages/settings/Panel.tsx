@@ -1,7 +1,7 @@
 // ─── Panel Settings ───
 // Domain, TLS, and password configuration.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchSettings, updateSettings } from '@/lib/api-bridge';
 import { useToast, Card, PageHeader, Btn } from '@/components/shared';
@@ -18,14 +18,14 @@ export default function PanelSettings() {
 
   const [domain, setDomain] = useState('');
   const [email, setEmail] = useState('');
-  const [initialized, setInitialized] = useState(false);
 
-  // Init form when data loads
-  if (data && !initialized) {
-    setDomain((data as any).managed_domain?.gateway_domain || '');
-    setEmail((data as any).proxy?.email || '');
-    setInitialized(true);
-  }
+  // Init form from server data — useEffect avoids render-time setState issues
+  useEffect(() => {
+    if (data) {
+      setDomain((data as any).managed_domain?.gateway_domain || '');
+      setEmail((data as any).proxy?.email || '');
+    }
+  }, [data]);
 
   const saveMutation = useMutation({
     mutationFn: (updates: Record<string, any>) => updateSettings(updates),
