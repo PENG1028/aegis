@@ -73,6 +73,12 @@ func (s *AppService) DryRun(ctx context.Context) (*ApplyPlan, error) {
 }
 
 // TryApply acquires the apply lock and executes Apply.
+
+// SetTargetMode sets a target mode override for the next Apply call.
+func (s *AppService) SetTargetMode(modeID string) {
+	s.workflow.SetTargetMode(modeID)
+}
+
 func (s *AppService) TryApply(ctx context.Context) (*ApplyPlan, error) {
 	if !s.mu.TryLock() {
 		return nil, fmt.Errorf("APPLY_LOCKED: another apply is in progress")

@@ -108,9 +108,12 @@ func (h *Handlers) ModeSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set target mode so Apply uses it instead of detected current mode
+	h.Apply.SetTargetMode(req.TargetMode)
+
 	// Execute Apply — the pipeline handles mode switching internally:
-	//   1. PlanWithProviders regenerates config using detected mode
-	//   2. Provider lifecycle (stop stale providers)
+	//   1. PlanWithProviders regenerates config for the target mode
+	//   2. Provider lifecycle (stop stale providers, start new ones)
 	//   3. Validate → backup → write → reload
 	//   4. Existing rollback path on failure
 	plan, err := h.Apply.TryApply(r.Context())

@@ -29,13 +29,20 @@ import (
 // for config generation + application. Locking, rollback, and audit logging
 // are handled directly.
 type Workflow struct {
-	planner   *topology.Planner
-	registry  *provider.Registry
-	applyRepo *Repository
-	cfg       *config.Config
-	logSvc    logs.Logger
-	certStore *certstore.Service
-	mu        sync.Mutex
+	planner    *topology.Planner
+	registry   *provider.Registry
+	applyRepo  *Repository
+	cfg        *config.Config
+	logSvc     logs.Logger
+	certStore  *certstore.Service
+	targetMode string // set by ModeSwitch before Apply, cleared after
+	mu         sync.Mutex
+}
+
+// SetTargetMode overrides the runtime mode for the next Apply call.
+// Used by ModeSwitch to switch modes atomically. Cleared after Apply.
+func (w *Workflow) SetTargetMode(modeID string) {
+	w.targetMode = modeID
 }
 
 // NewWorkflow creates an apply workflow orchestrator.
@@ -144,9 +151,21 @@ func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error
 	}
 	result.Warnings = plan.Warnings
 
-	// 1.5 Mode switch detection: if the plan involves different providers than
-	// what's currently running, deactivate stale providers before applying.
-	currentMode := provider.DetectRuntimeMode(states)
+	// 1.5 Mode switch detection: if a target mode was set (via ModeSwitch API),
+	// use it instead of the auto-detected current mode.
+	var currentMode provider.RuntimeMode
+	if w.targetMode != "" {
+		for _, m := range provider.AllRuntimeModes() {
+			if m.ID == w.targetMode {
+				currentMode = m
+				break
+			}
+		}
+		w.targetMode = "" // one-shot, cleared after use
+	}
+	if currentMode.ID == "" {
+		currentMode = provider.DetectRuntimeMode(states)
+	}
 	targetProviders := planProviderIDs(plan)
 	currentProviders := currentMode.ProviderIDs()
 

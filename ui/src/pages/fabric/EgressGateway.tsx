@@ -270,10 +270,12 @@ export default function EgressGateway() {
     onError: (e: any) => toast(e.message || '删除失败', 'error'),
   });
 
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
+
   const deleteEgressRule = useMutation({
     mutationFn: (id: string) => adminApi.deleteEgressRule(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['egress-rules'] }); toast('出口规则已删除'); },
-    onError: (e: any) => toast(e.message || '删除失败', 'error'),
+    onSuccess: () => { setDeletingRuleId(null); qc.invalidateQueries({ queryKey: ['egress-rules'] }); toast('出口规则已删除'); },
+    onError: (e: any) => { setDeletingRuleId(null); toast(e.message || '删除失败', 'error'); },
   });
 
   const createRule = useMutation({
@@ -550,7 +552,7 @@ export default function EgressGateway() {
                       <td className="py-1 px-2 text-center text-a-muted">{r.priority}</td>
                       <td className="py-1 px-2 text-a-muted text-[10px]">{r.note || '—'}</td>
                       <td className="py-1 pl-2 text-right">
-                        <Btn onClick={() => deleteEgressRule.mutate(r.id)} className="text-[9px]" danger disabled={deleteEgressRule.isPending}>删除</Btn>
+                        <Btn onClick={() => { setDeletingRuleId(r.id); deleteEgressRule.mutate(r.id); }} className="text-[9px]" danger disabled={deletingRuleId === r.id}>{deletingRuleId === r.id ? "删除中..." : "删除"}</Btn>
                       </td>
                     </tr>
                   ))}

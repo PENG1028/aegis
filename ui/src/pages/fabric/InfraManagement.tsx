@@ -33,7 +33,7 @@ export default function InfraManagement() {
   const qc = useQueryClient();
   const [configId, setConfigId] = useState<string | null>(null);
   const [installingId, setInstallingId] = useState<string | null>(null);
-  const [uninstallingId, setUninstallingId] = useState<string | null>(null);
+  const [actingId, setActingId] = useState<string | null>(null);
 
   // Fetch provider states
   const { data: providers } = useQuery({
@@ -128,8 +128,8 @@ export default function InfraManagement() {
       if (data.status === 'failed') throw data;
       return data;
     },
-    onSuccess: () => { qc.invalidateQueries(); toast('操作成功'); },
-    onError: (e: any) => { toast(e.issues?.[0]?.message || e.error || e.message || '失败', 'error'); },
+    onSuccess: () => { setActingId(null); qc.invalidateQueries(); toast("操作成功"); },
+    onError: (e: any) => { setActingId(null); toast(e.issues?.[0]?.message || e.error || e.message || '失败', 'error'); },
   });
 
   const uninstallMut = useMutation({
@@ -207,19 +207,19 @@ export default function InfraManagement() {
                         </Btn>
                       )}
                       {item.installed && item.hasReload && (
-                        <Btn onClick={() => fetch(`/api/admin/v1/providers/${item.id}/reload`, { method: 'POST', credentials: 'include' })
-                          .then(() => toast('已重载')).catch(() => toast('重载失败','error'))}
+                        <Btn onClick={() => { setActingId(item.id); fetch(`/api/admin/v1/providers/${item.id}/reload`, { method: 'POST', credentials: 'include' })
+                          .then(() => { setActingId(null); toast('已重载'); }).catch(() => { setActingId(null); toast('重载失败','error'); }); }}
                           className="text-[9px]">重载</Btn>
                       )}
                       {item.installed && item.hasService && (
                         <>
                           {item.running ? (
-                            <Btn onClick={() => serviceMut.mutate({ id: item.id, action: 'stop' })} className="text-[9px]">停止</Btn>
+                            <Btn onClick={() => { setActingId(item.id); serviceMut.mutate({ id: item.id, action: 'stop' }); }} disabled={actingId === item.id} className="text-[9px]">{actingId === item.id ? '...' : '停止'}</Btn>
                           ) : (
-                            <Btn onClick={() => serviceMut.mutate({ id: item.id, action: 'start' })} className="text-[9px]" primary>启动</Btn>
+                            <Btn onClick={() => { setActingId(item.id); serviceMut.mutate({ id: item.id, action: 'start' }); }} disabled={actingId === item.id} className="text-[9px]" primary>{actingId === item.id ? '...' : '启动'}</Btn>
                           )}
                           {item.running && (
-                            <Btn onClick={() => serviceMut.mutate({ id: item.id, action: 'restart' })} className="text-[9px]">重启</Btn>
+                            <Btn onClick={() => { setActingId(item.id); serviceMut.mutate({ id: item.id, action: 'restart' }); }} disabled={actingId === item.id} className="text-[9px]">{actingId === item.id ? '...' : '重启'}</Btn>
                           )}
                         </>
                       )}
@@ -227,7 +227,7 @@ export default function InfraManagement() {
                         <Btn onClick={() => setConfigId(item.id)} className="text-[9px]">查看配置</Btn>
                       )}
                       {item.installed && item.canUninstall && (
-                        <Btn onClick={() => { if (confirm(`确认卸载 ${item.name}?`)) uninstallMut.mutate({ id: item.id, cat: item.category }); }}
+                        <Btn onClick={() => { setActingId(item.id); if (confirm(`确认卸载 ${item.name}?`)) uninstallMut.mutate({ id: item.id, cat: item.category }); }}
                           className="text-[9px]" danger>卸载</Btn>
                       )}
                       {item.installed && !item.hasConfig && !item.hasService && item.category === 'infra' && (
