@@ -1,12 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"aegis/internal/endpoint"
+	"aegis/internal/service"
 )
 
 func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
@@ -167,10 +172,19 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"config_path":        configPath,
 	}
 
-	// If domain changed, create a system route via the Apply pipeline.
-	// Panel domain now goes through: route → Apply → planner → render → reload
+	// If domain changed, ensure panel service + endpoint exist,
+	// then create a system route via the Apply pipeline.
+	// Panel domain now goes through: service+endpoint → route → Apply → planner → render → reload
 	if domainChanged {
 		if domain := h.Config.ManagedDomain.GatewayDomain; domain != "" {
+			// Ensure the __panel service exists for the planner to resolve
+			if err := h.ensurePanelService(r.Context()); err != nil {
+				result["panel_service_warning"] = err.Error()
+			}
+			// Ensure the panel endpoint (127.0.0.1:7380) exists
+			if err := h.ensurePanelEndpoint(r.Context()); err != nil {
+				result["panel_endpoint_warning"] = err.Error()
+			}
 			h.Route.UpsertSystemRoute(r.Context(), domain)
 		}
 
@@ -191,4 +205,41 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// ensurePanelService creates the __panel service if it doesn't exist.
+// The planner needs a real service to resolve the panel route.
+func (h *Handlers) ensurePanelService(ctx context.Context) error {
+	svc, _ := h.Service.GetService(ctx, "__panel")
+	if svc != nil {
+		return nil
+	}
+	now := time.Now()
+	return h.Service.CreateServiceDirect(&service.Service{
+		ID:        "__panel",
+		ProjectID: "__system",
+		Name:      "Aegis Panel",
+		Kind:      "http",
+		Env:       "prod",
+		Status:    "active",
+		SpaceID:   "default",
+		OwnerType: "system",
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+}
+
+// ensurePanelEndpoint creates the panel endpoint (127.0.0.1:7380) if it doesn't exist.
+// The planner needs a real endpoint to determine the upstream address.
+func (h *Handlers) ensurePanelEndpoint(ctx context.Context) error {
+	eps, _ := h.EndpointRepo.FindByServiceID("__panel")
+	if len(eps) > 0 {
+		return nil
+	}
+	_, err := h.EndpointSvc.CreateEndpoint(ctx, endpoint.CreateEndpointInput{
+		ServiceID: "__panel",
+		Type:      "local",
+		Address:   "127.0.0.1:7380",
+	})
+	return err
 }

@@ -23,7 +23,7 @@ export default function PanelSettings() {
   // Init form when data loads
   if (data && !initialized) {
     setDomain((data as any).managed_domain?.gateway_domain || '');
-    setEmail((data as any).managed_domain?.acme_email || '');
+    setEmail((data as any).proxy?.email || '');
     setInitialized(true);
   }
 

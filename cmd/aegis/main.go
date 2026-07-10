@@ -50,6 +50,7 @@ import (
 	"aegis/internal/tcp"
 	"aegis/internal/token"
 	"aegis/internal/topology"
+	"aegis/internal/topology/templates"
 	"aegis/internal/trace"
 	"aegis/internal/transparent"
 	"aegis/internal/udp"
@@ -229,7 +230,7 @@ func main() {
 	acmeMgr := infra.NewACMEManager(certStoreSvc, cfg.Proxy.Email, cfg.Runtime.DataDir+"/acme", "")
 
 	// --- v1.8L: Topology Planner (dimension 2) + Workflow orchestrator ---
-	topoPlanner := topology.NewPlanner(nil, topology.Dependencies{
+	topoPlanner := topology.NewPlanner(templates.Default(), topology.Dependencies{
 		RouteRepo:        routeRepo,
 		ServiceRepo:      serviceRepo,
 		EndpointResolver: endpointResolver,
