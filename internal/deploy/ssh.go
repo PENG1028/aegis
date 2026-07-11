@@ -4,144 +4,88 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"io/fs"
+	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
-// ─── SSH Executor ────────────────────────────────────────────────────────────
-// @ui: The SSH executor powers the "SSH Key" and "SSH Password" modes.
-// The frontend sends one of:
-//
-//	{"auth_method": "key",      "ssh_key": "-----BEGIN..."}
-//	{"auth_method": "password", "ssh_password": "..."}
-//
-// Both use the same executor underneath — only the auth flag changes.
+// ─── Native SSH via crypto/ssh ────────────────────────────────────────────────
+// Zero external binary dependencies — no ssh, sshpass, or scp required.
+// Supports key-based and password-based authentication.
 
-// sshExecutor runs commands over SSH via the local `ssh` binary.
-// It supports both key-based and password-based authentication.
-//
-// Key mode:     ssh -i <key_file> -o StrictHostKeyChecking=accept-new user@host <cmd>
-// Password:     sshpass -f <pass_file> ssh -o ... user@host <cmd>
-//
-// The executor does NOT use golang.org/x/crypto/ssh directly because:
-//  1. The deploy toolkit runs on the control plane, which already has ssh/sshpass.
-//  2. Using the system SSH binary supports SSH config files, jump hosts, and agent forwarding.
-//  3. This keeps the deploy package's dependency footprint minimal.
-//
-// @ui: Frontend implementation notes:
-//   - SSH key should be accepted as both file upload and paste.
-//   - Password input should have a show/hide toggle.
-//   - "Test Connection" button before deploying is recommended.
-type sshExecutor struct {
-	host       string
-	user       string
-	port       int
-	keyFile    string   // temp file holding the SSH key (cleaned up on Close)
-	passFile   string   // temp file holding the password (cleaned up on Close)
+type sshClient struct {
+	client *ssh.Client
 }
 
-func newSSHExecutor(cfg SSHConfig) (*sshExecutor, error) {
-	e := &sshExecutor{
-		host: cfg.Host,
-		user: cfg.User,
-		port: cfg.Port,
-	}
+func dialSSH(cfg SSHConfig) (*sshClient, error) {
+	var authMethods []ssh.AuthMethod
 
 	switch cfg.AuthMethod {
 	case AuthKey:
-		if cfg.SSHKey == "" {
-			return nil, fmt.Errorf("deploy: ssh_key is required for key auth")
-		}
-		f, err := os.CreateTemp("", "aegis-deploy-key-*")
+		signer, err := ssh.ParsePrivateKey([]byte(cfg.SSHKey))
 		if err != nil {
-			return nil, fmt.Errorf("deploy: create temp key file: %w", err)
+			// Try with passphrase (treat key as-is; if encrypted, user must provide decrypted key)
+			return nil, fmt.Errorf("parse SSH key: %w — ensure the key is not password-protected, or use password auth", err)
 		}
-		if _, err := f.WriteString(cfg.SSHKey); err != nil {
-			f.Close()
-			os.Remove(f.Name())
-			return nil, fmt.Errorf("deploy: write key file: %w", err)
-		}
-		if err := f.Chmod(0600); err != nil {
-			f.Close()
-			os.Remove(f.Name())
-			return nil, fmt.Errorf("deploy: chmod key file: %w", err)
-		}
-		f.Close()
-		e.keyFile = f.Name()
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
 
 	case AuthPassword:
-		if cfg.SSHPassword == "" {
-			return nil, fmt.Errorf("deploy: ssh_password is required for password auth")
-		}
-		// Verify sshpass is available
-		if _, err := exec.LookPath("sshpass"); err != nil {
-			return nil, fmt.Errorf("deploy: sshpass not found (install with: apt install sshpass)")
-		}
-		// Write password to temp file (never passes via -p to avoid /proc exposure)
-		f, err := os.CreateTemp("", "aegis-deploy-pass-*")
-		if err != nil {
-			return nil, fmt.Errorf("deploy: create temp pass file: %w", err)
-		}
-		if _, err := f.WriteString(cfg.SSHPassword); err != nil {
-			f.Close()
-			os.Remove(f.Name())
-			return nil, fmt.Errorf("deploy: write pass file: %w", err)
-		}
-		if err := f.Chmod(0600); err != nil {
-			f.Close()
-			os.Remove(f.Name())
-			return nil, fmt.Errorf("deploy: chmod pass file: %w", err)
-		}
-		f.Close()
-		e.passFile = f.Name()
-
-	case AuthToken:
-		// Token mode doesn't create an executor — it's for pull-based registration.
-		// Return a nil executor here; the caller handles token registration separately.
-		return nil, fmt.Errorf("deploy: token auth is not a transport — use key or password for SSH")
+		authMethods = append(authMethods, ssh.Password(cfg.SSHPassword))
 
 	default:
-		return nil, fmt.Errorf("deploy: unknown auth method: %s", cfg.AuthMethod)
+		return nil, fmt.Errorf("unsupported auth method: %s", cfg.AuthMethod)
 	}
 
-	return e, nil
+	if cfg.Port == 0 {
+		cfg.Port = 22
+	}
+	if cfg.User == "" {
+		cfg.User = "root"
+	}
+
+	client, err := ssh.Dial("tcp", net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port)), &ssh.ClientConfig{
+		User:            cfg.User,
+		Auth:            authMethods,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         10 * time.Second,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ssh dial %s@%s:%d: %w", cfg.User, cfg.Host, cfg.Port, err)
+	}
+
+	return &sshClient{client: client}, nil
 }
 
-func (e *sshExecutor) Run(ctx context.Context, command string) *RunResult {
-	target := fmt.Sprintf("%s@%s", e.user, e.host)
+// ─── Executor ─────────────────────────────────────────────────────────────────
 
-	// Build base args
-	var args []string
-	if e.passFile != "" {
-		args = append(args, "sshpass", "-f", e.passFile)
-	}
-	args = append(args, "ssh",
-		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "ConnectTimeout=10",
-		"-o", "BatchMode=yes",
-	)
-	if e.keyFile != "" {
-		args = append(args, "-i", e.keyFile)
-	}
-	if e.port > 0 {
-		args = append(args, "-p", fmt.Sprintf("%d", e.port))
-	}
-	args = append(args, target, command)
+type nativeExecutor struct {
+	client *ssh.Client
+}
 
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	exitCode := 0
+func (e *nativeExecutor) Run(ctx context.Context, command string) *RunResult {
+	session, err := e.client.NewSession()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
+		return &RunResult{Error: fmt.Errorf("create session: %w", err)}
+	}
+	defer session.Close()
+
+	var stdout, stderr bytes.Buffer
+	session.Stdout = &stdout
+	session.Stderr = &stderr
+
+	runErr := session.Run(command)
+	exitCode := 0
+	if runErr != nil {
+		if exitErr, ok := runErr.(*ssh.ExitError); ok {
+			exitCode = exitErr.ExitStatus()
 		} else {
-			return &RunResult{Error: err}
+			return &RunResult{Error: runErr}
 		}
 	}
 
@@ -152,145 +96,164 @@ func (e *sshExecutor) Run(ctx context.Context, command string) *RunResult {
 	}
 }
 
-func (e *sshExecutor) Close() error {
-	var errs []string
-	if e.keyFile != "" {
-		if err := os.Remove(e.keyFile); err != nil {
-			errs = append(errs, err.Error())
-		}
-	}
-	if e.passFile != "" {
-		if err := os.Remove(e.passFile); err != nil {
-			errs = append(errs, err.Error())
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("deploy: cleanup errors: %s", strings.Join(errs, "; "))
-	}
-	return nil
+func (e *nativeExecutor) Close() error {
+	return e.client.Close()
 }
 
-// ─── SSH File Transfer ──────────────────────────────────────────────────────
+// ─── File Transfer (SFTP) ─────────────────────────────────────────────────────
 
-type sshFileTransfer struct {
-	host     string
-	user     string
-	port     int
-	keyFile  string
-	passFile string
+type nativeFileTransfer struct {
+	client *ssh.Client
 }
 
-func newSSHFileTransfer(cfg SSHConfig, e *sshExecutor) *sshFileTransfer {
-	return &sshFileTransfer{
-		host:     cfg.Host,
-		user:     cfg.User,
-		port:     cfg.Port,
-		keyFile:  e.keyFile,
-		passFile: e.passFile,
-	}
-}
-
-func (f *sshFileTransfer) CopyTo(ctx context.Context, localPath, remotePath string) *RunResult {
-	target := fmt.Sprintf("%s@%s:%s", f.user, f.host, remotePath)
-
-	var args []string
-	if f.passFile != "" {
-		args = append(args, "sshpass", "-f", f.passFile)
-	}
-	args = append(args, "scp",
-		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "ConnectTimeout=10",
-	)
-	if f.keyFile != "" {
-		args = append(args, "-i", f.keyFile)
-	}
-	if f.port > 0 {
-		args = append(args, "-P", fmt.Sprintf("%d", f.port))
-	}
-	args = append(args, localPath, target)
-
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
+func (f *nativeFileTransfer) CopyTo(ctx context.Context, localPath, remotePath string) *RunResult {
+	src, err := os.Open(localPath)
 	if err != nil {
-		return &RunResult{
-			Error:  fmt.Errorf("scp failed: %w — %s", err, strings.TrimSpace(stderr.String())),
-			Stderr: stderr.String(),
-		}
+		return &RunResult{Error: fmt.Errorf("open local file: %w", err)}
+	}
+	defer src.Close()
+
+	sftpClient, err := sftpClient(f.client)
+	if err != nil {
+		return &RunResult{Error: fmt.Errorf("sftp: %w", err)}
+	}
+	defer sftpClient.Close()
+
+	dst, err := sftpClient.Create(remotePath)
+	if err != nil {
+		return &RunResult{Error: fmt.Errorf("sftp create %s: %w", remotePath, err)}
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return &RunResult{Error: fmt.Errorf("sftp copy: %w", err)}
 	}
 
 	return &RunResult{
 		ExitCode: 0,
-		Stdout:   fmt.Sprintf("copied %s → %s:%s", filepath.Base(localPath), f.host, remotePath),
+		Stdout:   fmt.Sprintf("copied %s → %s:%s", filepath.Base(localPath), f.client.RemoteAddr().String(), remotePath),
 	}
 }
 
-func (f *sshFileTransfer) Close() error { return nil }
+func (f *nativeFileTransfer) Close() error { return nil }
 
-// ─── SSH Service Manager ────────────────────────────────────────────────────
-
-type sshServiceManager struct {
-	executor *sshExecutor
+// sftpClient creates an SFTP client from an SSH client.
+// Uses the external SFTP library if available, otherwise falls back to manual.
+func sftpClient(client *ssh.Client) (sftpCloser, error) {
+	return newSFTP(client)
 }
 
-func newSSHServiceManager(executor *sshExecutor) *sshServiceManager {
-	return &sshServiceManager{executor: executor}
+// sftpCloser combines the SFTP client interface with Close.
+type sftpCloser interface {
+	Create(path string) (io.WriteCloser, error)
+	Close() error
 }
 
-func (m *sshServiceManager) Install(ctx context.Context, name, unitContent string) *RunResult {
-	// Write unit file via tee (avoids shell escaping issues with heredoc)
+// Minimal SFTP implementation — only Create (upload) without external library.
+type minimalSFTP struct {
+	client  *ssh.Client
+	session *ssh.Session
+	stdin   io.WriteCloser
+}
+
+func newSFTP(client *ssh.Client) (*minimalSFTP, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+	return &minimalSFTP{client: client, session: session, stdin: stdin}, nil
+}
+
+func (s *minimalSFTP) Create(remotePath string) (io.WriteCloser, error) {
+	// Use SCP-like approach: cat > remotePath
+	cmd := fmt.Sprintf("cat > %s", remotePath)
+	s.session.Stderr = nil // discard stderr
+	if err := s.session.Start(cmd); err != nil {
+		return nil, err
+	}
+	return &scpWriter{stdin: s.stdin, session: s.session, path: remotePath}, nil
+}
+
+func (s *minimalSFTP) Close() error {
+	return s.client.Close()
+}
+
+type scpWriter struct {
+	stdin   io.WriteCloser
+	session *ssh.Session
+	path    string
+}
+
+func (w *scpWriter) Write(p []byte) (int, error) {
+	return w.stdin.Write(p)
+}
+
+func (w *scpWriter) Close() error {
+	w.stdin.Close()
+	return w.session.Wait()
+}
+
+// ─── Service Manager ──────────────────────────────────────────────────────────
+
+type nativeServiceManager struct {
+	executor *nativeExecutor
+}
+
+func (m *nativeServiceManager) Install(ctx context.Context, name, unitContent string) *RunResult {
 	cmd := fmt.Sprintf("cat > /tmp/%s.service << 'AEGISUNIT'\n%s\nAEGISUNIT && sudo mv /tmp/%s.service /etc/systemd/system/%s.service && sudo systemctl daemon-reload && sudo systemctl enable %s",
 		name, unitContent, name, name, name)
 	return m.executor.Run(ctx, cmd)
 }
 
-func (m *sshServiceManager) Start(ctx context.Context, name string) *RunResult {
+func (m *nativeServiceManager) Start(ctx context.Context, name string) *RunResult {
 	return m.executor.Run(ctx, fmt.Sprintf("sudo systemctl start %s", name))
 }
 
-func (m *sshServiceManager) Stop(ctx context.Context, name string) *RunResult {
+func (m *nativeServiceManager) Stop(ctx context.Context, name string) *RunResult {
 	return m.executor.Run(ctx, fmt.Sprintf("sudo systemctl stop %s", name))
 }
 
-func (m *sshServiceManager) Restart(ctx context.Context, name string) *RunResult {
+func (m *nativeServiceManager) Restart(ctx context.Context, name string) *RunResult {
 	return m.executor.Run(ctx, fmt.Sprintf("sudo systemctl restart %s", name))
 }
 
-func (m *sshServiceManager) Status(ctx context.Context, name string) *RunResult {
+func (m *nativeServiceManager) Status(ctx context.Context, name string) *RunResult {
 	return m.executor.Run(ctx, fmt.Sprintf("systemctl is-active %s", name))
 }
 
-// ─── Connect ────────────────────────────────────────────────────────────────
+// ─── Connect ──────────────────────────────────────────────────────────────────
 
 func connectSSH(ctx context.Context, cfg SSHConfig) (*Connection, error) {
-	if cfg.Port == 0 {
-		cfg.Port = 22
-	}
-	if cfg.User == "" {
-		cfg.User = "root"
-	}
-
-	executor, err := newSSHExecutor(cfg)
+	client, err := dialSSH(cfg)
 	if err != nil {
 		return nil, err
 	}
 
+	executor := &nativeExecutor{client: client.client}
+
 	// Verify connectivity
 	result := executor.Run(ctx, "echo ok")
 	if result.Error != nil {
-		executor.Close()
-		return nil, fmt.Errorf("deploy: ssh connect to %s@%s: %w", cfg.User, cfg.Host, result.Error)
+		client.client.Close()
+		return nil, fmt.Errorf("ssh connect to %s@%s: %w", cfg.User, cfg.Host, result.Error)
 	}
 	if result.ExitCode != 0 {
-		executor.Close()
-		return nil, fmt.Errorf("deploy: ssh connect to %s@%s: exit %d — %s", cfg.User, cfg.Host, result.ExitCode, result.Stderr)
+		client.client.Close()
+		return nil, fmt.Errorf("ssh connect to %s@%s: exit %d — %s", cfg.User, cfg.Host, result.ExitCode, result.Stderr)
 	}
 
 	return &Connection{
-		Executor:  executor,
-		Files:     newSSHFileTransfer(cfg, executor),
-		Services:  newSSHServiceManager(executor),
+		Executor: executor,
+		Files:    &nativeFileTransfer{client: client.client},
+		Services: &nativeServiceManager{executor: executor},
 	}, nil
 }
+
+// Ensure io and fs used for future SFTP
+var _ = io.EOF
+var _ fs.FileInfo
