@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 	"net"
 	"os"
 	"strings"
 
 	"aegis/internal/deploy"
-	"aegis/internal/node"
 )
 
 // ─── Request / Response ──────────────────────────────────────────────────────
@@ -497,22 +495,6 @@ func (h *Handlers) AdminJoinNode(w http.ResponseWriter, r *http.Request) {
 			"success": false, "error": "目标重启后健康检查失败: journalctl -u aegis -n 20",
 		})
 		return
-	}
-
-	// Register the remote node in the nodes table so it appears in UI
-	if h.NodeRepo != nil {
-		now := time.Now()
-		h.NodeRepo.Create(&node.NodeRecord{
-			NodeID:    targetHostname,
-			Name:      targetHostname,
-			Hostname:  targetHostname,
-			PublicIP:  req.TargetIP,
-			Role:      "worker",
-			Status:    "online",
-			LastSeen:  now,
-			CreatedAt: now,
-			UpdatedAt: now,
-		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
