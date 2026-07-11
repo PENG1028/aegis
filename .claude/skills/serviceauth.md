@@ -9,7 +9,7 @@ model: sonnet
 ServiceAuth 是 Aegis 内置的服务间认证系统，不是独立服务。
 每个服务注册 Ed25519 公钥，调用时用私钥签 ticket，接收方验 ticket 即可确认"谁在调我"。
 
-**核心哲学：ServiceAuth 是基础设施，不是 SDK。** 业务 SDK 不包含 ServiceAuth 逻辑——认证由调用方通过 `http.Client` 注入，业务代码只关心 HTTP 请求。
+**核心哲学：ServiceAuth 是基础设施，不是业务 SDK。** 业务代码直接调 `client.Post(url, body)` 自动带票，不写 ticket 逻辑。
 
 ---
 
