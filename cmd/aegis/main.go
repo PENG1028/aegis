@@ -439,6 +439,25 @@ func main() {
 		dn = distnode.New(distCfg)
 		handlers.RegisterDistNodeHandlers(dn)
 		fmt.Fprintf(os.Stderr, "info: distnode enabled - id=%s addr=%s peers=%d\n", dn.ID, distCfg.Addr, len(distCfg.Peers))
+
+			// Auto-register discovered peers in the nodes table so they appear in UI.
+			dn.Membership.OnEvent(func(evt distnode.PeerEvent) {
+				switch evt.Type {
+				case distnode.EventPeerAlive:
+					nodeRepo.Create(&node.NodeRecord{
+						NodeID:    evt.Peer.Info.ID,
+						PublicIP:  evt.Peer.Info.Addr,
+						Role:      "worker",
+						Status:    "online",
+						LastSeen:  time.Now(),
+						CreatedAt: time.Now(),
+						UpdatedAt: time.Now(),
+					})
+				case distnode.EventPeerDead:
+					nodeRepo.UpdateHeartbeat(evt.Peer.Info.ID, "offline", "", "", "", "", "", time.Now())
+				}
+			})
+
 		go dn.Start(context.Background())
 	} else {
 		fmt.Fprintf(os.Stderr, "info: distnode disabled\n")
