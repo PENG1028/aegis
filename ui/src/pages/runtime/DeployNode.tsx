@@ -77,6 +77,11 @@ export default function DeployNode() {
     } finally { setChecking(false); }
   };
 
+  // ── Join Node ──
+  const handleJoinNode = async () => {
+    toast('节点加入功能开发中。将 SSH 到目标，写入 node.yaml 并重启为节点模式。', 'error');
+  };
+
   // ── Deploy ──
   const handleDeploy = async () => {
     const ve = validationError();
@@ -199,8 +204,15 @@ export default function DeployNode() {
             <div className="space-y-2 text-xs">
               {isClean && <div className="text-[#4cd964]">✅ 目标为空机器，可全新部署</div>}
               {r.aegis.found && (
-                <div className={r.aegis.running ? 'text-[#e8b830]' : 'text-a-fg'}>
-                  {r.aegis.running ? '🟢' : '🟡'} Aegis {r.aegis.version || '未知版本'} — {r.aegis.running ? '运行中' : '已停止'} — 建议使用<b>节点加入</b>而非全量部署
+                <div className="space-y-2">
+                  <div className={r.aegis.running ? 'text-[#e8b830]' : 'text-a-fg'}>
+                    {r.aegis.running ? '🟢' : '🟡'} Aegis {r.aegis.version || '未知版本'} — {r.aegis.running ? '运行中' : '已停止'}
+                  </div>
+                  {r.aegis.running && (
+                    <Btn onClick={() => handleJoinNode()} className="text-xs" primary>
+                      🔗 连接节点（加入集群）
+                    </Btn>
+                  )}
                 </div>
               )}
               {r.caddy.found && (
