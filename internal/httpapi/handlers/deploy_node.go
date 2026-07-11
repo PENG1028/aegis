@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net"
 	"os"
 	"strings"
 
@@ -432,7 +433,7 @@ func (h *Handlers) AdminJoinNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 2: Connect and configure
+		// Step 2: Connect to target
 	conn, err := deploy.Connect(r.Context(), deploy.SSHConfig{
 		Host: req.TargetIP, User: req.SSHUser, Port: req.SSHPort,
 		AuthMethod: deploy.AuthMethod(req.AuthMethod),
@@ -446,66 +447,63 @@ func (h *Handlers) AdminJoinNode(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Executor.Close()
 
-	// Determine control plane address
-	cpAddr := r.Host
-	if cpAddr == "" || strings.Contains(cpAddr, "127.0.0.1") || strings.Contains(cpAddr, "localhost") {
-		cpAddr = req.TargetIP // fallback: use target IP
+	// Step 3: Get hostname as node_id
+	hostResult := conn.Executor.Run(r.Context(), "hostname")
+	targetHostname := strings.TrimSpace(hostResult.Stdout)
+	if targetHostname == "" {
+		targetHostname = req.TargetIP
 	}
 
-	// Step 3: Enable distnode on target via config update
-	// Write a distnode peer config pointing to this control plane
-	peerYAML := fmt.Sprintf(`distnode:
-  enabled: true
-  id: "%s"
-  name: "%s"
-  addr: "0.0.0.0:7380"
-  secret: "aegis-cluster-shared-secret"
-  peers:
-    - id: "control-plane"
-      addr: "%s"
-`, report.Aegis.Version, report.Aegis.Version, cpAddr)
+	// Control plane address
+	cpHost := r.Host
+	if colon := strings.LastIndex(cpHost, ":"); colon > strings.LastIndex(cpHost, "]") {
+		cpHost = cpHost[:colon]
+	}
+	if cpHost == "" || strings.HasPrefix(cpHost, "127.") || cpHost == "localhost" {
+		cpHost = req.TargetIP
+	}
+	cpAddr := net.JoinHostPort(cpHost, "7380")
 
-	// Append to config.yaml
-	cfgCmd := fmt.Sprintf(
-		`grep -q 'distnode:' /etc/aegis/config.yaml && echo 'already_configured' || cat >> /etc/aegis/config.yaml << 'YAMLEOF'
-%s
-YAMLEOF`, peerYAML)
-
-	result := conn.Executor.Run(r.Context(), cfgCmd)
-	if result.Error != nil {
+	// Step 4: Write distnode config on target
+	alreadyCfg := conn.Executor.Run(r.Context(), "grep -q 'distnode:' /etc/aegis/config.yaml && echo 'yes' || echo 'no'")
+	if strings.TrimSpace(alreadyCfg.Stdout) == "yes" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success": false, "error": "写入配置失败: " + result.Error.Error(),
+			"success": false, "error": "目标已配置 distnode，无需重复加入",
 		})
 		return
 	}
 
-	alreadyConfigured := strings.Contains(result.Stdout, "already_configured")
+	peerYAML := fmt.Sprintf("distnode:\n  enabled: true\n  id: \"%s\"\n  name: \"%s\"\n  addr: \"0.0.0.0:7380\"\n  secret: \"aegis-cluster-shared-secret\"\n  peers:\n    - id: \"control-plane\"\n      addr: \"%s\"\n", targetHostname, targetHostname, cpAddr)
+	cfgCmd := fmt.Sprintf("cat >> /etc/aegis/config.yaml << 'YAMLEOF'\n%sYAMLEOF", peerYAML)
+	if cfgResult := conn.Executor.Run(r.Context(), cfgCmd); cfgResult.Error != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": false, "error": "写入配置失败: " + cfgResult.Error.Error()})
+		return
+	}
 
-	// Step 4: Restart aegis to pick up distnode config
+	// Step 5: Restart target
 	restartResult := conn.Executor.Run(r.Context(), "sudo systemctl restart aegis && sleep 3 && curl -s http://127.0.0.1:7380/api/healthz")
 	if restartResult.Error != nil || restartResult.ExitCode != 0 {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"success": false,
-			"error":   fmt.Sprintf("重启失败: exit=%d stderr=%s", restartResult.ExitCode, restartResult.Stderr),
+			"error":   fmt.Sprintf("目标重启失败: exit=%d stderr=%s", restartResult.ExitCode, restartResult.Stderr),
 			"rollback": "SSH 到目标执行: sudo systemctl start aegis",
 		})
 		return
 	}
-
-	// Step 5: Verify — health check
 	if !strings.Contains(restartResult.Stdout, "alive") {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success": false, "error": "目标重启后健康检查失败，请检查目标日志: journalctl -u aegis -n 20",
+			"success": false, "error": "目标重启后健康检查失败: journalctl -u aegis -n 20",
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":         true,
-		"message":         "节点加入成功",
-		"node_id":         report.Aegis.Version,
-		"target":          req.TargetIP,
-		"already_joined":  alreadyConfigured,
-		"next_step":       "在控制平面配置中添加 peer 条目指向 " + req.TargetIP + "，然后重启本机 aegis",
+		"success":  true,
+		"message":  "节点加入成功 — " + targetHostname,
+		"node_id":  targetHostname,
+		"target":   req.TargetIP,
+		"cp_addr":  cpAddr,
+		"next_step": "目标已重启。刷新节点列表即可看到新节点。",
 	})
+
 }
