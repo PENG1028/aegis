@@ -78,8 +78,30 @@ export default function DeployNode() {
   };
 
   // ── Join Node ──
+  const [joining, setJoining] = useState(false);
+  const [joinResult, setJoinResult] = useState<any>(null);
   const handleJoinNode = async () => {
-    toast('节点加入功能开发中。将 SSH 到目标，写入 node.yaml 并重启为节点模式。', 'error');
+    const ve = validationError();
+    if (ve) { toast(ve, 'error'); return; }
+    setJoining(true); setJoinResult(null); setError(null);
+    try {
+      const res = await fetch('/api/admin/v1/nodes/join', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_ip: form.targetIp, ssh_user: form.sshUser,
+          ssh_port: parseInt(form.sshPort) || 22, auth_method: form.authMode,
+          ssh_key: form.authMode === 'key' ? form.sshKey : undefined,
+          ssh_password: form.authMode === 'password' ? form.sshPassword : undefined,
+        }),
+      });
+      const data = await res.json();
+      setJoinResult(data);
+      if (data.success) toast('节点加入成功');
+      else toast(data.error || '加入失败', 'error');
+    } catch (e: any) {
+      setError(e.message || '节点加入请求失败');
+    } finally { setJoining(false); }
   };
 
   // ── Deploy ──
@@ -209,10 +231,16 @@ export default function DeployNode() {
                     {r.aegis.running ? '🟢' : '🟡'} Aegis {r.aegis.version || '未知版本'} — {r.aegis.running ? '运行中' : '已停止'}
                   </div>
                   {r.aegis.running && (
-                    <Btn onClick={() => handleJoinNode()} className="text-xs" primary>
-                      🔗 连接节点（加入集群）
+                    <Btn onClick={() => handleJoinNode()} disabled={joining} className="text-xs" primary>
+                      {joining ? '加入中...' : '🔗 连接节点（加入集群）'}
                     </Btn>
                   )}
+                  {joinResult && <div className="text-xs mt-2">
+                    <div className={joinResult.success ? 'text-[#4cd964]' : 'text-[#ff5c72]'}>
+                      {joinResult.success ? '✅ ' + joinResult.message : '❌ ' + (joinResult.error || '失败')}
+                    </div>
+                    {joinResult.next_step && <div className="text-a-muted mt-1">{joinResult.next_step}</div>}
+                  </div>}
                 </div>
               )}
               {r.caddy.found && (
