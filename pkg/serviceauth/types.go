@@ -13,32 +13,10 @@ type RegisterRequest struct {
 type RegisterResponse struct {
 	ServiceID    string              `json:"service_id"`
 	PublicKeys   map[string][]string `json:"public_keys"`
-	Groups       []ServiceGroup      `json:"groups,omitempty"`
-	Policies     []Policy            `json:"policies,omitempty"`
 	Blocklist    []BlocklistEntry    `json:"blocklist"`
 	BlVersion    int64               `json:"bl_version"`
-	CatVersion   int64               `json:"cat_version"`
 	SyncInterval int                 `json:"sync_interval"`
 	Warnings     []string            `json:"warnings,omitempty"`
-}
-
-// ServiceGroup is a named collection of services.
-type ServiceGroup struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Members     []string `json:"members"`
-}
-
-// Policy is an access control rule.
-type Policy struct {
-	ID            string `json:"id"`
-	Subject       string `json:"subject"`
-	TargetService string `json:"target_service"`
-	Action        string `json:"action"`
-	Effect        string `json:"effect"`
-	Priority      int    `json:"priority"`
-	Enabled       bool   `json:"enabled"`
 }
 
 // BlocklistEntry records a blocked service or API.
@@ -52,13 +30,10 @@ type BlocklistEntry struct {
 
 // SyncResponse is returned by the sync endpoint.
 type SyncResponse struct {
-	Blocklist    []BlocklistEntry   `json:"blocklist,omitempty"`
-	BlVersion    int64              `json:"bl_version"`
-	PublicKeys   map[string][]string `json:"public_keys,omitempty"`
-	Groups       []ServiceGroup     `json:"groups,omitempty"`
-	Policies     []Policy           `json:"policies,omitempty"`
-	CatVersion   int64              `json:"cat_version"`
-	NotModified  bool               `json:"not_modified"`
+	Blocklist   []BlocklistEntry   `json:"blocklist,omitempty"`
+	BlVersion   int64              `json:"bl_version"`
+	PublicKeys  map[string][]string `json:"public_keys,omitempty"`
+	NotModified bool               `json:"not_modified"`
 }
 
 // ReportRequest carries an async call-log entry.

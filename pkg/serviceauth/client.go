@@ -54,8 +54,6 @@ type Client struct {
 	privateKey string            // Ed25519 private key (base64, stored locally)
 	publicKey  string            // Ed25519 public key (base64, sent to server)
 	publicKeys map[string][]string // name → public_key (synced)
-	groups     []ServiceGroup
-	policies   []Policy
 	blocklist  []BlocklistEntry
 	blVersion  int64
 	keyDir     string // dir for storing private key
@@ -314,10 +312,6 @@ func (c *Client) SetIPChecker(checker IPChecker) {
 	c.ipChecker = checker
 }
 
-// Groups returns the current service groups (for policy evaluation).
-
-// Policies returns the current policies.
-
 // ─── Scoped service discovery ───────────────────────────────────────────
 
 // CallerEdge is one caller relationship.
@@ -433,10 +427,6 @@ func (c *Client) doSync() {
 	}
 	if syncResp.PublicKeys != nil {
 		c.publicKeys = syncResp.PublicKeys
-	}
-	if len(syncResp.Groups) > 0 {
-	}
-	if len(syncResp.Policies) > 0 {
 	}
 }
 

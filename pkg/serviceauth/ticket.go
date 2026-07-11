@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 )
@@ -42,7 +43,11 @@ func GenerateKeyPair() (pubKey, privKey string, err error) {
 func SignTicket(claims TicketClaims, privateKeyB64 string) string {
 	payload := fmt.Sprintf("%s:%d", claims.CallerService, claims.ExpiresAt)
 
-	privBytes, _ := base64.StdEncoding.DecodeString(privateKeyB64)
+	privBytes, err := base64.StdEncoding.DecodeString(privateKeyB64)
+	if err != nil {
+		log.Printf("[serviceauth] SignTicket: decode private key: %v", err)
+		return ""
+	}
 	sig := ed25519.Sign(privBytes, []byte(payload))
 	sigB64 := base64.StdEncoding.EncodeToString(sig)
 
