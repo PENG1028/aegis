@@ -367,58 +367,24 @@ WantedBy=multi-user.target' | sudo tee /etc/systemd/system/aegis-node.service > 
 		target, req.TargetIP)
 }
 
-// ─── Preflight ────────────────────────────────────────────────────────────────
-
-type PreflightResult struct {
-	Success      bool     `json:"success"`
-	Error        string   `json:"error,omitempty"`
-	AegisFound   bool     `json:"aegis_found"`
-	AegisVersion string   `json:"aegis_version,omitempty"`
-	CaddyFound   bool     `json:"caddy_found"`
-	ConfigFound  bool     `json:"config_found"`
-	HasWarnings  bool     `json:"has_warnings"`
-	Warnings     []string `json:"warnings,omitempty"`
-}
 
 func (h *Handlers) AdminDeployPreflight(w http.ResponseWriter, r *http.Request) {
 	var req DeployNodeRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
-		return
-	}
-	if req.TargetIP == "" { writeError(w, http.StatusBadRequest, "target_ip is required"); return }
+	if err := decodeJSON(r, &req); err != nil { writeError(w, http.StatusBadRequest, "invalid JSON"); return }
+	if req.TargetIP == "" { writeError(w, http.StatusBadRequest, "target_ip required"); return }
 	if req.SSHUser == "" { req.SSHUser = "root" }
 	if req.SSHPort == 0 { req.SSHPort = 22 }
 	if req.AuthMethod == "" { req.AuthMethod = "key" }
+	req.TargetIP = strings.TrimSpace(req.TargetIP)
 
-	conn, err := deploy.Connect(r.Context(), deploy.SSHConfig{
+	report, err := deploy.Preflight(r.Context(), deploy.SSHConfig{
 		Host: req.TargetIP, User: req.SSHUser, Port: req.SSHPort,
 		AuthMethod: deploy.AuthMethod(req.AuthMethod),
 		SSHKey: req.SSHKey, SSHPassword: req.SSHPassword,
 	})
-	if err != nil { writeJSON(w, http.StatusOK, PreflightResult{Success: false, Error: fmt.Sprintf("SSH failed: %v", err)}); return }
-	defer conn.Executor.Close()
-
-	result := PreflightResult{Success: true}
-	var warnings []string
-
-	r1 := conn.Executor.Run(r.Context(), "test -f /usr/local/bin/aegis && /usr/local/bin/aegis version 2>/dev/null | head -1 || echo ''")
-	if v := strings.TrimSpace(r1.Stdout); v != "" && strings.HasPrefix(v, "v") {
-		result.AegisFound, result.AegisVersion = true, v
-		warnings = append(warnings, "检测到 Aegis "+v+" — 建议使用节点加入而非全量部署")
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": false, "error": err.Error()})
+		return
 	}
-
-	r2 := conn.Executor.Run(r.Context(), "which caddy 2>/dev/null && caddy version 2>/dev/null | head -1 || echo ''")
-	if v := strings.TrimSpace(r2.Stdout); v != "" {
-		result.CaddyFound = true
-		warnings = append(warnings, "已安装 Caddy — 部署时可跳过")
-	}
-
-	r3 := conn.Executor.Run(r.Context(), "test -f /etc/aegis/config.yaml && echo 'y' || echo ''")
-	result.ConfigFound = strings.TrimSpace(r3.Stdout) == "y"
-	if result.ConfigFound { warnings = append(warnings, "已有配置文件 — 部署将覆盖") }
-
-	result.HasWarnings = len(warnings) > 0
-	result.Warnings = warnings
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "report": report})
 }

@@ -17,9 +17,12 @@ interface DeployForm {
 
 interface Preflight {
   success: boolean; error?: string;
-  aegis_found?: boolean; aegis_version?: string;
-  caddy_found?: boolean; config_found?: boolean;
-  has_warnings?: boolean; warnings?: string[];
+  report?: {
+    aegis:  { found: boolean; path?: string; version?: string; running: boolean; service?: string };
+    caddy:  { found: boolean; path?: string; version?: string; running: boolean; service?: string };
+    config: { found: boolean; path?: string };
+    ports:  { port: number; process: string; listen: string }[];
+  };
 }
 
 export default function DeployNode() {
@@ -180,29 +183,42 @@ export default function DeployNode() {
       </Card>
 
       {/* ── Preflight Results ── */}
-      {preflight && preflight.success && (
-        <Card title={preflight.has_warnings ? '⚠ 冲突检测' : '✅ 目标就绪'} className={preflight.has_warnings ? 'border-[#e8b830]/30' : 'border-[#4cd964]/30'}>
-          <div className="space-y-2 text-xs">
-            {!preflight.aegis_found && !preflight.caddy_found && (
-              <div className="text-[#4cd964]">✅ 目标为空机器，可全新部署</div>
-            )}
-            {preflight.warnings?.map((w, i) => (
-              <div key={i} className="text-[#e8b830]">{w}</div>
-            ))}
-            {preflight.caddy_found && (
-              <label className="flex items-center gap-2 text-a-muted cursor-pointer">
-                <input type="checkbox" checked={skipCaddy} onChange={e => setSkipCaddy(e.target.checked)} />
-                跳过 Caddy 安装（已存在）
-              </label>
-            )}
-            {preflight.aegis_found && (
-              <div className="text-a-fg bg-[#e8b830]/5 border border-[#e8b830]/20 rounded-a-sm p-2">
-                目标已有 Aegis {preflight.aegis_version}。建议使用节点加入模式（跳过二进制覆盖），或确认覆盖后继续部署。
-              </div>
-            )}
-          </div>
-        </Card>
-      )}
+      {preflight && preflight.success && preflight.report && (() => {
+        const r = preflight.report;
+        const warnings = [];
+        if (r.aegis.found) warnings.push(`Aegis ${r.aegis.version || ''} ${r.aegis.running ? '运行中' : '已安装'} — 建议节点加入`);
+        if (r.caddy.found) warnings.push(`Caddy ${r.caddy.version || ''} ${r.caddy.running ? '运行中' : '已安装'} — 可跳过安装`);
+        if (r.config.found) warnings.push('配置文件已存在 — 部署将覆盖');
+        const portWarnings = r.ports?.filter(p => !r.caddy?.running || p.process !== 'caddy') || [];
+        const hasWarnings = warnings.length > 0 || portWarnings.length > 0;
+        const isClean = !r.aegis.found && !r.caddy.found;
+
+        return (
+          <Card title={isClean ? '✅ 目标就绪' : hasWarnings ? '⚠ 冲突检测' : '✅ 目标就绪'}
+            className={isClean ? 'border-[#4cd964]/30' : 'border-[#e8b830]/30'}>
+            <div className="space-y-2 text-xs">
+              {isClean && <div className="text-[#4cd964]">✅ 目标为空机器，可全新部署</div>}
+              {r.aegis.found && (
+                <div className={r.aegis.running ? 'text-[#e8b830]' : 'text-a-fg'}>
+                  {r.aegis.running ? '🟢' : '🟡'} Aegis {r.aegis.version || '未知版本'} — {r.aegis.running ? '运行中' : '已停止'} — 建议使用<b>节点加入</b>而非全量部署
+                </div>
+              )}
+              {r.caddy.found && (
+                <label className="flex items-center gap-2 text-a-muted cursor-pointer">
+                  <input type="checkbox" checked={skipCaddy} onChange={e => setSkipCaddy(e.target.checked)} />
+                  Caddy {r.caddy.version || ''} {r.caddy.running ? '🟢 运行中' : ''} — 跳过安装
+                </label>
+              )}
+              {r.config.found && <div className="text-[#e8b830]">📄 配置: {r.config.path}</div>}
+              {portWarnings.map((p, i) => (
+                <div key={i} className="text-[#ff5c72] bg-[#ff5c72]/5 px-2 py-1 rounded">
+                  🔴 端口 :{p.port} 被 {p.process} 占用 — 部署前需停止或迁移
+                </div>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* ── Actions ── */}
       <Card title="执行部署">
