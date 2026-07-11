@@ -188,6 +188,7 @@ function CellContent({ ev }: { ev: EvaluatedCell }) {
 const COMP_CARD_STYLE: Record<string, { card: string; text: string; cursor: string }> = {
   available:          { card: 'bg-a-surface border-a-border/30 hover:border-[#4cd964]/40 hover:bg-[#4cd964]/5',     text: 'text-a-fg',            cursor: 'cursor-pointer' },
   missing_provider:   { card: 'bg-[#ff5c72]/5 border-[#ff5c72]/30 hover:border-[#ff5c72]/50 hover:bg-[#ff5c72]/10', text: 'text-[#ff5c72]',       cursor: 'cursor-pointer' },
+  provider_not_running:{ card: 'bg-[#e8b830]/5 border-[#e8b830]/30 hover:border-[#e8b830]/50 hover:bg-[#e8b830]/10',text: 'text-[#e8b830]',       cursor: 'cursor-pointer' },
   unsupported:        { card: 'bg-transparent border-a-border/10',                                                     text: 'text-a-muted/40',      cursor: 'cursor-not-allowed' },
 };
 
@@ -206,6 +207,8 @@ function CompositionBar({ compositions, activeAtoms, onHover }: {
           ? `${comp.name}：此模式不支持`
           : comp.status === 'missing_provider'
             ? `${comp.name}：Provider 未安装`
+          : comp.status === 'provider_not_running'
+            ? `${comp.name}：Provider 未启动`
             : `${comp.name} = ${(comp.atoms || []).join(' → ')}`;
 
         return (
@@ -217,7 +220,7 @@ function CompositionBar({ compositions, activeAtoms, onHover }: {
             title={title}
             className={cn('px-2.5 py-1 rounded-a-sm text-[10px] font-mono transition-colors border', st.card, st.cursor)}>
             <span className={st.text}>{comp.name}</span>
-            <span className={cn('ml-1.5', comp.status === 'unsupported' ? 'text-a-muted/30' : comp.status === 'missing_provider' ? 'text-[#ff5c72]/60' : 'text-a-muted')}>
+            <span className={cn('ml-1.5', comp.status === "unsupported" ? "text-a-muted/30" : comp.status === "missing_provider" ? "text-[#ff5c72]/60" : comp.status === "provider_not_running" ? "text-[#e8b830]/60" : "text-a-muted")}>
               {comp.chain || '—'}
             </span>
           </button>

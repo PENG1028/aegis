@@ -197,7 +197,8 @@ type Composition struct {
 // CompStatus constants for Composition.Status.
 const (
 	CompAvailable      = "available"
-	CompMissingProvider = "missing_provider"
+	CompMissingProvider    = "missing_provider"
+	CompProviderNotRunning = "provider_not_running"
 	CompUnsupported    = "unsupported"
 )
 
@@ -227,8 +228,12 @@ func (c *Composition) EvalStatus(mode RuntimeMode, states []ProviderState) {
 	}
 	// Mode supports this composition. Check if required providers are installed.
 	installed := make(map[string]bool)
+		running := make(map[string]bool)
 	for _, s := range states {
-		if s.Healthy() {
+		if s.Installed {
+				if s.Running {
+					running[s.ID] = true
+				}
 			installed[s.ID] = true
 		}
 	}
@@ -238,8 +243,13 @@ func (c *Composition) EvalStatus(mode RuntimeMode, states []ProviderState) {
 			return
 		}
 	}
-	// All providers installed (all-optional compositions are "available" too)
-	c.Status = CompAvailable
+	for pid := range needsProviders {
+			if !running[pid] {
+				c.Status = CompProviderNotRunning
+				return
+			}
+		}
+	
 }
 
 // EvalAllCompositions evaluates status for all compositions in this mode.
