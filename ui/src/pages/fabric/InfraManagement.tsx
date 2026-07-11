@@ -92,8 +92,8 @@ export default function InfraManagement() {
         hasConfig: false,
         hasReload: false,
         hasService: false,
-        canInstall: !inf.installed,
-        canUninstall: inf.installed,
+        canInstall: !inf.installed && inf.category !== 'acme',
+        canUninstall: inf.installed && inf.category !== 'acme',
         ready: inf.available || false,
         issues: [],
       });

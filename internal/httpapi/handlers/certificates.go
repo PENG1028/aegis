@@ -231,7 +231,7 @@ func (h *Handlers) AdminInfraStatus(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"items": []infra.Status{
-			infra.DetectCertbot(email),
+			infra.DetectACME(email),
 			infra.DetectIPTables(),
 			infra.DetectDNSMasq(),
 		},
