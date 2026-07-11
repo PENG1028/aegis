@@ -21,7 +21,6 @@ ServiceAuth 是 Aegis 内置的服务间认证系统，不是独立服务。
 - **Post/Get/Put/Delete**：自动签 ticket，直接调 URL
 - **Do() 自动报告**：2xx 响应后自动 POST `/api/service-auth/v1/report`，填充拓扑调用关系
 - **sync**：每 30s 拉公钥、blocklist（不拉 groups/policies — 已移除）
-- **WrapHTTP**：把 ServiceAuth 认证注入标准 `http.Client`，业务 SDK 零感知
 
 ---
 
@@ -38,14 +37,9 @@ client.Register(ctx)
 ## 调用
 
 ```go
-// 方式 A：直接用 client 调（ticket 自动签）
+// 直接用 client 调（ticket 自动签）
 client.Post(ctx, "http://target-service:8080/api/action", body)
 client.Get(ctx, "http://target-service:8080/api/data")
-
-// 方式 B：WrapHTTP — 把认证注入 http.Client，业务 SDK 无感
-httpClient := client.WrapHTTP(http.DefaultClient)
-sdk := usermgmt.New("http://user-mgmt:8080", sdk.WithHTTPClient(httpClient))
-// sdk.CheckUser() 发出的每个请求自动带 ticket，SDK 本身不知道 ServiceAuth
 ```
 
 ---
@@ -67,26 +61,36 @@ ServiceAuth 支持两种认证方式，服务端可同时启用：
 
 ```go
 // 服务端同时接受 ticket 和 API Key
-func authMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // 路径 A：ServiceAuth ticket（内部服务间调用）
-        if ticket := r.Header.Get("X-Service-Ticket"); ticket != "" {
-            caller := serviceauth.VerifyTicket(ticket, publicKeys)
-            if caller != "" {
-                ctx := context.WithValue(r.Context(), "caller", caller)
-                next.ServeHTTP(w, r.WithContext(ctx))
-                return
+func authMiddleware(publicKeys map[string][]string) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            // 路径 A：ServiceAuth ticket（内部服务间调用）
+            if ticket := r.Header.Get("X-Service-Ticket"); ticket != "" {
+                // 从 ticket 拆出 caller name
+                parts := strings.SplitN(
+                    string(base64Decode(ticket)), ":", 3)
+                if len(parts) >= 1 {
+                    callerName := parts[0]
+                    for _, pubKey := range publicKeys[callerName] {
+                        if claims, err := serviceauth.VerifyTicket(ticket, pubKey); err == nil {
+                            ctx := context.WithValue(r.Context(), "caller", claims.CallerService)
+                            next.ServeHTTP(w, r.WithContext(ctx))
+                            return
+                        }
+                    }
+                }
+                // ticket 验不过，不立即拒绝——继续试 API Key
             }
-        }
-        // 路径 B：API Key（外部调用）
-        if key := r.Header.Get("X-API-Key"); key != "" {
-            if validateAPIKey(key) {
-                next.ServeHTTP(w, r)
-                return
+            // 路径 B：API Key（外部调用）
+            if key := r.Header.Get("X-API-Key"); key != "" {
+                if validateAPIKey(key) {
+                    next.ServeHTTP(w, r)
+                    return
+                }
             }
-        }
-        http.Error(w, "unauthorized", http.StatusUnauthorized)
-    })
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+        })
+    }
 }
 ```
 
@@ -184,5 +188,12 @@ X-Service-Ticket: <ticket>
 | `pkg/serviceauth/ipcheck.go` | IP 白名单 |
 | `pkg/serviceauth/ticket.go` | Ed25519 签名 |
 | `internal/serviceauth/service.go` | 服务端注册逻辑 |
-| `docs/serviceauth.md` | 完整文档 |
+| `docs/serviceauth.md` | 操作手册 |
+| `docs/serviceauth-design.md` | **设计文档（分类/词汇/案例）** |
 | `docs/service-api-reference.md` | API 参考 |
+
+---
+
+## 专有名词速查
+
+见 `docs/serviceauth-design.md` 第一节"词汇表"。

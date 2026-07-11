@@ -16,7 +16,6 @@ Guard        验证 ticket 的中间件。验证通过后注入调用方名字
 Post(url)    调用另一个服务时自动签 ticket
 Do()         自动报告调用日志 → 拓扑数据
 sync         客户端每 30s 拉取注册表变更（公钥、封禁列表）
-WrapHTTP     把认证注入标准 http.Client，业务 SDK 零感知
 ```
 
 ---
@@ -45,12 +44,6 @@ resp, err := client.Post(ctx, "http://target-service:8080/api/action", body)
 resp, err := client.Get(ctx, "http://target-service/api/data")
 resp, err := client.Put(ctx, "http://target-service/api/resource", body)
 resp, err := client.Delete(ctx, "http://target-service/api/resource")
-
-// 方式 B：WrapHTTP — 把认证注入 http.Client，业务 SDK 零感知
-httpClient := client.WrapHTTP(http.DefaultClient)
-sdk := usermgmt.New("http://user-mgmt:8080", sdk.WithHTTPClient(httpClient))
-// sdk.CheckUser() 发出的每个请求自动带 ticket
-// 业务 SDK 不知道 ServiceAuth 的存在
 
 // 健康检查
 if client.Healthy("http://target-service:8080/healthz") {
