@@ -48,7 +48,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		ProvReg:         svcs.ProvReg,   // v1.8L-19 — provider registry for install/uninstall/config handlers
 		EgressSvc:       svcs.EgressSvc, // v1.9A-5 — egress rule engine
 		CertStore:       svcs.CertStore, // v1.9C — TLS certificate store
-		ACMEMgr:         svcs.ACMEMgr,   // v1.9C — ACME auto-cert manager
+		ACMEClient:         svcs.ACMEClient,   // v1.9C — ACME auto-cert manager
 		Version:         svcs.Version,
 		BuildTime:       svcs.BuildTime,
 	}

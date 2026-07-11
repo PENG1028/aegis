@@ -139,11 +139,10 @@ func (h *Handlers) AdminDeleteCertificate(w http.ResponseWriter, r *http.Request
 
 // AdminACMEObtain handles POST /api/admin/v1/acme/obtain
 func (h *Handlers) AdminACMEObtain(w http.ResponseWriter, r *http.Request) {
-	if h.ACMEMgr == nil {
-		writeError(w, http.StatusNotImplemented, "ACME not available — configure proxy.email and install certbot")
+	if h.ACMEClient == nil || !h.ACMEClient.Available() {
+		writeError(w, http.StatusNotImplemented, "ACME not available — configure proxy.email in settings")
 		return
 	}
-
 	var body struct {
 		Domains []string `json:"domains"`
 	}
@@ -155,15 +154,13 @@ func (h *Handlers) AdminACMEObtain(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "at least one domain required")
 		return
 	}
-
-	certID, err := h.ACMEMgr.Obtain(r.Context(), infra.ObtainRequest{Domains: body.Domains})
+	result, err := h.ACMEClient.Obtain(r.Context(), body.Domains)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusCreated, map[string]string{
-		"cert_id": certID,
+		"cert_id": result.CertID,
 		"status":  "issued",
 	})
 }
@@ -174,7 +171,7 @@ func (h *Handlers) AdminACMEStatus(w http.ResponseWriter, r *http.Request) {
 	if h.Config != nil {
 		email = h.Config.Proxy.Email
 	}
-	writeJSON(w, http.StatusOK, infra.DetectCertbot(email))
+	writeJSON(w, http.StatusOK, infra.DetectACME(email))
 }
 
 // ─── Certificate Renewal ───
@@ -185,12 +182,12 @@ func (h *Handlers) AdminCheckCertExpiry(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotImplemented, "certificate store not available")
 		return
 	}
-	email := ""
-	if h.Config != nil {
-		email = h.Config.Proxy.Email
+	var acmeRenewer certstore.ACMERenewer
+	if h.ACMEClient != nil && h.ACMEClient.Available() {
+		acmeRenewer = h.ACMEClient
 	}
-	checker := certstore.NewCertRenewalChecker(h.CertStore, email)
-	certs, err := checker.Check(r.Context(), 90) // check certs expiring within 90 days
+	checker := certstore.NewCertRenewalChecker(h.CertStore, acmeRenewer)
+	certs, err := checker.Check(r.Context(), 90)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -211,11 +208,11 @@ func (h *Handlers) AdminRenewCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	email := ""
-	if h.Config != nil {
-		email = h.Config.Proxy.Email
+	var acmeRenewer certstore.ACMERenewer
+	if h.ACMEClient != nil && h.ACMEClient.Available() {
+		acmeRenewer = h.ACMEClient
 	}
-	checker := certstore.NewCertRenewalChecker(h.CertStore, email)
+	checker := certstore.NewCertRenewalChecker(h.CertStore, acmeRenewer)
 	result, err := checker.Renew(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

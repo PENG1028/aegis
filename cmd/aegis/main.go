@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"aegis/internal/acme"
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
 	"aegis/internal/apply"
@@ -19,7 +20,6 @@ import (
 	"aegis/internal/edgemux"
 	"aegis/internal/distnode"
 	"aegis/internal/httpapi/handlers"
-	"aegis/internal/infra"
 	"aegis/internal/certstore"
 	"aegis/internal/egress"
 	"aegis/internal/endpoint"
@@ -226,8 +226,12 @@ func main() {
 	certDir := cfg.Runtime.DataDir + "/certs"
 	certStoreSvc := certstore.NewService(certRepo, certDir)
 
-	// ── ACME Manager (v1.9C) ──
-	acmeMgr := infra.NewACMEManager(certStoreSvc, cfg.Proxy.Email, cfg.Runtime.DataDir+"/acme", "")
+	// ── ACME Client (v1.9C) — embedded lego, replaces certbot ──
+	acmeClient, err := acme.NewClient(certStoreSvc, cfg.Proxy.Email, "", cfg.Runtime.DataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  acme client: %v (ACME disabled)\n", err)
+		acmeClient = nil
+	}
 
 	// --- v1.8L: Topology Planner (dimension 2) + Workflow orchestrator ---
 	topoPlanner := topology.NewPlanner(templates.Default(), topology.Dependencies{
@@ -497,7 +501,7 @@ httpSvcs := &httpapi.Services{
 		ServiceAuthSvc: serviceAuthSvc,
 		EgressSvc:       egressSvc,
 		CertStore:       certStoreSvc,
-		ACMEMgr:         acmeMgr,
+		ACMEClient:      acmeClient,
 		ProvReg:        provRegistry,
 		Version:        Version,
 		BuildTime:      BuildTime,

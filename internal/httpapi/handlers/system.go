@@ -10,7 +10,7 @@ import (
 	"aegis/internal/distnode"
 	"aegis/internal/dns"
 	"aegis/internal/edgemux"
-	"aegis/internal/infra"
+	"aegis/internal/acme"
 	"aegis/internal/certstore"
 	"aegis/internal/egress"
 	"aegis/internal/endpoint"
@@ -75,7 +75,7 @@ type Handlers struct {
 	ServiceAuthSvc  *serviceauth.Service   // v1.9A
 	EgressSvc       *egress.Service        // v1.9A-5
 	CertStore       *certstore.Service      // v1.9C TLS certificate store
-	ACMEMgr         *infra.ACMEManager           // v1.9C ACME auto-cert manager
+	ACMEClient     *acme.Client            // v1.9C ACME via lego (replaces certbot)
 	SafetySvc       *safety.Service        // v1.7AB
 	RelayResolver   *RelayResolver         // v1.8B
 	NodeStateSvc    *nodestate.Service        // v1.8C-2

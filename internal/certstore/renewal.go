@@ -7,39 +7,37 @@ import (
 	"time"
 )
 
-// ─── Certificate Renewal Checker ─────────────────────────────────────────
-// CertRenewalChecker provides a provider-agnostic interface for checking
-// certificate expiry and triggering renewal. It doesn't care which provider
-// issued the cert — it routes to the right renewal method based on source.
+// ACMERenewer is an optional interface for ACME-based certificate renewal.
+// The acme package implements this; certstore does not depend on acme.
+type ACMERenewer interface {
+	Renew(ctx context.Context, domains []string) (certID string, err error)
+}
 
-// ExpiringCert wraps a Certificate with computed fields about its expiry
-// and whether auto-renewal is possible.
+// ExpiringCert wraps a Certificate with computed fields about its expiry.
 type ExpiringCert struct {
 	Certificate
-	DaysLeft    int    `json:"days_left"`    // days until expiry (negative = expired)
-	CanRenew    bool   `json:"can_renew"`    // whether we can auto-renew this cert
-	RenewMethod string `json:"renew_method"` // "caddy_auto" | "certbot" | "manual"
-	RenewNote   string `json:"renew_note"`   // human-readable instructions
+	DaysLeft    int    `json:"days_left"`
+	CanRenew    bool   `json:"can_renew"`
+	RenewMethod string `json:"renew_method"`
+	RenewNote   string `json:"renew_note"`
 }
 
 // RenewalResult is returned after a renewal attempt.
 type RenewalResult struct {
-	CertID    string `json:"cert_id"`    // new or updated cert ID
-	Renewed   bool   `json:"renewed"`    // whether a new cert was obtained
-	Message   string `json:"message"`    // human-readable result
-	NotAfter  string `json:"not_after"`  // new expiry date
+	CertID   string `json:"cert_id"`
+	Renewed  bool   `json:"renewed"`
+	Message  string `json:"message"`
+	NotAfter string `json:"not_after"`
 }
 
-// CertRenewalChecker implements certificate expiry checking and renewal.
-// It uses the CertStore repository and knows how to renew certs by source.
+// CertRenewalChecker checks certificate expiry and triggers renewal.
 type CertRenewalChecker struct {
-	svc       *Service
-	acmeEmail string // from proxy.email, needed for certbot
+	svc  *Service
+	acme ACMERenewer // nil if no ACME capability
 }
 
-// NewCertRenewalChecker creates a renewal checker.
-func NewCertRenewalChecker(svc *Service, acmeEmail string) *CertRenewalChecker {
-	return &CertRenewalChecker{svc: svc, acmeEmail: acmeEmail}
+func NewCertRenewalChecker(svc *Service, acme ACMERenewer) *CertRenewalChecker {
+	return &CertRenewalChecker{svc: svc, acme: acme}
 }
 
 // Check returns all certificates expiring within the given number of days.
@@ -48,7 +46,6 @@ func (c *CertRenewalChecker) Check(ctx context.Context, withinDays int) ([]Expir
 	if err != nil {
 		return nil, err
 	}
-
 	threshold := time.Now().Add(time.Duration(withinDays) * 24 * time.Hour)
 	var expiring []ExpiringCert
 
@@ -59,91 +56,60 @@ func (c *CertRenewalChecker) Check(ctx context.Context, withinDays int) ([]Expir
 		}
 		daysLeft := int(time.Until(notAfter).Hours() / 24)
 		if notAfter.After(threshold) && daysLeft > 0 {
-			continue // not expiring soon enough
+			continue
 		}
-
-		ec := ExpiringCert{
-			Certificate: cert,
-			DaysLeft:    daysLeft,
-		}
-
+		ec := ExpiringCert{Certificate: cert, DaysLeft: daysLeft}
 		switch cert.Source {
 		case SourceGatewayAuto:
 			ec.RenewMethod = "caddy_auto"
 			ec.CanRenew = true
-			ec.RenewNote = "Caddy 自动续期，无需手动干预。如未续期，请检查 Caddy 服务状态和 DNS 解析。"
+			ec.RenewNote = "Caddy 自动续期，无需手动干预。"
 		case SourceLocalACME:
-			ec.RenewMethod = "certbot"
-			ec.CanRenew = c.acmeEmail != ""
-			if c.acmeEmail == "" {
-				ec.RenewNote = "未配置 ACME email（proxy.email），无法自动续期。请在设置中配置后重试。"
+			ec.RenewMethod = "acme"
+			ec.CanRenew = c.acme != nil
+			if c.acme == nil {
+				ec.RenewNote = "ACME 未配置。请在设置中配置 proxy.email。"
 			} else {
-				ec.RenewNote = "将通过 certbot 续期。需确保域名 DNS 仍指向本机且 80 端口可用。"
+				ec.RenewNote = "可通过 ACME 续期。"
 			}
-		default: // manual_upload, external
+		default:
 			ec.RenewMethod = "manual"
 			ec.CanRenew = false
-			ec.RenewNote = "此证书为手动导入，无法自动续期。请在证书过期前重新上传或通过 ACME 申请新证书。"
+			ec.RenewNote = "此证书为手动导入，无法自动续期。"
 		}
-
 		expiring = append(expiring, ec)
 	}
 	return expiring, nil
 }
 
-// Renew attempts to renew a certificate by ID. Returns the result.
+// Renew attempts to renew a certificate by ID.
 func (c *CertRenewalChecker) Renew(ctx context.Context, certID string) (*RenewalResult, error) {
 	cert, err := c.svc.Get(certID)
 	if err != nil {
 		return nil, err
 	}
-
 	switch cert.Source {
 	case SourceGatewayAuto:
-		// Caddy handles renewal automatically. Trigger a Caddy reload
-		// which will cause Caddy to re-check cert expiry and renew if needed.
-		output, err := exec.CommandContext(ctx, "systemctl", "reload", "caddy").CombinedOutput()
+		out, err := exec.CommandContext(ctx, "systemctl", "reload", "caddy").CombinedOutput()
 		if err != nil {
-			return &RenewalResult{
-				CertID:  certID,
-				Renewed: false,
-				Message: fmt.Sprintf("Caddy reload failed: %v — %s", err, string(output)),
-			}, nil
+			return &RenewalResult{CertID: certID, Message: fmt.Sprintf("Caddy reload failed: %v — %s", err, string(out))}, nil
 		}
-		// Re-sync to pick up potentially renewed cert
 		c.svc.SyncAutoCerts("")
-		return &RenewalResult{
-			CertID:  certID,
-			Renewed: true,
-			Message: "Caddy reloaded, auto-renewal triggered if cert was expiring. CertStore re-synced.",
-		}, nil
+		return &RenewalResult{CertID: certID, Renewed: true, Message: "Caddy reloaded, auto-renewal triggered."}, nil
 
 	case SourceLocalACME:
-		if c.acmeEmail == "" {
-			return nil, fmt.Errorf("ACME email not configured")
+		if c.acme == nil {
+			return nil, fmt.Errorf("ACME not configured")
 		}
-		output, err := exec.CommandContext(ctx, "certbot", "renew",
-			"--non-interactive", "--agree-tos").CombinedOutput()
+		var domains []string
+		fmt.Sscanf(cert.Domains, "%q", &domains)
+		newID, err := c.acme.Renew(ctx, domains)
 		if err != nil {
-			return &RenewalResult{
-				CertID:  certID,
-				Renewed: false,
-				Message: fmt.Sprintf("certbot renew failed: %v — %s", err, string(output)),
-			}, nil
+			return &RenewalResult{CertID: certID, Message: fmt.Sprintf("ACME renewal failed: %v", err)}, nil
 		}
-		// After renewal, re-import the renewed cert
-		c.svc.SyncAutoCerts("")
-		return &RenewalResult{
-			CertID:  certID,
-			Renewed: true,
-			Message: fmt.Sprintf("certbot renew succeeded: %s", string(output)),
-		}, nil
+		return &RenewalResult{CertID: newID, Renewed: true, Message: "ACME renewal succeeded."}, nil
 
 	default:
-		return &RenewalResult{
-			CertID:  certID,
-			Renewed: false,
-			Message: "此证书为手动导入，无法自动续期。请重新上传新证书或通过 ACME 申请。",
-		}, nil
+		return &RenewalResult{CertID: certID, Message: "此证书为手动导入，无法自动续期。"}, nil
 	}
 }
