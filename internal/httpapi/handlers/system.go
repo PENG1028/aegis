@@ -22,7 +22,6 @@ import (
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
 	"aegis/internal/nodeauth"
-	"aegis/internal/nodestate"
 	"aegis/internal/provider"
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
@@ -78,7 +77,7 @@ type Handlers struct {
 	ACMEClient     *acme.Client            // v1.9C ACME via lego (replaces certbot)
 	SafetySvc       *safety.Service        // v1.7AB
 	RelayResolver   *RelayResolver         // v1.8B
-	NodeStateSvc    *nodestate.Service        // v1.8C-2
+	NodeStateSvc    interface{} // DEPRECATED        // v1.8C-2
 	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
 	GatewayInvSvc   *gateway.InventoryService       // v1.8C-2
 	DNSMgmt         *dns.Manager                    // v1.8E

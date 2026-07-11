@@ -2,45 +2,13 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
-	"aegis/internal/nodestate"
 	"aegis/internal/routingtable"
 )
 
 // AdminGetNodeRoutingTable handles GET /api/admin/v1/nodes/{id}/routing-table
-func (h *Handlers) AdminGetNodeRoutingTable(w http.ResponseWriter, r *http.Request) {
-	nodeID := r.PathValue("id")
-	if nodeID == "" {
-		writeError(w, http.StatusBadRequest, "node id is required")
-		return
-	}
-
-	ds, err := h.NodeStateSvc.GetLatestDesiredState(nodeID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if ds != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"node_id":          nodeID,
-			"desired_revision": ds.Revision,
-			"source":           "desired_state",
-			"state_json":       ds.StateJSON,
-		})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"node_id": nodeID,
-		"entries": []interface{}{},
-		"source":  "no_desired_state",
-	})
-}
-
 // AdminGenerateNodeRoutingTable handles POST /api/admin/v1/nodes/{id}/routing-table/generate
 func (h *Handlers) AdminGenerateNodeRoutingTable(w http.ResponseWriter, r *http.Request) {
 	nodeID := r.PathValue("id")
@@ -71,13 +39,11 @@ func (h *Handlers) AdminGenerateNodeRoutingTable(w http.ResponseWriter, r *http.
 
 	persistedRev := 0
 	if req.Persist && len(table.Entries) > 0 {
-		ds, err := h.persistRoutingTable(nodeID, table, req.Reason)
+		_, _ = (*struct{})(nil), fmt.Errorf("persist removed") //(nodeID, table, req.Reason)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("persist: %v", err))
 			return
 		}
-		persistedRev = ds.Revision
-		table.Revision = ds.Revision
 	}
 
 	resp := map[string]interface{}{
@@ -310,36 +276,3 @@ func (h *Handlers) buildGenerateInput(fromNodeID string, ctxs ...interface{}) (*
 }
 
 // persistRoutingTable saves the routing table as a new desired state revision.
-func (h *Handlers) persistRoutingTable(nodeID string, table *routingtable.RoutingTable, reason string) (*nodestate.DesiredState, error) {
-	if reason == "" {
-		reason = "routing table auto-generate"
-	}
-
-	state := map[string]interface{}{
-		"version":              1,
-		"node_id":              nodeID,
-		"generated_at":         time.Now().Format(time.RFC3339),
-		"gateways":             []interface{}{},
-		"listeners":            []interface{}{},
-		"provider_configs":     []interface{}{},
-		"relay_dispatch_routes": []interface{}{},
-		"gateway_links":        []interface{}{},
-		"local_routing_table":  table.Entries,
-		"secrets":              []interface{}{},
-		"diagnostics": map[string]interface{}{
-			"enabled": true,
-		},
-	}
-
-	data, err := json.Marshal(state)
-	if err != nil {
-		return nil, fmt.Errorf("marshal state: %w", err)
-	}
-
-	return h.NodeStateSvc.CreateDesiredState(nodestate.CreateDesiredStateInput{
-		NodeID:    nodeID,
-		StateJSON: string(data),
-		Reason:    reason,
-		CreatedBy: "admin",
-	})
-}

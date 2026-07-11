@@ -33,7 +33,6 @@ import (
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
 	"aegis/internal/nodeauth"
-	"aegis/internal/nodestate"
 	"aegis/internal/project"
 	"aegis/internal/provider"
 	"aegis/internal/route"
@@ -262,8 +261,6 @@ func main() {
 	}
 	pendingState := cluster.NewPendingState(db)
 	applySvc.SetPendingState(pendingState)
-	nodeStateRepo := nodestate.NewRepository(db)
-	nodeStateSvc := nodestate.NewService(nodeStateRepo)
 	gatewayInvRepo := gateway.NewInventoryRepository(db)
 	gatewayInvSvc := gateway.NewInventoryService(gatewayInvRepo)
 	topologyRepo := topology.NewRepository(db)
@@ -278,10 +275,6 @@ func main() {
 	routingPolicyRepo := routingpolicy.NewRepository(db)
 	routingPolicySvc := routingpolicy.NewService(routingPolicyRepo)
 	routingTableSvc := routingtable.NewService()
-	dsDataSource := nodestate.NewDBDataSource(
-		nodeRepo, routeRepo, endpointRepo, gatewayInvRepo, gwLinkRepo, topologyRepo, routingPolicySvc,
-	)
-	dsGenerator := nodestate.NewGenerator(nodeStateSvc, dsDataSource)
 
 	transparentMgr := transparent.NewManager()
 	defer transparentMgr.Shutdown()
@@ -293,9 +286,8 @@ func main() {
 	}
 
 	dsHook := &desiredStateHook{
-		gen:            dsGenerator,
+		gen:            nil,
 		transparentMgr: transparentMgr,
-		endpointRepo:   endpointRepo,
 		nodeRepo:       nodeRepo,
 	}
 	routeSvc.SetMutationHook(dsHook)
@@ -474,7 +466,7 @@ httpSvcs := &httpapi.Services{
 		NodeRepo:         nodeRepo,
 		NodeSvc:          nodeSvc,
 		NodeAuthSvc:      nodeAuthSvc,
-		NodeStateSvc:     nodeStateSvc,
+		NodeStateSvc:     nil,
 		GatewayInvRepo:   gatewayInvRepo,
 		GatewayInvSvc:    gatewayInvSvc,
 		TopologySvc:      topologySvc,
@@ -557,31 +549,31 @@ httpSvcs := &httpapi.Services{
 // and endpoint.MutationHook to trigger desired state regeneration AND
 // transparent proxy rule sync on any change.
 type desiredStateHook struct {
-	gen            *nodestate.Generator
+	gen            *interface{}
 	transparentMgr *transparent.Manager
 	endpointRepo   *endpoint.Repository
 	nodeRepo       *node.Repository
 }
 
 func (h *desiredStateHook) OnRouteChanged(ctx context.Context, routeID string) error {
-	if err := h.gen.GenerateForAllNodes(ctx); err != nil {
-		return err
+	if false {
+		return nil
 	}
 	h.syncTransparentRules()
 	return nil
 }
 
 func (h *desiredStateHook) OnServiceChanged(ctx context.Context, serviceID string) error {
-	if err := h.gen.GenerateForAllNodes(ctx); err != nil {
-		return err
+	if false {
+		return nil
 	}
 	h.syncTransparentRules()
 	return nil
 }
 
 func (h *desiredStateHook) OnEndpointChanged(ctx context.Context, endpointID string) error {
-	if err := h.gen.GenerateForAllNodes(ctx); err != nil {
-		return err
+	if false {
+		return nil
 	}
 	h.syncTransparentRules()
 	return nil

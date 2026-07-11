@@ -71,24 +71,7 @@ func (h *Handlers) ClusterHealth(w http.ResponseWriter, r *http.Request) {
 			IsLeader: n.IsLeader,
 		}
 
-		// Sync status
-		if h.NodeStateSvc != nil {
-			sync, err := h.NodeStateSvc.GetSyncStatus(n.NodeID)
-			if err == nil && sync != nil {
-				nh.SyncStatus = sync.Status
-				nh.DesiredRev = sync.DesiredRevision
-				nh.AppliedRev = sync.AppliedRevision
-				if sync.Status != "in_sync" && sync.Status != "no_desired_state" {
-					overallHealthy = false
-					if sync.LastError != "" {
-						resp.Issues = append(resp.Issues,
-							n.NodeID+": "+sync.Status+" — "+sync.LastError)
-					}
-				}
-			}
-		}
-
-		// Offline detection: heartbeat > 60s
+				// Offline detection: heartbeat > 60s
 		if !n.LastHeartbeatAt.IsZero() && now.Sub(n.LastHeartbeatAt) > 60*time.Second {
 			nh.Status = "offline"
 			nh.HeartbeatAge = now.Sub(n.LastHeartbeatAt).Round(time.Second).String()

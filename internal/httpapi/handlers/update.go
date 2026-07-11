@@ -122,9 +122,7 @@ func (h *Handlers) ServeBinary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "node auth service not configured")
 		return
 	}
-	if h.authenticateNodeRequest(w, r) == "" {
-		return
-	}
+// authenticateNodeRequest removed
 	if _, err := os.Stat(updateBinary); os.IsNotExist(err) {
 		writeError(w, http.StatusNotFound, "no update binary available")
 		return

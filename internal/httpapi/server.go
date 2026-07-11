@@ -25,7 +25,6 @@ import (
 	"aegis/internal/node"
 	"aegis/internal/nodeauth"
 	"aegis/internal/topology"
-	"aegis/internal/nodestate"
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
 	"aegis/internal/project"
@@ -73,7 +72,7 @@ type Services struct {
 	GatewayLinkSvc  *gateway.LinkService   // v1.7AB
 	SafetySvc       *safety.Service        // v1.8A
 	RelaySvc        *gateway.Resolver        // v1.8B
-	NodeStateSvc    *nodestate.Service        // v1.8C-2
+	NodeStateSvc    interface{}        // v1.8C-2
 	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
 	GatewayInvSvc   *gateway.InventoryService   // v1.8C-2
 	TopologySvc     *topology.Service           // v1.8C-2

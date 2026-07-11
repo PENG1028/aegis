@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"aegis/internal/noderuntime"
 )
 
 // Gateway is the local HTTP gateway runtime.
@@ -76,38 +75,6 @@ func (g *Gateway) Stop() error {
 // Status returns the current gateway status.
 func (g *Gateway) Status() GatewayStatusInfo {
 	return g.status.Get()
-}
-
-// LocalGatewayStatuses implements noderuntime.GatewayStatusProvider.
-// Returns the gateway's current status as a slice of LocalGatewayInfo structs
-// suitable for heartbeat payloads.
-func (g *Gateway) LocalGatewayStatuses() []*noderuntime.LocalGatewayInfo {
-	s := g.status.Get()
-	// Use config values for static fields; status tracker for dynamic fields
-	bindAddr := s.BindAddr
-	if bindAddr == "" {
-		bindAddr = g.config.ListenAddr()
-	}
-	port := s.Port
-	if port == 0 {
-		port = g.config.ListenPort()
-	}
-	enabled := s.Enabled
-	if !enabled && g.config.Enabled {
-		enabled = true
-	}
-	return []*noderuntime.LocalGatewayInfo{{
-		Name:      "local-gateway",
-		Type:      "local",
-		Provider:  "aegis",
-		BindAddr:  bindAddr,
-		Host:      bindAddr,
-		Port:      port,
-		Scheme:    "http",
-		Enabled:   enabled,
-		Status:    s.Status,
-		LastError: s.LastError,
-	}}
 }
 
 // SetRoutingTableStatusProvider sets the routing table status provider on the handler.

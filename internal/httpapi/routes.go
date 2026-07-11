@@ -237,10 +237,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// ============================================================================
 
 	// Node API (no admin auth — uses node credential auth)
-	mux.HandleFunc("POST /api/node/v1/join", h.NodeJoin)
-	mux.HandleFunc("POST /api/node/v1/heartbeat", h.NodeHeartbeat)
-	mux.HandleFunc("GET /api/node/v1/binary", h.ServeBinary)
-	mux.HandleFunc("GET /api/node/v1/gateway-link-token/{gatewayLinkID}", h.NodeGatewayLinkToken)
 
 	// Admin Node Deploy (one-click remote setup)
 		mux.HandleFunc("POST /api/admin/v1/nodes/preflight", h.AdminDeployPreflight)
@@ -260,14 +256,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// ============================================================================
 
 	// Node API (node credential auth)
-	mux.HandleFunc("GET /api/node/v1/desired-state", h.NodeDesiredState)
-	mux.HandleFunc("POST /api/node/v1/actual-state", h.NodeActualState)
 
 	// Admin Desired/Actual State
-	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/desired-state", h.AdminGetDesiredState)
-	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/desired-state", h.AdminCreateDesiredState)
-	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/actual-state", h.AdminGetActualState)
-	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/sync-status", h.AdminGetSyncStatus)
 
 	// v1.9B: Distributed Node Runtime
 	mux.HandleFunc("GET /api/admin/v1/distnode/status", h.AdminDistNodeStatus)
@@ -303,7 +293,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("PUT /api/admin/v1/routes/{id}/gateway-policy", h.AdminSetRoutePolicy)
 
 	// Routing Table APIs
-	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/routing-table", h.AdminGetNodeRoutingTable)
 	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/routing-table/generate", h.AdminGenerateNodeRoutingTable)
 	mux.HandleFunc("GET /api/admin/v1/routing/preview", h.AdminPreviewRoute)
 	mux.HandleFunc("GET /api/admin/v1/routing/validate", h.AdminValidateNodeRouting)
