@@ -1,7 +1,7 @@
 // ─── DeployNode ───
 // SSH deployment + preflight detection + node join
 //
-// Flow: Fill SSH form → [检测目标] → shows conflicts → [开始部署]
+// Flow: Fill SSH form → [检测目标] → shows status → [连接节点] or [开始部署]
 
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
@@ -25,6 +25,21 @@ interface Preflight {
   };
 }
 
+// SVG icon instead of emoji
+const SearchIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
+
+const LinkIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+);
+
 export default function DeployNode() {
   const toast = useToast();
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -37,8 +52,10 @@ export default function DeployNode() {
   const [preflight, setPreflight] = useState<Preflight | null>(null);
   const [checking, setChecking] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  const [joining, setJoining] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [result, setResult] = useState<{ success: boolean; message: string; manualCommand?: string } | null>(null);
+  const [joinResult, setJoinResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [skipCaddy, setSkipCaddy] = useState(false);
 
@@ -52,25 +69,27 @@ export default function DeployNode() {
     return null;
   };
 
+  const makeBody = () => ({
+    target_ip: form.targetIp, ssh_user: form.sshUser,
+    ssh_port: parseInt(form.sshPort) || 22, auth_method: form.authMode,
+    ssh_key: form.authMode === 'key' ? form.sshKey : undefined,
+    ssh_password: form.authMode === 'password' ? form.sshPassword : undefined,
+  });
+
   // ── Preflight ──
   const handlePreflight = async () => {
     const ve = validationError();
     if (ve) { toast(ve, 'error'); return; }
-    setChecking(true); setPreflight(null); setError(null);
+    setChecking(true); setPreflight(null); setError(null); setJoinResult(null);
     try {
       const res = await fetch('/api/admin/v1/nodes/preflight', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_ip: form.targetIp, ssh_user: form.sshUser,
-          ssh_port: parseInt(form.sshPort) || 22, auth_method: form.authMode,
-          ssh_key: form.authMode === 'key' ? form.sshKey : undefined,
-          ssh_password: form.authMode === 'password' ? form.sshPassword : undefined,
-        }),
+        body: JSON.stringify(makeBody()),
       });
       const data = await res.json();
       setPreflight(data);
-      if (data.caddy_found) setSkipCaddy(true);
+      if (data.report?.caddy?.found) setSkipCaddy(true);
       if (!data.success) toast(data.error || '检测失败', 'error');
     } catch (e: any) {
       setError(e.message || '预检请求失败');
@@ -78,22 +97,13 @@ export default function DeployNode() {
   };
 
   // ── Join Node ──
-  const [joining, setJoining] = useState(false);
-  const [joinResult, setJoinResult] = useState<any>(null);
   const handleJoinNode = async () => {
-    const ve = validationError();
-    if (ve) { toast(ve, 'error'); return; }
     setJoining(true); setJoinResult(null); setError(null);
     try {
       const res = await fetch('/api/admin/v1/nodes/join', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_ip: form.targetIp, ssh_user: form.sshUser,
-          ssh_port: parseInt(form.sshPort) || 22, auth_method: form.authMode,
-          ssh_key: form.authMode === 'key' ? form.sshKey : undefined,
-          ssh_password: form.authMode === 'password' ? form.sshPassword : undefined,
-        }),
+        body: JSON.stringify(makeBody()),
       });
       const data = await res.json();
       setJoinResult(data);
@@ -113,14 +123,7 @@ export default function DeployNode() {
       const res = await fetch('/api/admin/v1/nodes/deploy', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_ip: form.targetIp, ssh_user: form.sshUser,
-          ssh_port: parseInt(form.sshPort) || 22, auth_method: form.authMode,
-          ssh_key: form.authMode === 'key' ? form.sshKey : undefined,
-          ssh_password: form.authMode === 'password' ? form.sshPassword : undefined,
-          join_token: form.joinToken || undefined,
-          skip_caddy: skipCaddy,
-        }),
+        body: JSON.stringify({ ...makeBody(), join_token: form.joinToken || undefined, skip_caddy: skipCaddy }),
       });
       const data = await res.json();
       if (data.log_output) setLogs(data.log_output.split('\n').filter(Boolean));
@@ -136,13 +139,18 @@ export default function DeployNode() {
     } finally { setDeploying(false); }
   };
 
+  // ── Derived state from preflight ──
+  const r = preflight?.report;
+  const aegisRunning = r?.aegis?.running;
+  const isClean = r && !r.aegis.found && !r.caddy?.found;
+
   return (
     <div className="p-6 space-y-6">
       <PageHeader title="部署节点" subtitle="SSH 远程安装 · 预检冲突 · 节点加入" />
 
+      {/* ── SSH Form ── */}
       <Card title="SSH 连接">
         <div className="space-y-3 max-w-lg">
-          {/* Target */}
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2">
               <label className="text-xs text-a-muted block mb-1">SSH 地址</label>
@@ -158,8 +166,6 @@ export default function DeployNode() {
             <label className="text-xs text-a-muted block mb-1">SSH 用户</label>
             <Input value={form.sshUser} onChange={e => setForm({...form, sshUser: e.target.value})} placeholder="ubuntu" />
           </div>
-
-          {/* Auth */}
           <div>
             <label className="text-xs text-a-muted block mb-2">认证方式</label>
             <div className="flex gap-4">
@@ -172,20 +178,12 @@ export default function DeployNode() {
               ))}
             </div>
           </div>
-
           {form.authMode === 'key' && (
             <div>
               <label className="text-xs text-a-muted block mb-1">SSH 私钥</label>
               <textarea value={form.sshKey} onChange={e => setForm({...form, sshKey: e.target.value})}
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
                 className="w-full h-24 px-3 py-2 rounded-a-sm bg-a-bg border border-a-border/50 text-xs font-mono text-a-fg placeholder:text-a-muted/30 focus:outline-none focus:border-a-accent/50" />
-              <div className="text-[10px] text-a-muted mt-1">
-                粘贴私钥内容，或 <span className="text-a-accent cursor-pointer hover:underline" onClick={() => {
-                  const el = document.createElement('input'); el.type = 'file'; el.accept = '.pem,.key,.txt';
-                  el.onchange = (e: any) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setForm({...form, sshKey: r.result as string}); r.readAsText(f); };
-                  el.click();
-                }}>选择文件</span>
-              </div>
             </div>
           )}
           {form.authMode === 'password' && (
@@ -195,82 +193,70 @@ export default function DeployNode() {
                 placeholder="••••••••" className="w-full px-3 py-2 rounded-a-sm bg-a-bg border border-a-border/50 text-sm text-a-fg placeholder:text-a-muted/30 focus:outline-none focus:border-a-accent/50" />
             </div>
           )}
-
           <div>
             <label className="text-xs text-a-muted block mb-1">Join Token（可选）</label>
             <Input value={form.joinToken} onChange={e => setForm({...form, joinToken: e.target.value})}
               placeholder="留空则跳过注册" />
           </div>
-
-          {/* Preflight button */}
           <Btn onClick={handlePreflight} disabled={checking} className="w-full">
-            {checking ? '检测中...' : '🔍 检测目标'}
+            <SearchIcon /> {checking ? '检测中...' : '检测目标'}
           </Btn>
         </div>
       </Card>
 
-      {/* ── Preflight Results ── */}
-      {preflight && preflight.success && preflight.report && (() => {
-        const r = preflight.report;
-        const warnings = [];
-        if (r.aegis.found) warnings.push(`Aegis ${r.aegis.version || ''} ${r.aegis.running ? '运行中' : '已安装'} — 建议节点加入`);
-        if (r.caddy.found) warnings.push(`Caddy ${r.caddy.version || ''} ${r.caddy.running ? '运行中' : '已安装'} — 可跳过安装`);
-        if (r.config.found) warnings.push('配置文件已存在 — 部署将覆盖');
-        const portWarnings = r.ports?.filter(p => !r.caddy?.running || p.process !== 'caddy') || [];
-        const hasWarnings = warnings.length > 0 || portWarnings.length > 0;
-        const isClean = !r.aegis.found && !r.caddy.found;
+      {/* ── Preflight Result ── */}
+      {preflight && preflight.success && r && (
+        <Card title={isClean ? '✅ 目标就绪' : aegisRunning ? '🟢 Aegis 运行中' : '⚠ 目标状态'}
+          className={isClean ? 'border-[#4cd964]/30' : aegisRunning ? 'border-[#4cd964]/30' : 'border-[#e8b830]/30'}>
+          <div className="space-y-2 text-xs">
+            {isClean && <div className="text-[#4cd964]">✅ 目标为空机器，可全新部署</div>}
+            {r.aegis.found && (
+              <div className={aegisRunning ? 'text-[#4cd964]' : 'text-a-fg'}>
+                {aegisRunning ? '🟢' : '🟡'} Aegis {r.aegis.version || '未知版本'} — {aegisRunning ? '运行中' : '已停止'}
+              </div>
+            )}
+            {r.caddy.found && <label className="flex items-center gap-2 text-a-muted cursor-pointer">
+              <input type="checkbox" checked={skipCaddy} onChange={e => setSkipCaddy(e.target.checked)} />
+              Caddy {r.caddy.version || ''} — 跳过安装
+            </label>}
+            {r.config.found && <div className="text-a-muted">📄 配置: {r.config.path}</div>}
+            {r.ports?.filter(p => p.process !== 'caddy').map((p, i) => (
+              <div key={i} className="text-[#ff5c72] bg-[#ff5c72]/5 px-2 py-1 rounded">
+                🔴 端口 :{p.port} 被 {p.process} 占用
+              </div>
+            ))}
+          </div>
 
-        return (
-          <Card title={isClean ? '✅ 目标就绪' : hasWarnings ? '⚠ 冲突检测' : '✅ 目标就绪'}
-            className={isClean ? 'border-[#4cd964]/30' : 'border-[#e8b830]/30'}>
-            <div className="space-y-2 text-xs">
-              {isClean && <div className="text-[#4cd964]">✅ 目标为空机器，可全新部署</div>}
-              {r.aegis.found && (
-                <div className="space-y-2">
-                  <div className={r.aegis.running ? 'text-[#e8b830]' : 'text-a-fg'}>
-                    {r.aegis.running ? '🟢' : '🟡'} Aegis {r.aegis.version || '未知版本'} — {r.aegis.running ? '运行中' : '已停止'}
-                  </div>
-                  {r.aegis.running && (
-                    <Btn onClick={() => handleJoinNode()} disabled={joining} className="text-xs" primary>
-                      {joining ? '加入中...' : '🔗 连接节点（加入集群）'}
-                    </Btn>
-                  )}
-                  {joinResult && <div className="text-xs mt-2">
-                    <div className={joinResult.success ? 'text-[#4cd964]' : 'text-[#ff5c72]'}>
-                      {joinResult.success ? '✅ ' + joinResult.message : '❌ ' + (joinResult.error || '失败')}
-                    </div>
-                    {joinResult.next_step && <div className="text-a-muted mt-1">{joinResult.next_step}</div>}
-                  </div>}
-                </div>
-              )}
-              {r.caddy.found && (
-                <label className="flex items-center gap-2 text-a-muted cursor-pointer">
-                  <input type="checkbox" checked={skipCaddy} onChange={e => setSkipCaddy(e.target.checked)} />
-                  Caddy {r.caddy.version || ''} {r.caddy.running ? '🟢 运行中' : ''} — 跳过安装
-                </label>
-              )}
-              {r.config.found && <div className="text-[#e8b830]">📄 配置: {r.config.path}</div>}
-              {portWarnings.map((p, i) => (
-                <div key={i} className="text-[#ff5c72] bg-[#ff5c72]/5 px-2 py-1 rounded">
-                  🔴 端口 :{p.port} 被 {p.process} 占用 — 部署前需停止或迁移
-                </div>
-              ))}
-            </div>
-          </Card>
-        );
-      })()}
+          {/* ── Actions — merged here, not in separate card ── */}
+          <div className="mt-4 pt-3 border-t border-a-border/30 space-y-2">
+            {error && (
+              <div className="text-xs text-[#ff5c72] bg-[#ff5c72]/10 px-3 py-2 rounded-a-sm border border-[#ff5c72]/20">{error}</div>
+            )}
 
-      {/* ── Actions ── */}
-      <Card title="执行部署">
-        <div className="space-y-3 max-w-lg">
-          {error && (
-            <div className="text-xs text-[#ff5c72] bg-[#ff5c72]/10 px-3 py-2 rounded-a-sm border border-[#ff5c72]/20">{error}</div>
-          )}
-          <Btn primary onClick={handleDeploy} disabled={deploying}>
-            {deploying ? '部署中...' : '开始部署'}
-          </Btn>
-        </div>
-      </Card>
+            {aegisRunning ? (
+              <>
+                <Btn onClick={handleJoinNode} disabled={joining} primary className="w-full">
+                  <LinkIcon /> {joining ? '加入中...' : '连接节点（加入集群）'}
+                </Btn>
+                <Btn onClick={handleDeploy} disabled={deploying} className="w-full text-a-muted text-xs">
+                  {deploying ? '部署中...' : '覆盖部署（重新安装）'}
+                </Btn>
+              </>
+            ) : (
+              <Btn onClick={handleDeploy} disabled={deploying} primary className="w-full">
+                {deploying ? '部署中...' : '开始部署'}
+              </Btn>
+            )}
+
+            {joinResult && (
+              <div className={joinResult.success ? 'text-[#4cd964] text-xs' : 'text-[#ff5c72] text-xs'}>
+                {joinResult.success ? '✅ ' + joinResult.message : '❌ ' + (joinResult.error || '失败')}
+                {joinResult.next_step && <div className="text-a-muted mt-1">{joinResult.next_step}</div>}
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* ── Logs ── */}
       {logs.length > 0 && (
