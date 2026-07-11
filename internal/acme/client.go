@@ -85,20 +85,8 @@ func (c *Client) initLego() error {
 		return fmt.Errorf("set HTTP-01 provider: %w", err)
 	}
 
-	// Register or recover account
-	reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
-	if err != nil {
-		// Try to recover existing account
-		if strings.Contains(err.Error(), "already registered") {
-			reg, err = client.Registration.ResolveAccountByKey()
-		}
-		if err != nil {
-			return fmt.Errorf("register ACME account: %w", err)
-		}
-	}
-	_ = reg
-
 	c.legoClient = client
+	// Account registration is lazy — done on first Obtain call
 	return nil
 }
 
@@ -127,6 +115,12 @@ func (c *Client) Obtain(ctx context.Context, domains []string) (*ObtainResult, e
 	}
 
 	primary := domains[0]
+
+	// Lazy account registration — only try when actually obtaining
+	if err := c.ensureRegistered(); err != nil {
+		return nil, fmt.Errorf("ACME account: %w", err)
+	}
+
 	log.Printf("[acme] obtaining certificate for %s...", primary)
 
 	// Generate new ECDSA P-256 key pair for the certificate (in-memory only)
@@ -184,6 +178,18 @@ func (c *Client) Renew(ctx context.Context, domains []string) (string, error) {
 
 func sanitizeCertName(domain string) string {
 	return strings.ReplaceAll(domain, "*", "wildcard")
+}
+
+// ensureRegistered registers or recovers the ACME account if not already done.
+func (c *Client) ensureRegistered() error {
+	if c.legoClient == nil {
+		return fmt.Errorf("lego client not initialized")
+	}
+	_, err := c.legoClient.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
+	if err != nil && strings.Contains(err.Error(), "already registered") {
+		_, err = c.legoClient.Registration.ResolveAccountByKey()
+	}
+	return err
 }
 
 // ─── lego user implementation ───

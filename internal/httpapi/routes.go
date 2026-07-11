@@ -244,7 +244,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 
 	// Admin Node Deploy (one-click remote setup)
 		mux.HandleFunc("POST /api/admin/v1/nodes/preflight", h.AdminDeployPreflight)
-		mux.HandleFunc("POST /api/admin/v1/nodes/preflight", h.AdminDeployPreflight)
 	mux.HandleFunc("POST /api/admin/v1/nodes/deploy", h.AdminDeployNode)
 
 	// Admin Node Join Tokens
