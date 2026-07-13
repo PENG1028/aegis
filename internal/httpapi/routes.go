@@ -30,12 +30,9 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		NodeRepo:        svcs.NodeRepo,
 		NodeSvc:         svcs.NodeSvc,
 		NodeAuthSvc:     svcs.NodeAuthSvc,
-		NodeStateSvc:    svcs.NodeStateSvc,
 		GatewayInvRepo:  svcs.GatewayInvRepo,
 		GatewayInvSvc:   svcs.GatewayInvSvc,
 		TopologySvc:     svcs.TopologySvc,
-		Gateway:         svcs.Gateway,
-		DeploymentSvc:   svcs.DepSvc,
 		PendingState:    svcs.PendingState,
 		TraceSvc:        svcs.TraceSvc,
 		SafetySvc:       svcs.SafetySvc,
@@ -49,6 +46,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		EgressSvc:       svcs.EgressSvc, // v1.9A-5 — egress rule engine
 		CertStore:       svcs.CertStore, // v1.9C — TLS certificate store
 		ACMEClient:         svcs.ACMEClient,   // v1.9C — ACME auto-cert manager
+		DistNode:        svcs.DistNode, // v1.9B — distributed node runtime (was never wired → admin/call endpoints saw nil)
+		DNSMgmt:         svcs.DNSMgmt,  // was never wired → egress toggle-off silently failed to stop the DNS resolver
 		Version:         svcs.Version,
 		BuildTime:       svcs.BuildTime,
 	}
@@ -202,11 +201,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/gateway/domains", h.ListGatewayDomains)
 	mux.HandleFunc("GET /api/admin/v1/gateway/listeners", h.ListGatewayListeners)
 
-	// v1.7 Deployment Versioning
-	mux.HandleFunc("POST /api/admin/v1/deployments", h.CreateDeployment)
-	mux.HandleFunc("GET /api/admin/v1/deployments", h.ListDeployments)
-	mux.HandleFunc("GET /api/admin/v1/deployments/{id}", h.GetDeployment)
-	mux.HandleFunc("POST /api/admin/v1/deployments/{id}/rollback", h.RollbackDeployment)
 
 	// v1.7S Provider Diagnostics
 	mux.HandleFunc("GET /api/admin/v1/providers", h.ListProviders)
@@ -267,8 +261,17 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/distnode/aggregate", h.AdminDistNodeAggregate)
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/distnode-overview", h.AdminDistNodeOverview)
 
-	// distnode transport call (used by peers)
-	// Mounted separately in RegisterDistNodeTransport if enabled
+	// distnode transport call (used by peers to reach this node's registered
+	// methods). Self-authenticated via HMAC shared secret inside the handler,
+	// so it is a public path in the auth middleware. Exposed cross-node through
+	// the ingress edge by the control-plane route (see planner injection).
+	if h.DistNode != nil {
+		mux.Handle("POST /api/distnode/v1/call", h.DistNode.Transport.Handler())
+		// Register the Aegis.* transport methods (ProxyRequest, ListRoutes, …) so
+		// cross-node RPC actually has handlers. Was defined but never called →
+		// aggregate/RPC failed with "unknown method". Sets h.proxyMux = mux.
+		handlers.RegisterAegisTransportHandlers(h.DistNode, h, mux)
+	}
 
 	// Admin Gateway Inventory
 	mux.HandleFunc("GET /api/admin/v1/gateways", h.AdminListGateways)
@@ -347,6 +350,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("GET /api/service-auth/v1/sync", h.ServiceAuthSync)
 		mux.HandleFunc("POST /api/service-auth/v1/report", h.ServiceAuthReport)
 		mux.HandleFunc("POST /api/service-auth/v1/heartbeat", h.ServiceAuthHeartbeat)
+			mux.HandleFunc("POST /api/service-auth/v1/call", h.ServiceAuthCall)
 		mux.HandleFunc("GET /api/service-auth/v1/services", h.ServiceAuthScopedServices)
 
 		mux.HandleFunc("GET /api/admin/v1/service-auth/services", h.AdminListServiceAuthServices)
@@ -355,6 +359,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("POST /api/admin/v1/service-auth/services/{id}/delete", h.AdminDeleteServiceAuthService)
 		mux.HandleFunc("POST /api/admin/v1/service-auth/blocklist/{id}/unblock", h.AdminUnblockServiceAuth)
 		mux.HandleFunc("GET /api/admin/v1/service-auth/topology", h.AdminServiceAuthTopology)
+		mux.HandleFunc("GET /api/admin/v1/service-auth/call-logs", h.AdminServiceAuthCallLogs) // was defined but never routed — UI (real-api-client.ts) calls it
 
 		// v1.9D groups + policies
 	}

@@ -88,26 +88,18 @@ func TestJoinToken_ShellInjectionPrevented(t *testing.T) {
 
 func TestGenerateDeployCommand_NoRawTokenInOutput(t *testing.T) {
 	req := DeployNodeRequest{
-		TargetIP:       "192.168.1.100",
-		SSHUser:        "root",
-		SSHPassword:    "",
-		JoinToken:      "secret_join_token_abc123",
-		ControlPlaneURL: "http://10.0.0.1:7380",
+		TargetIP:    "192.168.1.100",
+		SSHUser:     "root",
+		SSHPassword: "",
+		JoinToken:   "secret_join_token_abc123",
 	}
 
 	cmd := generateDeployCommand(req)
 
-	// The raw token must NOT appear in the command
+	// Security property: the raw join token must never leak into the generated
+	// manual-deploy command. The current command does not embed the token at all;
+	// this guards against a regression that would inline it in plaintext.
 	if strings.Contains(cmd, "secret_join_token_abc123") {
-		t.Error("raw join token must NOT appear in deploy command (should be base64 encoded)")
-	}
-	// The base64-encoded version should appear instead
-	encoded := base64.StdEncoding.EncodeToString([]byte("secret_join_token_abc123"))
-	if !strings.Contains(cmd, encoded) {
-		t.Error("base64-encoded token should appear in deploy command")
-	}
-	// Verify base64 decode command is present
-	if !strings.Contains(cmd, "base64 -d") {
-		t.Error("deploy command must include base64 -d for decode")
+		t.Error("raw join token must NOT appear in deploy command")
 	}
 }

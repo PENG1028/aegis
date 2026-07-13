@@ -233,6 +233,7 @@ func main() {
 	}
 
 	// --- v1.8L: Topology Planner (dimension 2) + Workflow orchestrator ---
+	_, controlPort := safety.SplitHostPort(cfg.Server.Addr) // aegis API port, exposed cross-node via the ingress edge
 	topoPlanner := topology.NewPlanner(templates.Default(), topology.Dependencies{
 		RouteRepo:        routeRepo,
 		ServiceRepo:      serviceRepo,
@@ -241,6 +242,7 @@ func main() {
 		SafetySvc:        safetySvc,
 		MasterKey:        masterKey,
 		CertStore:        certStoreSvc,
+		ControlPort:      controlPort,
 	})
 	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc, certStoreSvc)
 
@@ -485,14 +487,11 @@ httpSvcs := &httpapi.Services{
 		NodeRepo:         nodeRepo,
 		NodeSvc:          nodeSvc,
 		NodeAuthSvc:      nodeAuthSvc,
-		NodeStateSvc:     nil,
 		GatewayInvRepo:   gatewayInvRepo,
 		GatewayInvSvc:    gatewayInvSvc,
 		TopologySvc:      topologySvc,
 		PolicySvc:        routingPolicySvc,
 		RoutingTableSvc:  routingTableSvc,
-		Gateway:          nil,
-		DepSvc:           nil,
 		PendingState:     pendingState,
 		TraceSvc:         traceSvc,
 		GatewayLinkSvc:   gwLinkSvc,

@@ -11,7 +11,6 @@ import (
 	"aegis/internal/cluster"
 	"aegis/internal/config"
 	"aegis/internal/credential"
-	"aegis/internal/deployment"
 	"aegis/internal/distnode"
 	"aegis/internal/edgemux"
 	"aegis/internal/egress"
@@ -65,14 +64,11 @@ type Services struct {
 	NodeRepo      *node.Repository
 	NodeSvc       *node.Service        // v1.8C
 	NodeAuthSvc   *nodeauth.Service    // v1.8C
-	Gateway       *gateway.GatewayService
-	DepSvc        *deployment.Service
 	PendingState    *cluster.PendingState  // v1.7S
 	TraceSvc        *trace.Service         // v1.7T
 	GatewayLinkSvc  *gateway.LinkService   // v1.7AB
 	SafetySvc       *safety.Service        // v1.8A
 	RelaySvc        *gateway.Resolver        // v1.8B
-	NodeStateSvc    interface{}        // v1.8C-2
 	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
 	GatewayInvSvc   *gateway.InventoryService   // v1.8C-2
 	TopologySvc     *topology.Service           // v1.8C-2

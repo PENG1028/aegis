@@ -6,7 +6,6 @@ import (
 	"aegis/internal/apply"
 	"aegis/internal/cluster"
 	"aegis/internal/config"
-	"aegis/internal/deployment"
 	"aegis/internal/distnode"
 	"aegis/internal/dns"
 	"aegis/internal/edgemux"
@@ -66,8 +65,6 @@ type Handlers struct {
 	NodeRepo      *node.Repository
 	NodeSvc       *node.Service     // v1.8C
 	NodeAuthSvc   *nodeauth.Service // v1.8C
-	Gateway       *gateway.GatewayService
-	DeploymentSvc *deployment.Service
 	PendingState    *cluster.PendingState  // v1.7S
 	TraceSvc        *trace.Service         // v1.7T
 	GatewayLinkSvc  *gateway.LinkService
@@ -77,7 +74,6 @@ type Handlers struct {
 	ACMEClient     *acme.Client            // v1.9C ACME via lego (replaces certbot)
 	SafetySvc       *safety.Service        // v1.7AB
 	RelayResolver   *RelayResolver         // v1.8B
-	NodeStateSvc    interface{} // DEPRECATED        // v1.8C-2
 	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
 	GatewayInvSvc   *gateway.InventoryService       // v1.8C-2
 	DNSMgmt         *dns.Manager                    // v1.8E
