@@ -23,6 +23,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"strings"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -179,40 +180,69 @@ func (c *Client) Register(ctx context.Context) error {
 // URL-based HTTP methods — each request carries an auto-signed Ed25519 ticket.
 // ============================================================================
 
-// Post sends a POST request with an auto-signed service ticket.
-func (c *Client) Post(ctx context.Context, url string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", url, body)
-	if err != nil {
-		return nil, fmt.Errorf("post: %w", err)
+// CallLocal sends a request to the local Aegis cluster using a relative API path.
+// The path must start with "/" (e.g. "/api/v1/actions/bind-http-domain").
+// The gateway URL is auto-prepended — callers never need to know which cluster
+// they're in or on which port Aegis listens. This is the primary way services
+// interact with Aegis APIs.
+//
+// For calling other services or external domains, use Post/Get/Put/Delete with
+// a full URL — those methods also accept relative paths (auto-prepend gatewayURL)
+// but exist for symmetry when calling non-Aegis targets.
+func (c *Client) CallLocal(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+	if !strings.HasPrefix(path, "/") {
+		return nil, fmt.Errorf("call_local: path must start with /, got %q", path)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	return c.Do(req)
+	return c.doWithURL(ctx, method, c.gatewayURL+path, body)
+}
+
+// Post sends a POST request with an auto-signed service ticket.
+// If url starts with "/" it is treated as an API path relative to the local
+// Aegis gateway (auto-prepends gatewayURL, same as CallLocal).
+// Full URLs (containing "://") are sent as-is — use these for calling other
+// services or external domains.
+func (c *Client) Post(ctx context.Context, url string, body io.Reader) (*http.Response, error) {
+	return c.doWithURL(ctx, "POST", c.resolveURL(url), body)
 }
 
 // Get sends a GET request with an auto-signed service ticket.
+// Same URL resolution as Post: paths starting with "/" resolve relative to
+// the local Aegis gateway; full URLs are sent as-is.
 func (c *Client) Get(ctx context.Context, url string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("get: %w", err)
-	}
-	return c.Do(req)
+	return c.doWithURL(ctx, "GET", c.resolveURL(url), nil)
 }
 
 // Put sends a PUT request with an auto-signed service ticket.
 func (c *Client) Put(ctx context.Context, url string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, body)
-	if err != nil {
-		return nil, fmt.Errorf("put: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return c.Do(req)
+	return c.doWithURL(ctx, "PUT", c.resolveURL(url), body)
 }
 
 // Delete sends a DELETE request with an auto-signed service ticket.
 func (c *Client) Delete(ctx context.Context, url string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	return c.doWithURL(ctx, "DELETE", c.resolveURL(url), nil)
+}
+
+// resolveURL returns the effective URL to use. If url starts with "/", it's a
+// relative API path — prepend the gateway URL. Otherwise pass through as-is.
+// Callers can use either pattern:
+//
+//	client.Post(ctx, "/api/v1/actions/bind-http-domain", body)       // local Aegis
+//	client.Post(ctx, "https://other-service.example.com/api/x", body) // external
+func (c *Client) resolveURL(url string) string {
+	if strings.HasPrefix(url, "/") {
+		return c.gatewayURL + url
+	}
+	return url
+}
+
+// doWithURL is the shared request path used by Post/Get/Put/Delete/CallLocal.
+func (c *Client) doWithURL(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return nil, fmt.Errorf("delete: %w", err)
+		return nil, fmt.Errorf("%s %s: %w", method, url, err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	return c.Do(req)
 }
@@ -249,6 +279,29 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		}()
 	}
 	return resp, err
+}
+
+// ============================================================================
+// Service-to-service calls (v1.9B — gateway-routed)
+// ============================================================================
+
+// CallService calls another registered service by name. The target must have
+// registered with a listen_port. Aegis resolves the name to a backend host:port
+// and proxies the request — the caller never needs to know the target's domain
+// or IP. path must start with "/" (e.g. "/api/v1/create").
+//
+//	client.CallService(ctx, "project-service", "POST", "/api/v1/create", body)
+func (c *Client) CallService(ctx context.Context, targetService, method, path string, body io.Reader) (*http.Response, error) {
+	callReq := map[string]interface{}{
+		"target": targetService,
+		"method": method,
+		"path":   path,
+	}
+	data, err := json.Marshal(callReq)
+	if err != nil {
+		return nil, fmt.Errorf("call_service: marshal: %w", err)
+	}
+	return c.doWithURL(ctx, "POST", c.gatewayURL+"/api/service-auth/v1/call", bytes.NewReader(data))
 }
 
 // ============================================================================

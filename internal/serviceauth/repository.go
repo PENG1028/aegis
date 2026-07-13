@@ -19,14 +19,14 @@ func NewRepository(db *sql.DB) *Repository {
 
 // ─── Service records ──────────────────────────────────────────────────────
 
-const svcCols = "id, name, host, port, node_host, apis_json, public_key, status, instance_id, last_seen, created_at, updated_at"
+const svcCols = "id, name, host, port, listen_port, node_host, apis_json, public_key, status, instance_id, last_seen, created_at, updated_at"
 
 func (r *Repository) UpsertService(s *ServiceRecord) error {
 	result, err := r.DB.Exec(
-		`UPDATE svc_auth_services SET status=?, last_seen=?, updated_at=?, instance_id=?, host=?, port=?, node_host=?
-		 WHERE name=? AND public_key=?`,
+		`UPDATE svc_auth_services SET status=?, last_seen=?, updated_at=?, instance_id=?, host=?, port=?, listen_port=?, node_host=?
+			 WHERE name=? AND public_key=?`,
 		s.Status, s.LastSeen.Format(time.RFC3339), s.UpdatedAt.Format(time.RFC3339),
-		s.InstanceID, s.Host, s.Port, s.NodeHost,
+		s.InstanceID, s.Host, s.Port, s.ListenPort, s.NodeHost,
 		s.Name, s.PublicKey,
 	)
 	if err != nil {
@@ -37,9 +37,9 @@ func (r *Repository) UpsertService(s *ServiceRecord) error {
 		return nil
 	}
 	_, err = r.DB.Exec(
-		`INSERT INTO svc_auth_services (id, name, host, port, node_host, apis_json, public_key, instance_id, status, last_seen, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.Host, s.Port, s.NodeHost,
+		`INSERT INTO svc_auth_services (id, name, host, port, listen_port, node_host, apis_json, public_key, instance_id, status, last_seen, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.Host, s.Port, s.ListenPort, s.NodeHost,
 		s.PublicKey, s.InstanceID, s.Status,
 		s.LastSeen.Format(time.RFC3339), s.CreatedAt.Format(time.RFC3339), s.UpdatedAt.Format(time.RFC3339),
 	)
@@ -338,7 +338,7 @@ func (r *Repository) GetBlocklistVersion() (int64, error) {
 func scanService(row *sql.Row) (*ServiceRecord, error) {
 	var s ServiceRecord
 	var lastSeen, createdAt, updatedAt string
-	err := row.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.NodeHost, &s.APIsJSON,
+	err := row.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.ListenPort, &s.NodeHost, &s.APIsJSON,
 		&s.PublicKey, &s.Status, &s.InstanceID, &lastSeen, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -357,7 +357,7 @@ func scanServices(rows *sql.Rows) ([]ServiceRecord, error) {
 	for rows.Next() {
 		var s ServiceRecord
 		var lastSeen, createdAt, updatedAt string
-		if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.NodeHost, &s.APIsJSON,
+		if err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Port, &s.ListenPort, &s.NodeHost, &s.APIsJSON,
 			&s.PublicKey, &s.Status, &s.InstanceID, &lastSeen, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan service: %w", err)
 		}
@@ -394,8 +394,5 @@ func DefaultIDGen() string {
 
 
 
-
 // ─── Policies ─────────────────────────────────────────────────────────────
-
-
 

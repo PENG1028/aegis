@@ -69,6 +69,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		PublicKey:  req.PublicKey,
 		InstanceID: req.InstanceID,
 		Host:       clientIP,
+		ListenPort: req.ListenPort,
 		Status:     "active",
 		LastSeen:   now,
 		CreatedAt:  now,
@@ -138,6 +139,11 @@ func (s *Service) Heartbeat(ctx context.Context, name, instanceID string) error 
 		return fmt.Errorf("%w: name and instance_id are required", ErrInvalidInput)
 	}
 	return s.deps.Repo.Heartbeat(name, instanceID, time.Now())
+}
+
+// FindByName returns all instances of a service by name (for service-to-service call routing).
+func (s *Service) FindByName(ctx context.Context, name string) ([]ServiceRecord, error) {
+	return s.deps.Repo.FindByName(name)
 }
 
 func (s *Service) CountOnline(ctx context.Context, window time.Duration) (map[string]int, error) {

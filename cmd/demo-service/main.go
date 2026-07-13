@@ -62,13 +62,15 @@ func main() {
 	// ─── 第 3 步：用 Post 创建域名映射 ──────────────────
 	// Post 自动签 Ed25519 ticket → 发 X-Service-Ticket header
 	// 不需要 admin token，不需要手动配置
+	// Path starting with "/" auto-resolves to the local Aegis gateway —
+	// the client already knows where the cluster is from New() auto-detection.
 	body := map[string]interface{}{
 		"domain":      domain,
 		"target_host": "127.0.0.1",
 		"target_port": 3000,
 	}
 	data, _ := json.Marshal(body)
-	resp, err := client.Post(ctx, aegisURL+"/api/v1/actions/bind-http-domain", bytes.NewReader(data))
+	resp, err := client.Post(ctx, "/api/v1/actions/bind-http-domain", bytes.NewReader(data))
 	if err != nil {
 		log.Printf("⚠️  bind domain failed (may already exist): %v", err)
 	} else {
@@ -81,7 +83,7 @@ func main() {
 
 	// ─── 第 4 步：查看自己的资源 ──────────────────────────
 	// 服务可以查看自己管理的域名和路由
-	resp, err = client.Get(ctx, aegisURL+"/api/v1/my/routes")
+	resp, err = client.Get(ctx, "/api/v1/my/routes")
 	if err != nil {
 		log.Printf("⚠️  list my routes failed: %v", err)
 	} else {

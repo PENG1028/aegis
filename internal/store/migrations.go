@@ -222,6 +222,11 @@ func AllMigrations() []Migration {
 			Name:    "certificate_source",
 			UpSQL:   migration041,
 		},
+		{
+			Version: "042",
+			Name:    "svc_auth_listen_port",
+			UpSQL:   migration042,
+		},
 	}
 }
 
@@ -1208,4 +1213,11 @@ CREATE INDEX IF NOT EXISTS idx_svc_auth_instance ON svc_auth_services(name, inst
 const migration041 = `
 ALTER TABLE certificates ADD COLUMN source TEXT NOT NULL DEFAULT 'manual_upload';
 CREATE INDEX IF NOT EXISTS idx_certificates_source ON certificates(source);
+`
+
+// migration042 adds listen_port to svc_auth_services for service-to-service call routing.
+// When a service registers with a listen_port, other services can call it by name
+// via POST /api/service-auth/v1/call — Aegis proxies to <host>:<listen_port>.
+const migration042 = `
+ALTER TABLE svc_auth_services ADD COLUMN listen_port INTEGER NOT NULL DEFAULT 0;
 `

@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -177,8 +181,8 @@ func (h *Handlers) ServiceAuthScopedServices(w http.ResponseWriter, r *http.Requ
 		"deps":    depList,
 	})
 }
-// ServiceAuthScopedServices handles GET /api/service-auth/v1/services
-// Returns per-service scoped view (callers + deps), identified via X-Service-Ticket.
+// AdminListServiceAuthServices handles GET /api/admin/v1/service-auth/services
+// Returns all registered services for the admin panel.
 func (h *Handlers) AdminListServiceAuthServices(w http.ResponseWriter, r *http.Request) {
 	if h.ServiceAuthSvc == nil {
 		writeError(w, http.StatusNotImplemented, "service auth not available")
@@ -321,7 +325,98 @@ func (h *Handlers) AdminServiceAuthCallLogs(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, logs)
 }
 
+// ============================================================================
+// Service-to-service call routing (v1.9B)
+// ============================================================================
 
+// ServiceAuthCall handles POST /api/service-auth/v1/call
+// Routes a service-to-service call by service name instead of URL.
+// The caller only needs to know the target service name and API path —
+// Aegis resolves the backend host:port from the registration table.
+//
+// Request:  {"target": "project-service", "method": "POST", "path": "/api/v1/create", "body": {...}}
+// Response: the target service's HTTP response, relayed as-is.
+func (h *Handlers) ServiceAuthCall(w http.ResponseWriter, r *http.Request) {
+	if h.ServiceAuthSvc == nil {
+		writeError(w, http.StatusNotImplemented, "service auth not available")
+		return
+	}
 
+	var reqBody struct {
+		Target  string            `json:"target"`
+		Method  string            `json:"method"`
+		Path    string            `json:"path"`
+		Body    json.RawMessage   `json:"body,omitempty"`
+		Headers map[string]string `json:"headers,omitempty"`
+	}
+	if err := decodeJSON(r, &reqBody); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if reqBody.Target == "" || reqBody.Method == "" || reqBody.Path == "" {
+		writeError(w, http.StatusBadRequest, "target, method, and path are required")
+		return
+	}
+	if reqBody.Method == "" {
+		reqBody.Method = "POST"
+	}
 
+	// Look up target service by name.
+	// FindByName may return multiple instances; pick the first active one.
+	records, err := h.ServiceAuthSvc.FindByName(r.Context(), reqBody.Target)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var target *serviceauth.ServiceRecord
+	for i := range records {
+		if records[i].Status == "active" && records[i].ListenPort > 0 {
+			target = &records[i]
+			break
+		}
+	}
+	if target == nil {
+		writeError(w, http.StatusNotFound, "target service not found or has no listen_port: "+reqBody.Target)
+		return
+	}
+
+	// Build the forward URL: http://<host>:<listen_port><path>
+	forwardURL := fmt.Sprintf("http://%s:%d%s", target.Host, target.ListenPort, reqBody.Path)
+
+	// Build outgoing request — copy the ticket and caller headers so the
+	// target's Guard middleware can verify the original caller's identity.
+	var bodyReader io.Reader
+	if len(reqBody.Body) > 0 {
+		bodyReader = bytes.NewReader(reqBody.Body)
+	}
+	outReq, err := http.NewRequestWithContext(r.Context(), reqBody.Method, forwardURL, bodyReader)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "build forward request: "+err.Error())
+		return
+	}
+	outReq.Header.Set("Content-Type", "application/json")
+	// Forward the original caller's identity headers so Guard can verify.
+	if ticket := r.Header.Get("X-Service-Ticket"); ticket != "" {
+		outReq.Header.Set("X-Service-Ticket", ticket)
+	}
+	if caller := r.Header.Get("X-Caller-Service"); caller != "" {
+		outReq.Header.Set("X-Caller-Service", caller)
+	}
+
+	resp, err := http.DefaultClient.Do(outReq)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "call "+reqBody.Target+": "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	// Relay the response back to the caller.
+	for k, vals := range resp.Header {
+		for _, v := range vals {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
 

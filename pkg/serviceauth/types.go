@@ -7,6 +7,11 @@ type RegisterRequest struct {
 	ServiceName string `json:"service_name"`
 	PublicKey   string `json:"public_key"`  // Ed25519 public key (base64)
 	InstanceID  string `json:"instance_id"` // optional, for heartbeat tracking
+	// ListenPort is the port this service listens on for incoming HTTP requests.
+	// When set, other services in the cluster can call this service by name
+	// (via client.CallService) instead of by URL — Aegis proxies to host:ListenPort.
+	// Omit (0) if this service only makes outbound calls.
+	ListenPort int `json:"listen_port,omitempty"`
 }
 
 // RegisterResponse is returned after successful registration.

@@ -16,8 +16,13 @@ func autoDetectAegis() (string, error) {
 		return url, nil
 	}
 
+	// Port 7380 is the Aegis control port — the same port derived from
+	// cfg.Server.Addr in production (safety.SplitHostPort). It is the only
+	// stable address guaranteed to exist on every node running Aegis.
+	// SDKs cannot import internal packages, so this default is fixed here
+	// and overridable via AEGIS_URL env var or Config.AegisURL.
 	candidates := []string{
-		"http://127.0.0.1:7380",   // Aegis default
+		"http://127.0.0.1:7380",
 		"http://localhost:7380",
 	}
 

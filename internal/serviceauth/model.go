@@ -14,7 +14,8 @@ type ServiceRecord struct {
 	InstanceID string    `json:"instance_id"` // unique per instance, heartbeat tracking
 	Status     string    `json:"status"`      // "active" | "blocked" | "inactive"
 	Host       string    `json:"host,omitempty"`       // caller IP
-	Port       int       `json:"port,omitempty"`       // caller port
+	Port       int       `json:"port,omitempty"`       // caller port (source port of the registration request)
+	ListenPort int       `json:"listen_port,omitempty"` // port this service listens on for incoming calls
 	NodeHost   string    `json:"node_host,omitempty"`  // node identifier
 	LastSeen   time.Time `json:"last_seen"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -54,7 +55,11 @@ type RegisterRequest struct {
 	ServiceName string `json:"service_name"`
 	PublicKey   string `json:"public_key"`  // Ed25519 public key (base64)
 	InstanceID  string `json:"instance_id"` // optional, for heartbeat tracking
-	Host        string `json:"host,omitempty"`   // caller IP (set by server)
+	Host        string `json:"host,omitempty"`    // caller IP (set by server)
+	// ListenPort is the port this service listens on for incoming calls.
+	// When set, other services can call this service by name via the
+	// service-auth call endpoint — Aegis proxies to <host>:<listen_port>.
+	ListenPort int `json:"listen_port,omitempty"`
 }
 
 // RegisterResponse is returned after successful registration.
