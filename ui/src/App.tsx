@@ -40,6 +40,7 @@ import AuthCallGraph from '@/pages/fabric/AuthCallGraph';
 
 // ── Runtime ──
 import Nodes from '@/pages/runtime/Nodes';
+import NodesData from '@/pages/runtime/NodesData';
 import NodeDetail from '@/pages/runtime/NodeDetail';
 import ClusterHealth from '@/pages/runtime/ClusterHealth';
 import DeployNode from '@/pages/runtime/DeployNode';
@@ -164,6 +165,7 @@ export default function App() {
                 {/* ── Workspace 4: Runtime / 节点运行时 ── */}
                 <Route path="/runtime" element={<OutletLayout />}>
                   <Route index element={<Nodes />} />
+                  <Route path="data" element={<NodesData />} />
                   <Route path="node/:nodeId" element={<NodeDetail />} />
                   <Route path="cluster" element={<ClusterHealth />} />
                   <Route path="deploy" element={<DeployNode />} />
