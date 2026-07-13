@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"aegis/internal/core"
@@ -39,10 +40,16 @@ func (s *GatewayService) CreateDomain(ctx context.Context, domain, nodeID string
 	now := time.Now()
 	tlsProvider := ""
 	if tlsEnabled {
-		if n.Capabilities.HasCapability(node.CapHAProxyInstalled) {
-			tlsProvider = "haproxy"
-		} else if n.Capabilities.HasCapability(node.CapCaddyInstalled) {
-			tlsProvider = "caddy"
+		// Derive the TLS provider ID from the capability that matched instead of
+		// hardcoding "haproxy"/"caddy" string literals. The capability constant
+		// (e.g. "haproxy_installed") carries the provider ID as its prefix.
+		// TODO: source the provider ID from the provider registry (State().ID)
+		// once the gateway service has registry access, per provider-architecture.
+		switch {
+		case n.Capabilities.HasCapability(node.CapHAProxyInstalled):
+			tlsProvider = strings.TrimSuffix(node.CapHAProxyInstalled, "_installed")
+		case n.Capabilities.HasCapability(node.CapCaddyInstalled):
+			tlsProvider = strings.TrimSuffix(node.CapCaddyInstalled, "_installed")
 		}
 	}
 

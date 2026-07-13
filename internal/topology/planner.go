@@ -3,6 +3,7 @@ package topology
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"aegis/internal/certstore"
 	"aegis/internal/endpoint"
@@ -40,6 +41,11 @@ type Dependencies struct {
 	SafetySvc        *safety.Service
 	MasterKey        *secrets.MasterKey
 	CertStore        *certstore.Service // v1.9C: resolve CertID → file paths
+	// ControlPort is the aegis API/control port (parsed from cfg.Server.Addr).
+	// When > 0, the Planner exposes this node's control plane through the ingress
+	// HTTP provider so cross-node distnode traffic traverses the 80/443 edge.
+	// Zero disables the injection (e.g. in tests). See docs/distnode-onboarding-fix.md.
+	ControlPort int
 }
 
 // BindAutoCerts matches routes with empty cert_id to CertStore auto-certs
@@ -166,17 +172,36 @@ func (p *Planner) collectIntents() ([]RouteIntent, []string, error) {
 			serviceID:          rt.ServiceID,
 			CertID:             certIDStr(rt.CertID),
 		}
-		// Resolve cert paths from certstore for custom certs
+		// Resolve cert paths from certstore for custom certs. Stat the files first:
+		// a cert DB row whose PEM files are missing (deleted out-of-band, or a DB
+		// restore/leader-sync that didn't carry the files) must NOT poison the whole
+		// apply — `caddy validate` rejects the ENTIRE Caddyfile on one bad tls path,
+		// taking every route down. Degrade that one route to auto-HTTPS with a
+		// warning instead. See docs/distnode-onboarding-fix.md (audit finding 1-1).
 		if rt.CertID != nil && *rt.CertID != "" && p.deps.CertStore != nil {
-			if cp, kp, err := p.deps.CertStore.GetPaths(*rt.CertID); err == nil {
+			if cp, kp, err := p.deps.CertStore.GetPaths(*rt.CertID); err != nil {
+				warnings = append(warnings, fmt.Sprintf("route %s: cert %s unresolved (%v) — falling back to auto-cert", rt.Domain, *rt.CertID, err))
+			} else if fileExists(cp) && fileExists(kp) {
 				ri.CertPath = cp
 				ri.KeyPath = kp
+			} else {
+				warnings = append(warnings, fmt.Sprintf("route %s: cert %s files missing (%s) — falling back to auto-cert", rt.Domain, *rt.CertID, cp))
 			}
 		}
 		intents = append(intents, ri)
 	}
 
 	return intents, warnings, nil
+}
+
+// fileExists reports whether path names an existing regular file. Used to keep a
+// route with a dangling custom-cert reference from failing the whole apply.
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // ============================================================================
@@ -303,6 +328,12 @@ func (p *Planner) PlanWithProviders(email string, available []provider.ProviderS
 	best.Alternatives = alternatives
 	best.Warnings = append(best.Warnings, warnings...)
 
+	// v1.9B: expose this node's control plane (/api/*) through the ingress HTTP
+	// provider so cross-node distnode health checks + RPC traverse the 80/443
+	// edge instead of the localhost-only API port. Capability-selected — never
+	// keyed on a provider name. See docs/distnode-onboarding-fix.md.
+	p.injectControlPlaneRoute(best, healthy)
+
 	// ForwardTarget for transparent proxy
 	for _, ri := range resolved {
 		if ri.Transport == "tcp" && ri.AppProtocol == "raw" {
@@ -318,6 +349,54 @@ func (p *Planner) PlanWithProviders(email string, available []provider.ProviderS
 // ============================================================================
 // Helpers
 // ============================================================================
+
+// injectControlPlaneRoute appends a reserved HTTP route that exposes this node's
+// own API (/api/*) on the ingress edge, forwarded to the local control port.
+//
+// The target provider is selected by CAPABILITY (HTTP host routing + TCP
+// upstream), never by name, so it follows whichever middleware serves ingress.
+// It is a no-op when no control port is configured or no capable provider is in
+// the plan (e.g. a pure SNI-passthrough topology).
+//
+// Rendering notes (see docs/distnode-onboarding-fix.md): Host "http://" renders
+// as an HTTP catch-all site (matches the raw-IP Host that distnode dials, and
+// coexists with auto-HTTPS domains); Path "/api" is wildcarded to "/api/*" by
+// the renderer, covering /api/healthz and /api/distnode/*.
+func (p *Planner) injectControlPlaneRoute(plan *TopologyPlan, healthy []provider.ProviderState) {
+	if plan == nil || p.deps.ControlPort <= 0 {
+		return
+	}
+	// Deterministic capability-based selection: first healthy provider that is in
+	// the plan and can route HTTP by host to a TCP upstream.
+	var targetID string
+	for _, ps := range healthy {
+		if _, ok := plan.Plans[ps.ID]; !ok {
+			continue
+		}
+		if ps.HasCapability(provider.CapRouteHost) && ps.HasCapability(provider.CapUpstreamTCP) {
+			targetID = ps.ID
+			break
+		}
+	}
+	if targetID == "" {
+		return
+	}
+	pl := plan.Plans[targetID]
+	pl.Routes = append(pl.Routes, provider.RouteSpec{
+		Transport:   "tcp",
+		TLSMode:     "terminate",
+		AppProtocol: "http",
+		Match: provider.MatchSpec{
+			Host: "http://", // HTTP catch-all — matches raw-IP Host from distnode
+			Path: "/api",     // renderer wildcards to /api/* (healthz + distnode RPC)
+		},
+		Upstream: provider.UpstreamSpec{
+			Type:   "http",
+			Target: fmt.Sprintf("http://127.0.0.1:%d", p.deps.ControlPort),
+		},
+	})
+	plan.Plans[targetID] = pl
+}
 
 // healthyProviders filters to only running providers.
 func healthyProviders(all []provider.ProviderState) []provider.ProviderState {

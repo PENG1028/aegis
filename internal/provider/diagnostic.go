@@ -70,6 +70,8 @@ func computeStatus(running, configOK bool) string {
 
 // CheckCaddyStatus returns a quick status check for Caddy.
 // configPath is accepted for backward compatibility; unused if empty.
+//
+// Deprecated: Use Provider.Diagnose() instead.
 func CheckCaddyStatus(configPath string) ProviderStatus {
 	diag := DiagnoseCaddy()
 	running := diag.ServiceRunning != nil && *diag.ServiceRunning
@@ -85,6 +87,8 @@ func CheckCaddyStatus(configPath string) ProviderStatus {
 }
 
 // CheckHAProxyStatus returns a quick status check for HAProxy.
+//
+// Deprecated: Use Provider.Diagnose() instead.
 func CheckHAProxyStatus(configPath string) ProviderStatus {
 	diag := quickDiagnoseHAProxy("haproxy", configPath)
 	running := diag.ServiceRunning != nil && *diag.ServiceRunning
@@ -104,6 +108,8 @@ func CheckHAProxyStatus(configPath string) ProviderStatus {
 // ============================================================================
 
 // DiagnoseCaddy runs a quick Caddy diagnostic using default paths.
+//
+// Deprecated: Use Provider.Diagnose() instead.
 func DiagnoseCaddy() ProviderDiagnostic {
 	return diagnoseExternal("caddy", "caddy", "/etc/caddy/Caddyfile",
 		"version", []string{"validate", "--config"},
@@ -112,6 +118,8 @@ func DiagnoseCaddy() ProviderDiagnostic {
 }
 
 // DiagnoseHAProxy runs a quick HAProxy diagnostic using default paths.
+//
+// Deprecated: Use Provider.Diagnose() instead.
 func DiagnoseHAProxy() ProviderDiagnostic {
 	return diagnoseExternal("haproxy", "haproxy", "/etc/haproxy/haproxy.cfg",
 		"-v", []string{"-c", "-f"},
@@ -183,6 +191,8 @@ func diagnoseExternal(providerID, serviceName, configPath, versionFlag string, v
 }
 
 // quickDiagnoseCaddy calls diagnoseExternal with Caddy-specific parameters.
+//
+// Deprecated: Use Provider.Diagnose() instead.
 func quickDiagnoseCaddy(binaryName, configPath string) ProviderDiagnostic {
 	return diagnoseExternal("caddy", "caddy", configPath,
 		"version", []string{"validate", "--config"},
@@ -191,6 +201,8 @@ func quickDiagnoseCaddy(binaryName, configPath string) ProviderDiagnostic {
 }
 
 // quickDiagnoseHAProxy calls diagnoseExternal with HAProxy-specific parameters.
+//
+// Deprecated: Use Provider.Diagnose() instead.
 func quickDiagnoseHAProxy(binaryName, configPath string) ProviderDiagnostic {
 	return diagnoseExternal("haproxy", "haproxy", configPath,
 		"-v", []string{"-c", "-f"},

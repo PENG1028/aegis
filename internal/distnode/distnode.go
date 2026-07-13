@@ -289,6 +289,31 @@ func (m *Membership) GetPeer(id string) *Peer {
 	return m.peers[id]
 }
 
+// AddPeer dynamically registers a peer at runtime (thread-safe). It is a no-op
+// when the ID is empty, equals self, or is already known. The next health-check
+// tick probes the new peer; the first successful probe fires EventPeerAlive
+// through the registered OnEvent handler. This lets a running cluster grow
+// without a restart — e.g. when an operator joins a node to the control plane.
+func (m *Membership) AddPeer(pc PeerConfig) {
+	if pc.ID == "" || pc.ID == m.self {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.peers[pc.ID]; exists {
+		return
+	}
+	m.peers[pc.ID] = &Peer{
+		Info: NodeInfo{
+			ID:     pc.ID,
+			Addr:   pc.Addr,
+			Status: StatusDead,
+		},
+		Alive: false,
+	}
+	m.logf("[distnode] peer %s (%s) added dynamically", pc.ID, pc.Addr)
+}
+
 // AlivePeers returns all peers currently marked alive.
 func (m *Membership) AlivePeers() []*Peer {
 	m.mu.RLock()

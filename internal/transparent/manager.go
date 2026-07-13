@@ -111,7 +111,12 @@ func (m *Manager) StartRedirect(rule RedirectRule) error {
 			targetHost = "127.0.0.1"
 		}
 		if targetPort == 0 {
-			targetPort = 80 // default: Caddy HTTP
+			// Fallback: port 80 is the public HTTP listener default, matching
+			// listener.EdgeMuxDefaults() and listener.DefaultListeners(). The
+			// primary path is SetForwardTarget() (called by the topology Planner),
+			// which populates m.forwardHost/m.forwardPort; this constant is only a
+			// last resort when the Planner hasn't set a forward target yet.
+			targetPort = 80
 		}
 		log.Printf("[transparent] %s: cross-node → forwarding via %s:%d", rule.ID, targetHost, targetPort)
 	}

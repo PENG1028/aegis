@@ -31,12 +31,18 @@ func (s *Service) IsEdgeMuxMode() bool {
 
 // CheckConflict checks if a bind would conflict with existing listeners.
 func (s *Service) CheckConflict(provider, protocol, bindIP string, port int) error {
-	// Special handling for 443 in EdgeMux mode
-	if s.edgeMuxMode && port == 443 && provider != "haproxy_edge_mux" {
-		return &ConflictError{
-			ExistingListener: Listener{Provider: "haproxy_edge_mux", Protocol: "tls_mux", BindIP: "0.0.0.0", Port: 443},
-			RequestedBind:    bindIP,
-			RequestedPort:    port,
+	// In EdgeMux mode, port 443 belongs to the SNI pre-read provider (HAProxy).
+	// Only that provider may bind it. Read the provider ID + port from listener
+	// defaults rather than hardcoding.
+	if s.edgeMuxMode {
+		for _, l := range EdgeMuxDefaults() {
+			if l.Port == port && l.Purpose == "public_tls_mux" && provider != l.Provider {
+				return &ConflictError{
+					ExistingListener: l,
+					RequestedBind:    bindIP,
+					RequestedPort:    port,
+				}
+			}
 		}
 	}
 

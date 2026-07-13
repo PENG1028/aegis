@@ -17,7 +17,7 @@ func (h *Handlers) ProviderInstall(w http.ResponseWriter, r *http.Request) {
 	p := h.providerForName(providerName)
 	if p == nil {
 		writeError(w, http.StatusBadRequest,
-			fmt.Sprintf("unsupported provider: %s (supported: caddy, haproxy)", providerName))
+			fmt.Sprintf("unsupported provider: %s (supported: %s)", providerName, providerListDesc(h.ProvReg)))
 		return
 	}
 
@@ -63,7 +63,7 @@ func (h *Handlers) ProviderConfigPreview(w http.ResponseWriter, r *http.Request)
 	p := h.providerForName(providerName)
 	if p == nil {
 		writeError(w, http.StatusBadRequest,
-			fmt.Sprintf("unsupported provider: %s (supported: caddy, haproxy)", providerName))
+			fmt.Sprintf("unsupported provider: %s (supported: %s)", providerName, providerListDesc(h.ProvReg)))
 		return
 	}
 
@@ -101,4 +101,18 @@ func (h *Handlers) ProviderConfigPreview(w http.ResponseWriter, r *http.Request)
 		"exists":      exists,
 		"content":     data,
 	})
+}
+
+// providerListDesc returns a comma-separated list of supported provider IDs.
+// Used in error messages to tell the user which providers are available.
+func providerListDesc(reg *provider.Registry) string {
+	if reg == nil {
+		return "none"
+	}
+	states := reg.List()
+	ids := make([]string, 0, len(states))
+	for _, s := range states {
+		ids = append(ids, s.ID)
+	}
+	return strings.Join(ids, ", ")
 }

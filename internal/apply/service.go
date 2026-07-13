@@ -125,7 +125,7 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	result, err := s.workflow.Preview(ctx, s.cfg.Proxy.Email)
 	if err != nil {
 		stepLog.record("render_config", "failed", fmt.Sprintf("preview: %v", err))
-		s.writeApplyLog(opID, stateVersion, "caddy", "failed", stepLog, err.Error())
+		s.writeApplyLog(opID, stateVersion, s.cfg.Proxy.Provider, "failed", stepLog, err.Error())
 		return nil, fmt.Errorf("preview: %w", err)
 	}
 
@@ -145,7 +145,7 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 		lastHash := computeHash(lastSuccess.RenderedConfig)
 		if newHash == lastHash {
 			stepLog.record("config_hash_compare", "success", "config unchanged — skipping apply")
-			s.writeApplyLog(opID, stateVersion, "caddy", "success", stepLog, "")
+			s.writeApplyLog(opID, stateVersion, s.cfg.Proxy.Provider, "success", stepLog, "")
 			s.clearPending()
 			return &ApplyPlan{RenderedConfig: renderedStr, ConfigPath: s.cfg.Proxy.CaddyfilePath}, nil
 		}
@@ -157,7 +157,7 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	applyResult, err := s.workflow.Apply(ctx, s.cfg.Proxy.Email)
 	if err != nil {
 		stepLog.record("provider_apply", "failed", fmt.Sprintf("apply: %v", err))
-		s.writeApplyLog(opID, stateVersion, "caddy", "failed", stepLog, err.Error())
+		s.writeApplyLog(opID, stateVersion, s.cfg.Proxy.Provider, "failed", stepLog, err.Error())
 		return nil, fmt.Errorf("apply: %w", err)
 	}
 	stepLog.record("provider_apply", "success", "config applied to all providers")
@@ -168,7 +168,7 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	stepLog.record("release_lock", "success", "apply lock released")
 
 	s.clearPending()
-	s.writeApplyLog(opID, stateVersion, "caddy", "success", stepLog, "")
+	s.writeApplyLog(opID, stateVersion, s.cfg.Proxy.Provider, "success", stepLog, "")
 
 	// 5. Record apply version
 	backupPath := filepath.Join(s.cfg.Proxy.BackupDir, fmt.Sprintf("Caddyfile.%s.bak", time.Now().Format("20060102_150405")))

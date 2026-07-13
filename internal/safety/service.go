@@ -307,8 +307,32 @@ func (s *Service) getGatewayListenerPorts() []int {
 		}
 	}
 
-	// Fallback: standard gateway ports
-	return []int{80, 443, 8443}
+	// Fallback: derive from listener defaults (EdgeMux + legacy) instead of
+	// hardcoding. If listener defaults change, this follows automatically.
+	return defaultGatewayListenerPorts()
+}
+
+// defaultGatewayListenerPorts derives the fallback gateway port set from the
+// listener package defaults (EdgeMux mode + legacy mode), deduplicated. Only if
+// no listener defaults are configured does it fall back to the historical
+// {80, 443, 8443} set.
+func defaultGatewayListenerPorts() []int {
+	seen := make(map[int]bool)
+	for _, l := range listener.EdgeMuxDefaults() {
+		seen[l.Port] = true
+	}
+	for _, l := range listener.DefaultListeners() {
+		seen[l.Port] = true
+	}
+	if len(seen) == 0 {
+		// Last-resort fallback: historical standard gateway ports.
+		return []int{80, 443, 8443}
+	}
+	ports := make([]int, 0, len(seen))
+	for p := range seen {
+		ports = append(ports, p)
+	}
+	return ports
 }
 
 // getNodeIPs collects the current node's known IPs.

@@ -206,36 +206,30 @@ func unsupportedReason(key string, targetMode RuntimeMode) string {
 	return ""
 }
 
+// stopReason returns a human-readable reason why a provider is being stopped
+// during a mode switch. Derived from port comparison, not hardcoded names.
 func stopReason(id string, current, target RuntimeMode) string {
-	switch id {
-	case "haproxy":
-		return "EdgeMux→Legacy 不需要 HAProxy，:443 由 Caddy 接管"
-	case "caddy":
-		return ""
+	currentPort, _ := current.PortFor(id, "tcp")
+	if currentPort > 0 {
+		return fmt.Sprintf("新模式不需要端口 :%d 上的监听（%s 将停止）", currentPort, id)
 	}
-	return ""
+	return fmt.Sprintf("%s 在新模式下不再需要", id)
 }
 
+// reconfigReason returns a human-readable reason why a provider's config is
+// being regenerated during a mode switch. Derived from port comparison.
 func reconfigReason(id string, current, target RuntimeMode) string {
-	switch id {
-	case "caddy":
-		cp, _ := current.PortFor("caddy", "tcp")
-		tp, _ := target.PortFor("caddy", "tcp")
-		if cp != tp {
-			return fmt.Sprintf("Caddy 监听端口从 :%d 变更为 :%d", cp, tp)
-		}
-		return "Caddy 配置重新生成"
+	cp, _ := current.PortFor(id, "tcp")
+	tp, _ := target.PortFor(id, "tcp")
+	if cp != tp {
+		return fmt.Sprintf("监听端口从 :%d 变更为 :%d", cp, tp)
 	}
-	return ""
+	return "配置重新生成"
 }
 
+// providerLabel returns a display label for a provider ID.
+// Uses the registry when available; falls back to the raw ID.
 func providerLabel(id string) string {
-	switch id {
-	case "caddy":
-		return "Caddy HTTP"
-	case "haproxy":
-		return "HAProxy SNI"
-	}
 	return id
 }
 

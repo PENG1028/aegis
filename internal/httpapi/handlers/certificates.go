@@ -6,6 +6,7 @@ import (
 
 	"aegis/internal/certstore"
 	"aegis/internal/infra"
+	"aegis/internal/provider"
 )
 
 // ─── Certificate handlers ───
@@ -187,6 +188,13 @@ func (h *Handlers) AdminCheckCertExpiry(w http.ResponseWriter, r *http.Request) 
 		acmeRenewer = h.ACMEClient
 	}
 	checker := certstore.NewCertRenewalChecker(h.CertStore, acmeRenewer)
+	// Wire the gateway provider that handles auto-cert (capability-based, not by name).
+	if h.ProvReg != nil {
+		autoCertProv := h.ProvReg.FindByCapability(provider.CapAutoCert)
+		if rp, ok := autoCertProv.(provider.ReloadableProvider); ok {
+			checker.SetProviderReloader(rp)
+		}
+	}
 	certs, err := checker.Check(r.Context(), 90)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -213,6 +221,12 @@ func (h *Handlers) AdminRenewCert(w http.ResponseWriter, r *http.Request) {
 		acmeRenewer = h.ACMEClient
 	}
 	checker := certstore.NewCertRenewalChecker(h.CertStore, acmeRenewer)
+		if h.ProvReg != nil {
+			autoCertProv := h.ProvReg.FindByCapability(provider.CapAutoCert)
+			if rp, ok := autoCertProv.(provider.ReloadableProvider); ok {
+				checker.SetProviderReloader(rp)
+			}
+		}
 	result, err := checker.Renew(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

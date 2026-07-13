@@ -93,7 +93,7 @@ func (s *Service) TraceDomain(ctx context.Context, domain string) *AccessPathTra
 		listeners, _ := s.deps.ListenerSvc.ListAll()
 		hasEdge := false
 		for _, l := range listeners {
-			if l.Port == 443 {
+			if l.Purpose == "public_tls_mux" {
 				hasEdge = true
 				steps = append(steps, TraceStep{
 					Order: 2, Component: "listener", Name: "edge_listener",
@@ -140,7 +140,7 @@ func (s *Service) TraceDomain(ctx context.Context, domain string) *AccessPathTra
 		listeners, _ := s.deps.ListenerSvc.ListAll()
 		hasHTTP := false
 		for _, l := range listeners {
-			if l.Port == 80 {
+			if l.Purpose == "public_http" {
 				hasHTTP = true
 				steps = append(steps, TraceStep{
 					Order: 2, Component: "listener", Name: "http_listener",
@@ -282,7 +282,7 @@ func (s *Service) TraceSNI(ctx context.Context, sniHost string) *AccessPathTrace
 	listeners, _ := s.deps.ListenerSvc.ListAll()
 	has443 := false
 	for _, l := range listeners {
-		if l.Port == 443 {
+		if l.Purpose == "public_tls_mux" {
 			has443 = true
 			steps = append(steps, TraceStep{
 				Order: 1, Component: "listener", Name: "edge_listener",
@@ -321,7 +321,7 @@ func (s *Service) TraceSNI(ctx context.Context, sniHost string) *AccessPathTrace
 	})
 
 	// Step 3: Determine if this goes to Caddy or direct to backend
-	if edgeRule.TargetHost == "127.0.0.1" && edgeRule.TargetPort == 8443 {
+	if edgeRule.TargetHost == "127.0.0.1" && edgeRule.TargetPort == getInternalHTTPSPort() {
 		steps = append(steps, TraceStep{
 			Order: 3, Component: "caddy", Name: "tls_termination",
 			Status: "matched", Detail: "SNI routes to Caddy on 127.0.0.1:8443 for TLS termination",
@@ -509,4 +509,15 @@ func parseHostPort(addr string) (host string, port int) {
 		port = 80 // HTTP default
 	}
 	return host, port
+}
+
+// getInternalHTTPSPort returns the internal HTTPS port from EdgeMux listener defaults.
+// Falls back to 8443 if no internal_https listener is configured.
+func getInternalHTTPSPort() int {
+	for _, l := range listener.EdgeMuxDefaults() {
+		if l.Purpose == "internal_https" {
+			return l.Port
+		}
+	}
+	return 8443
 }

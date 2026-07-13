@@ -331,7 +331,12 @@ func (w *Workflow) Rollback(ctx context.Context) error {
 		}
 	}
 
-	w.logApply(ctx, "caddy", "rollback", fmt.Sprintf("restored from %s", last.BackupPath))
+	// Log rollback against the actual provider that was reloaded (capability-based).
+	rollbackProvID := "unknown"
+	if reloadProv != nil {
+		rollbackProvID = reloadProv.State().ID
+	}
+	w.logApply(ctx, rollbackProvID, "rollback", fmt.Sprintf("restored from %s", last.BackupPath))
 	return nil
 }
 

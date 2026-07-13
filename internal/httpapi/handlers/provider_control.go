@@ -65,6 +65,32 @@ func (h *Handlers) ProviderServiceControl(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Prefer ServiceController interface (capability-based) over direct systemctl.
+	sc, hasSC := p.(provider.ServiceController)
+	if hasSC {
+		var svcErr error
+		switch action {
+		case "start":
+			svcErr = sc.Start()
+		case "stop":
+			svcErr = sc.Stop()
+		case "restart":
+			svcErr = sc.Restart()
+		}
+		if svcErr != nil {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"provider": providerName, "action": action, "status": "failed",
+				"error": svcErr.Error(), "running": false,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"provider": providerName, "action": action, "status": "success",
+		})
+		return
+	}
+
+	// Fallback: no ServiceController interface, use systemctl directly.
 	cmd := exec.Command("systemctl", action, svc)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

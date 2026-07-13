@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"aegis/internal/action"
+	"aegis/internal/listener"
 )
 
 // BindHTTPDomain handles POST /api/v1/actions/bind-http-domain
@@ -23,7 +24,8 @@ func (h *Handlers) BindHTTPDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if input.TargetPort <= 0 {
-		input.TargetPort = 80
+		// Default to the public HTTP port from listener config (not hardcoded).
+		input.TargetPort = listenerPort("public_http", 80)
 	}
 
 	result, err := h.Action.BindHTTPDomain(r.Context(), input)
@@ -52,7 +54,8 @@ func (h *Handlers) BindTLSBackend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if input.TargetPort <= 0 {
-		input.TargetPort = 443
+		// Default to the public TLS port from listener config (not hardcoded).
+		input.TargetPort = listenerPort("public_tls_mux", 443)
 	}
 
 	result, err := h.Action.BindTLSBackend(r.Context(), input)
@@ -211,4 +214,20 @@ func writeActionError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeError(w, http.StatusInternalServerError, err.Error())
+}
+
+// listenerPort reads a port from the listener defaults by purpose, with a fallback.
+// This avoids hardcoding port 80/443 throughout handler code.
+func listenerPort(purpose string, fallback int) int {
+	for _, l := range listener.EdgeMuxDefaults() {
+		if l.Purpose == purpose {
+			return l.Port
+		}
+	}
+	for _, l := range listener.DefaultListeners() {
+		if l.Purpose == purpose {
+			return l.Port
+		}
+	}
+	return fallback
 }

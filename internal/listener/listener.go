@@ -48,8 +48,10 @@ type ConflictError struct {
 }
 
 func (e *ConflictError) Error() string {
-	if e.ExistingListener.Port == 443 && e.ExistingListener.Provider == "haproxy_edge_mux" {
-		return fmt.Sprintf("LISTENER_CONFLICT: port 443 is owned by haproxy_edge_mux. Register a TLS SNI edge rule instead, or choose another port.")
+	// TLS SNI pre-read listener (EdgeMux mode): guide the user toward SNI edge rules.
+	if e.ExistingListener.Purpose == "public_tls_mux" {
+		return fmt.Sprintf("LISTENER_CONFLICT: port %d is owned by the TLS SNI pre-read provider (%s). Register a TLS SNI edge rule instead, or choose another port.",
+			e.ExistingListener.Port, e.ExistingListener.Provider)
 	}
 	return fmt.Sprintf("LISTENER_CONFLICT: %s:%d already bound by provider %s (%s). Enable edge_mux mode or choose another port.",
 		e.ExistingListener.BindIP, e.ExistingListener.Port, e.ExistingListener.Provider, e.ExistingListener.Protocol)

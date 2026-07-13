@@ -6,9 +6,13 @@ import (
 	"net/http"
 	"net"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
+	"aegis/internal/config"
 	"aegis/internal/deploy"
+	"aegis/internal/distnode"
 )
 
 // ─── Request / Response ──────────────────────────────────────────────────────
@@ -219,7 +223,10 @@ func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, cpU
 	} else if result.ExitCode == 0 {
 		logf("  Caddy installed")
 	} else {
-		logf("  Warning: caddy install: %s", result.Stderr)
+		// Caddy is required for the node's edge — a failed install is a hard
+		// failure, not a warning. Reporting success here masked broken nodes.
+		return &DeployNodeResponse{Success: false,
+			Message: fmt.Sprintf("Caddy install failed on target (required for the edge): %s", result.Stderr)}, nil
 	}
 
 	// ── Step 3: Create directories ──
@@ -314,9 +321,12 @@ WantedBy=multi-user.target
 	logf("[7/7] Starting node agent...")
 	result = conn.Services.Start(ctx, "aegis-node")
 	if result.Error != nil || result.ExitCode != 0 {
-		logf("  Warning: start output: %s", result.Stderr)
+		// The node agent failing to start is a hard failure — don't report a
+		// green deploy over a node that never came up.
+		return &DeployNodeResponse{Success: false,
+			Message: fmt.Sprintf("Node agent failed to start (exit=%d): %s", result.ExitCode, result.Stderr)}, nil
 	}
-	logf("  Node agent starting...")
+	logf("  Node agent started")
 
 	logf("=== Deploy complete! Node should appear in the UI within 30 seconds. ===")
 
@@ -454,7 +464,9 @@ func (h *Handlers) AdminJoinNode(w http.ResponseWriter, r *http.Request) {
 		targetHostname = req.TargetIP
 	}
 
-	// Control plane address
+	// ── Control plane (A) identity + edge address ──
+	// distnode reaches peers over the 80/443 edge (7380 is localhost-only and the
+	// cloud firewall only opens 80/443). cpHost is A's externally reachable host.
 	cpHost := r.Host
 	if colon := strings.LastIndex(cpHost, ":"); colon > strings.LastIndex(cpHost, "]") {
 		cpHost = cpHost[:colon]
@@ -462,48 +474,72 @@ func (h *Handlers) AdminJoinNode(w http.ResponseWriter, r *http.Request) {
 	if cpHost == "" || strings.HasPrefix(cpHost, "127.") || cpHost == "localhost" {
 		cpHost = req.TargetIP
 	}
-	cpAddr := net.JoinHostPort(cpHost, "7380")
+	aEdge := net.JoinHostPort(cpHost, "80")
+	bEdge := net.JoinHostPort(req.TargetIP, "80")
 
-	// Step 4: Write distnode config on target
-	alreadyCfg := conn.Executor.Run(r.Context(), "grep -q 'distnode:' /etc/aegis/config.yaml && echo 'yes' || echo 'no'")
-	if strings.TrimSpace(alreadyCfg.Stdout) == "yes" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success": false, "error": "目标已配置 distnode，无需重复加入",
+	// ── Step 4a: register B as a peer on THIS control plane ──
+	// Persist to config (survives restart) and hot-add to the running Membership
+	// (no A restart). Once A's health check reaches B:80/api/healthz, distnode's
+	// OnEvent registers B in the nodes table and it appears in the UI.
+	if h.DistNode != nil {
+		h.DistNode.Membership.AddPeer(distnode.PeerConfig{ID: targetHostname, Addr: bEdge})
+	}
+	if !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetHostname }) {
+		h.Config.DistNode.Peers = append(h.Config.DistNode.Peers, config.DistNodePeer{ID: targetHostname, Addr: bEdge})
+		cpCfgPath := filepath.Join(h.Config.Runtime.ConfigDir, "config.yaml")
+		if err := h.Config.Save(cpCfgPath); err != nil {
+			writeJSON(w, http.StatusOK, map[string]interface{}{"success": false, "error": "写入控制平面配置失败: " + err.Error()})
+			return
+		}
+	}
+
+	// ── Step 4b: sync cluster secret + register A as a peer on the target ──
+	// distnode default-on has already written B a distnode block with its own
+	// random secret; rewrite it so B shares OUR cluster secret (cross-node RPC
+	// HMAC) and knows us as a peer. Drop the existing block first (avoid a
+	// duplicate YAML key) then append. `addr` is left for B's config loader to
+	// fill from its own Server.Addr — no hardcoded port here.
+	newBlock := fmt.Sprintf("distnode:\n  enabled: true\n  id: %q\n  name: %q\n  secret: %q\n  peers:\n    - id: %q\n      addr: %q\n",
+		targetHostname, targetHostname, h.Config.DistNode.Secret, h.Config.DistNode.ID, aEdge)
+	rewrite := "sudo cp /etc/aegis/config.yaml /etc/aegis/config.yaml.join-bak && " +
+		"sudo awk 'BEGIN{s=0} /^distnode:/{s=1;next} s==1 && /^[^[:space:]]/{s=0} s==0{print}' /etc/aegis/config.yaml.join-bak | sudo tee /etc/aegis/config.yaml.new >/dev/null && " +
+		fmt.Sprintf("cat <<'YAMLEOF' | sudo tee -a /etc/aegis/config.yaml.new >/dev/null\n%sYAMLEOF\n", newBlock) +
+		"sudo mv /etc/aegis/config.yaml.new /etc/aegis/config.yaml"
+	if res := conn.Executor.Run(r.Context(), rewrite); res.Error != nil || res.ExitCode != 0 {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": false,
+			"error": fmt.Sprintf("写入目标 distnode 配置失败: exit=%d err=%v stderr=%s", res.ExitCode, res.Error, res.Stderr)})
+		return
+	}
+
+	// ── Step 5: restart target, then apply so its edge renders the control route ──
+	restart := conn.Executor.Run(r.Context(), "sudo systemctl restart aegis && sleep 3 && curl -s http://127.0.0.1:7380/api/healthz")
+	if restart.Error != nil || restart.ExitCode != 0 || !strings.Contains(restart.Stdout, "alive") {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": false,
+			"error":    fmt.Sprintf("目标重启后健康检查失败: exit=%d stderr=%s", restart.ExitCode, restart.Stderr),
+			"rollback": "SSH 到目标: sudo cp /etc/aegis/config.yaml.join-bak /etc/aegis/config.yaml && sudo systemctl restart aegis",
 		})
 		return
 	}
-
-	peerYAML := fmt.Sprintf("distnode:\n  enabled: true\n  id: \"%s\"\n  name: \"%s\"\n  addr: \"0.0.0.0:7380\"\n  secret: \"aegis-cluster-shared-secret\"\n  peers:\n    - id: \"control-plane\"\n      addr: \"%s\"\n", targetHostname, targetHostname, cpAddr)
-	cfgCmd := fmt.Sprintf("cat >> /etc/aegis/config.yaml << 'YAMLEOF'\n%sYAMLEOF", peerYAML)
-	if cfgResult := conn.Executor.Run(r.Context(), cfgCmd); cfgResult.Error != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"success": false, "error": "写入配置失败: " + cfgResult.Error.Error()})
-		return
-	}
-
-	// Step 5: Restart target
-	restartResult := conn.Executor.Run(r.Context(), "sudo systemctl restart aegis && sleep 3 && curl -s http://127.0.0.1:7380/api/healthz")
-	if restartResult.Error != nil || restartResult.ExitCode != 0 {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success": false,
-			"error":   fmt.Sprintf("目标重启失败: exit=%d stderr=%s", restartResult.ExitCode, restartResult.Stderr),
-			"rollback": "SSH 到目标执行: sudo systemctl start aegis",
-		})
-		return
-	}
-	if !strings.Contains(restartResult.Stdout, "alive") {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success": false, "error": "目标重启后健康检查失败: journalctl -u aegis -n 20",
+	// Trigger an apply on the target so its Caddyfile gains the /api/* control
+	// route (the ingress edge for its control plane). Uses the target's own admin
+	// token from its config.
+	applyCmd := "TOK=$(sudo awk '/admin_token:/{print $2; exit}' /etc/aegis/config.yaml | tr -d '\"'); " +
+		"curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:7380/api/apply -H \"Authorization: Bearer $TOK\" -H 'Content-Type: application/json'"
+	applyRes := conn.Executor.Run(r.Context(), applyCmd)
+	if applyCode := strings.TrimSpace(applyRes.Stdout); applyCode != "200" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": false,
+			"error": "目标已加入但 apply 失败（控制路由未渲染）: http=" + applyCode + " — 请在目标执行 sudo aegis apply 或在 UI 重试",
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":  true,
-		"message":  "节点加入成功 — " + targetHostname,
-		"node_id":  targetHostname,
-		"target":   req.TargetIP,
-		"cp_addr":  cpAddr,
-		"next_step": "目标已重启。刷新节点列表即可看到新节点。",
+		"success":   true,
+		"message":   "节点加入成功 — " + targetHostname,
+		"node_id":   targetHostname,
+		"target":    req.TargetIP,
+		"peer_addr": bEdge,
+		"next_step": "目标已重启并 apply。刷新节点列表，≤30s 内应看到该节点上线。",
 	})
 
 }

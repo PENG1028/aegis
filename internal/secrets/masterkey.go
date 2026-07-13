@@ -36,7 +36,12 @@ type MasterKey struct {
 
 // Bytes returns the key bytes as a slice.
 // Callers MUST NOT modify the returned slice.
+// Returns nil for a nil receiver so callers on the master-key-load error path
+// (where the key may be nil) degrade instead of panicking.
 func (mk *MasterKey) Bytes() []byte {
+	if mk == nil {
+		return nil
+	}
 	return mk.key[:]
 }
 

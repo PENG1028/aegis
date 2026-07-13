@@ -218,7 +218,59 @@ func Load(path string) (*Config, error) {
 		cfg.Server.AllowedOrigins = []string{"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"}
 	}
 
+	// v1.9B: distnode is native to every node — default it on with a stable
+	// auto-generated identity so a freshly deployed node joins the cluster
+	// without manual config. See docs/distnode-onboarding-fix.md.
+	applyDistNodeDefaults(cfg, path)
+
 	return cfg, nil
+}
+
+// applyDistNodeDefaults enables the distributed-node runtime by default and
+// fills a stable identity when the operator left it unconfigured. distnode is
+// native (a goroutine inside `aegis serve`, not a separate process); leaving it
+// off is why a joined node never appeared in the cluster. The generated cluster
+// secret is persisted back to the config file so peers keep matching across
+// restarts. An explicit `enabled: false` is intentionally overridden in Phase 0
+// (bool cannot distinguish "unset" from "false"); a dedicated opt-out can be
+// added later if a node must stay standalone.
+func applyDistNodeDefaults(cfg *Config, path string) {
+	changed := false
+	if !cfg.DistNode.Enabled {
+		cfg.DistNode.Enabled = true
+		changed = true
+	}
+	if cfg.DistNode.ID == "" {
+		host, err := os.Hostname()
+		if err != nil || host == "" {
+			host = "aegis-node"
+		}
+		cfg.DistNode.ID = host
+		changed = true
+	}
+	if cfg.DistNode.Name == "" {
+		cfg.DistNode.Name = cfg.DistNode.ID
+		changed = true
+	}
+	if cfg.DistNode.Addr == "" {
+		// Advertisement metadata only — distnode reuses the aegis mux and opens
+		// no listener of its own, so this address is never dialed. Mirror the API
+		// address for a sensible SelfInfo value.
+		cfg.DistNode.Addr = cfg.Server.Addr
+		changed = true
+	}
+	if cfg.DistNode.Secret == "" {
+		cfg.DistNode.Secret = core.GenerateRandomHex(32) // 32 bytes → 64 hex chars
+		changed = true
+	}
+	if changed {
+		if err := cfg.Save(path); err != nil {
+			// Non-fatal: this boot runs with the in-memory defaults. If the secret
+			// was generated but not persisted, peers may mismatch until the next
+			// successful save — surface it loudly rather than silently drift.
+			fmt.Fprintf(os.Stderr, "warn: could not persist distnode defaults to %s: %v\n", path, err)
+		}
+	}
 }
 
 // Save writes the config to a YAML file.

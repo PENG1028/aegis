@@ -3,7 +3,6 @@ package certstore
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"time"
 )
 
@@ -11,6 +10,13 @@ import (
 // The acme package implements this; certstore does not depend on acme.
 type ACMERenewer interface {
 	Renew(ctx context.Context, domains []string) (certID string, err error)
+}
+
+// ProviderReloader reloads the gateway provider that handles auto-cert
+// (e.g., Caddy). Defined here as an interface so certstore does not
+// import the provider package directly.
+type ProviderReloader interface {
+	Reload() error
 }
 
 // ExpiringCert wraps a Certificate with computed fields about its expiry.
@@ -32,12 +38,19 @@ type RenewalResult struct {
 
 // CertRenewalChecker checks certificate expiry and triggers renewal.
 type CertRenewalChecker struct {
-	svc  *Service
-	acme ACMERenewer // nil if no ACME capability
+	svc      *Service
+	acme     ACMERenewer       // nil if no ACME capability
+	reloader ProviderReloader  // reloads the gateway provider for auto-cert renewal
 }
 
 func NewCertRenewalChecker(svc *Service, acme ACMERenewer) *CertRenewalChecker {
 	return &CertRenewalChecker{svc: svc, acme: acme}
+}
+
+// SetProviderReloader sets the gateway provider reloader for auto-cert renewal.
+// Called from main.go after the provider registry is available.
+func (c *CertRenewalChecker) SetProviderReloader(r ProviderReloader) {
+	c.reloader = r
 }
 
 // Check returns all certificates expiring within the given number of days.
@@ -61,9 +74,9 @@ func (c *CertRenewalChecker) Check(ctx context.Context, withinDays int) ([]Expir
 		ec := ExpiringCert{Certificate: cert, DaysLeft: daysLeft}
 		switch cert.Source {
 		case SourceGatewayAuto:
-			ec.RenewMethod = "caddy_auto"
+			ec.RenewMethod = "gateway_auto"
 			ec.CanRenew = true
-			ec.RenewNote = "Caddy 自动续期，无需手动干预。"
+			ec.RenewNote = "网关自动续期，重载网关提供者即可触发。"
 		case SourceLocalACME:
 			ec.RenewMethod = "acme"
 			ec.CanRenew = c.acme != nil
@@ -90,12 +103,13 @@ func (c *CertRenewalChecker) Renew(ctx context.Context, certID string) (*Renewal
 	}
 	switch cert.Source {
 	case SourceGatewayAuto:
-		out, err := exec.CommandContext(ctx, "systemctl", "reload", "caddy").CombinedOutput()
-		if err != nil {
-			return &RenewalResult{CertID: certID, Message: fmt.Sprintf("Caddy reload failed: %v — %s", err, string(out))}, nil
+		if c.reloader != nil {
+			if err := c.reloader.Reload(); err != nil {
+				return &RenewalResult{CertID: certID, Message: fmt.Sprintf("gateway reload failed: %v", err)}, nil
+			}
 		}
 		c.svc.SyncAutoCerts("")
-		return &RenewalResult{CertID: certID, Renewed: true, Message: "Caddy reloaded, auto-renewal triggered."}, nil
+		return &RenewalResult{CertID: certID, Renewed: true, Message: "Gateway reloaded, auto-renewal triggered."}, nil
 
 	case SourceLocalACME:
 		if c.acme == nil {
