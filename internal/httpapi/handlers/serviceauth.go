@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -375,6 +376,34 @@ func (h *Handlers) ServiceAuthCall(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+
+	// Resolve which node hosts the target.
+	//   - Local record with remote NodeHost -> that node
+	//   - Local record with local/empty NodeHost -> local forward
+	//   - No local record -> fan out to peers to locate it (reuses ProxyRequest,
+	//     no new Transport method — same骨架 as AdminDistNodeAggregate)
+	targetNode := ""
+	if target != nil {
+		targetNode = target.NodeHost
+	} else if h.DistNode != nil {
+		targetNode = h.locateServiceNode(r.Context(), reqBody.Target)
+		if targetNode == "" {
+			writeError(w, http.StatusNotFound, "target service not found in cluster: "+reqBody.Target)
+			return
+		}
+	} else {
+		writeError(w, http.StatusNotFound, "target service not found or has no listen_port: "+reqBody.Target)
+		return
+	}
+
+	// Cross-node: forward the whole call to the hosting node via ProxyRequest.
+	// The remote node runs this same handler and resolves host:listen_port locally.
+	if h.DistNode != nil && targetNode != "" && targetNode != h.DistNode.ID {
+		callBody, _ := json.Marshal(reqBody)
+		h.forwardServiceCall(w, r, targetNode, callBody)
+		return
+	}
+
 	if target == nil {
 		writeError(w, http.StatusNotFound, "target service not found or has no listen_port: "+reqBody.Target)
 		return
@@ -418,5 +447,70 @@ func (h *Handlers) ServiceAuthCall(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+// forwardServiceCall proxies a service-auth call to the node that hosts the
+// target service, via the generic Aegis.ProxyRequest transport (no per-endpoint
+// registration — same mechanism as AdminDistNodeAggregate). The remote node runs
+// ServiceAuthCall against its own registry and does the final local forward.
+func (h *Handlers) forwardServiceCall(w http.ResponseWriter, r *http.Request, nodeID string, callBody json.RawMessage) {
+	if h.DistNode.Membership.GetPeer(nodeID) == nil {
+		writeError(w, http.StatusBadGateway, "target service on unknown/unreachable node: "+nodeID)
+		return
+	}
+	proxyReq := ProxyRequest{
+		Method: "POST",
+		Path:   "/api/service-auth/v1/call",
+		Body:   callBody,
+		Headers: map[string]string{
+			"X-Service-Ticket": r.Header.Get("X-Service-Ticket"),
+			"X-Caller-Service": r.Header.Get("X-Caller-Service"),
+		},
+	}
+	var resp ProxyResponse
+	if err := h.DistNode.Transport.Call(r.Context(), nodeID, "Aegis.ProxyRequest", proxyReq, &resp); err != nil {
+		writeError(w, http.StatusBadGateway, "cross-node call to "+nodeID+": "+err.Error())
+		return
+	}
+	for k, v := range resp.Headers {
+		w.Header().Set(k, v)
+	}
+	w.WriteHeader(resp.StatusCode)
+	if len(resp.Body) > 0 {
+		w.Write(resp.Body)
+	}
+}
+
+// locateServiceNode fans out to alive peers and returns the node ID of the first
+// peer whose local registry has an active registration for name (with a
+// listen_port). It reuses Aegis.ProxyRequest against the existing service list
+// endpoint — no new transport method, same fan-out骨架 as AdminDistNodeAggregate.
+// Returns "" when no peer hosts the service.
+func (h *Handlers) locateServiceNode(ctx context.Context, name string) string {
+	if h.DistNode == nil {
+		return ""
+	}
+	for _, p := range h.DistNode.Membership.AlivePeers() {
+		req := ProxyRequest{Method: "GET", Path: "/api/admin/v1/service-auth/services"}
+		var resp ProxyResponse
+		if err := h.DistNode.Transport.Call(ctx, p.Info.ID, "Aegis.ProxyRequest", req, &resp); err != nil {
+			continue
+		}
+		if resp.StatusCode != 200 || len(resp.Body) == 0 {
+			continue
+		}
+		var listResp struct {
+			Services []serviceauth.ServiceRecord `json:"services"`
+		}
+		if err := json.Unmarshal(resp.Body, &listResp); err != nil {
+			continue
+		}
+		for _, s := range listResp.Services {
+			if s.Name == name && s.Status == "active" && s.ListenPort > 0 {
+				return p.Info.ID
+			}
+		}
+	}
+	return ""
 }
 

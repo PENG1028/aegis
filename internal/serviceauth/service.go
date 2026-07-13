@@ -70,6 +70,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		InstanceID: req.InstanceID,
 		Host:       clientIP,
 		ListenPort: req.ListenPort,
+		NodeHost:   s.resolveNodeHost(clientIP),
 		Status:     "active",
 		LastSeen:   now,
 		CreatedAt:  now,
@@ -181,6 +182,23 @@ func (s *Service) Report(ctx context.Context, req ReportRequest) error {
 }
 
 // ─── Caller / Dep queries (per-service scope) ─────────────────────────────
+
+// resolveNodeHost maps a registering service's IP to the cluster node it runs on.
+// The NodeChecker (Aegis node table) already knows this — previously the lookup
+// was only used for the isInCluster boolean and the node ID was discarded. Now
+// it's recorded so cross-node service-to-service calls can route to the right node.
+// Returns "" (local/unknown) when no NodeChecker or no match — the call handler
+// then treats the target as local.
+func (s *Service) resolveNodeHost(clientIP string) string {
+	if s.deps.NodeChecker == nil || clientIP == "" {
+		return ""
+	}
+	info, err := s.deps.NodeChecker.FindByIP(clientIP)
+	if err != nil || info == nil {
+		return ""
+	}
+	return info.NodeID
+}
 
 func (s *Service) CallersOf(ctx context.Context, name string, window time.Duration) ([]TopologyEdge, error) {
 	if window <= 0 {
