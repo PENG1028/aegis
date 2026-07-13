@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"database/sql"
-	"net/http"
 
 	"aegis/internal/acme"
 	"aegis/internal/action"
@@ -74,7 +73,6 @@ type Services struct {
 	TopologySvc     *topology.Service           // v1.8C-2
 	PolicySvc       *routingpolicy.Service       // v1.8C-3
 	RoutingTableSvc *routingtable.Service        // v1.8C-3
-	RelayHTTPHandler http.Handler           // v1.8B relay dispatch
 	DNSMgmt         *dns.Manager            // v1.8E DNS resolver
 	CertStore       *certstore.Service       // v1.9C TLS certificate store
 	ACMEClient     *acme.Client            // v1.9C ACME auto-cert manager
