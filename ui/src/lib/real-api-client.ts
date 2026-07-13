@@ -87,12 +87,18 @@ async function request<T>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
+  // Cross-node perspective: when the NodeSwitcher selects a remote node,
+  // viewStore.headerValue returns its ID and the backend NewViewProxyHandler
+  // forwards this request to that node via distnode Transport. null = local.
+  const viewAs = viewStore.headerValue;
+
   try {
     const res = await fetch(url, {
       method,
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        ...(viewAs ? { 'X-Aegis-View-As': viewAs } : {}),
       },
       credentials: API_CONFIG.credentials,
       body: body != null ? JSON.stringify(body) : undefined,
