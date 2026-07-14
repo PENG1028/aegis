@@ -48,7 +48,6 @@ type DeployNodeRequest struct {
 	AuthMethod  string `json:"auth_method"`  // "key" | "password" | "token"
 	SSHKey      string `json:"ssh_key"`      // PEM private key content (for auth=key)
 	SSHPassword string `json:"ssh_password"` // SSH password (for auth=password)
-	JoinToken   string `json:"join_token"`   // invite-code (optional for SSH, required for token mode)
 	NodeName    string `json:"node_name"`    // optional, defaults to hostname
 }
 
@@ -126,20 +125,15 @@ func (h *Handlers) AdminDeployNode(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "ssh_password is required for password auth")
 			return
 		}
-	case "token":
-		if req.JoinToken == "" {
-			writeError(w, http.StatusBadRequest, "join_token is required for token auth — create one in Access → Join Tokens")
-			return
-		}
 	default:
-		writeError(w, http.StatusBadRequest, "auth_method must be 'key', 'password', or 'token'")
+		writeError(w, http.StatusBadRequest, "auth_method must be 'key' or 'password'")
 		return
 	}
 
 	// If SSH tools aren't available locally, fall back to manual command.
 	// @ui: When the API returns manual_command, the frontend should display it
 	// as a highlighted code block with a "复制命令" button.
-	if !isSSHAvailable() && req.AuthMethod != "token" {
+	if !isSSHAvailable() {
 		cmd := generateDeployCommand(req)
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"success":        false,
@@ -202,7 +196,6 @@ func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, cpU
 		AuthMethod:  authMethod,
 		SSHKey:      req.SSHKey,
 		SSHPassword: req.SSHPassword,
-		JoinToken:   req.JoinToken,
 	})
 	if err != nil {
 		return &DeployNodeResponse{
@@ -278,16 +271,6 @@ reconcile_mode: apply
 		logf("  Warning: write config: %s", result.Error)
 	} else {
 		logf("  node.yaml written")
-	}
-
-	// Write join token if provided
-	// @ui: If the user provided a JoinToken in the form, it's used for registration.
-	// If not, the node will be registered via SSH (the handler registers it directly).
-	if req.JoinToken != "" {
-		// base64-encode to prevent shell injection through the token value
-		encoded := fmt.Sprintf("echo %x | xxd -r -p > /etc/aegis/join.token && chmod 600 /etc/aegis/join.token", req.JoinToken)
-		conn.Executor.Run(ctx, encoded)
-		logf("  join.token written")
 	}
 
 	// ── Step 6: Install systemd service ──

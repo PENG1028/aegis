@@ -32,7 +32,6 @@ import (
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
-	"aegis/internal/nodeauth"
 	"aegis/internal/project"
 	"aegis/internal/hostdep/provider"
 	"aegis/internal/route"
@@ -162,8 +161,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "warning: failed to register listeners: %v\n", err)
 	}
 	nodeSvc := node.NewService(nodeRepo)
-	nodeAuthRepo := nodeauth.NewRepository(db)
-	nodeAuthSvc := nodeauth.NewService(nodeAuthRepo, nodeRepo, nodeSvc)
 	if _, err := nodeSvc.RegisterCurrent(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: node registration failed: %v\n", err)
 	}
@@ -486,7 +483,6 @@ httpSvcs := &httpapi.Services{
 		ListenerSvc:      listenerSvc,
 		NodeRepo:         nodeRepo,
 		NodeSvc:          nodeSvc,
-		NodeAuthSvc:      nodeAuthSvc,
 		GatewayInvRepo:   gatewayInvRepo,
 		GatewayInvSvc:    gatewayInvSvc,
 		TopologySvc:      topologySvc,

@@ -114,24 +114,6 @@ func (h *Handlers) UploadBinary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ServeBinary handles GET /api/node/v1/binary
-// Nodes download the latest binary from the control plane.
-// Requires node credential auth (Bearer token) — same as other node endpoints.
-func (h *Handlers) ServeBinary(w http.ResponseWriter, r *http.Request) {
-	if h.NodeAuthSvc == nil {
-		writeError(w, http.StatusInternalServerError, "node auth service not configured")
-		return
-	}
-// authenticateNodeRequest removed
-	if _, err := os.Stat(updateBinary); os.IsNotExist(err) {
-		writeError(w, http.StatusNotFound, "no update binary available")
-		return
-	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "attachment; filename=aegis")
-	http.ServeFile(w, r, updateBinary)
-}
-
 // BinaryInfo handles GET /api/admin/v1/system/binary-info
 func (h *Handlers) BinaryInfo(w http.ResponseWriter, r *http.Request) {
 	info := map[string]interface{}{"available": false}

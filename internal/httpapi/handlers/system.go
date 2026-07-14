@@ -20,7 +20,6 @@ import (
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
-	"aegis/internal/nodeauth"
 	"aegis/internal/hostdep/provider"
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
@@ -64,7 +63,6 @@ type Handlers struct {
 	ListenerSvc   *listener.Service
 	NodeRepo      *node.Repository
 	NodeSvc       *node.Service     // v1.8C
-	NodeAuthSvc   *nodeauth.Service // v1.8C
 	PendingState    *cluster.PendingState  // v1.7S
 	TraceSvc        *trace.Service         // v1.7T
 	GatewayLinkSvc  *gateway.LinkService

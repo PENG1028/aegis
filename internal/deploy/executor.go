@@ -53,8 +53,6 @@ import (
 // @ui: The frontend offers two authentication modes:
 //   - "SSH Key" — paste a private key, used for automated deployment
 //   - "SSH Password" — enter password (uses sshpass), simpler but less secure
-//   - "Join Token" — invite-code style, for pull-based registration
-//   The three can be combined: SSH to install, JoinToken to register.
 
 // AuthMethod indicates which authentication to use for the SSH connection.
 type AuthMethod string
@@ -62,17 +60,15 @@ type AuthMethod string
 const (
 	AuthKey      AuthMethod = "key"       // SSH private key
 	AuthPassword AuthMethod = "password"  // SSH password (via sshpass)
-	AuthToken    AuthMethod = "token"     // Join token (pull mode, no SSH)
 )
 
 // SSHConfig holds all parameters for connecting to a remote machine.
 // @ui: This struct maps directly to the DeployNode form fields:
 //
 //	ssh_user    → user@host input (e.g. "ubuntu@192.168.10.11")
-//	auth_method → radio group: Key / Password / Token
+//	auth_method → radio group: Key / Password
 //	ssh_key     → <textarea> or file picker (when auth=key)
 //	ssh_password→ <input type=password> (when auth=password)
-//	join_token  → <input> (when auth=token, or alongside SSH)
 type SSHConfig struct {
 	Host        string     `json:"host" yaml:"host"`
 	User        string     `json:"user" yaml:"user"`
@@ -80,7 +76,6 @@ type SSHConfig struct {
 	AuthMethod  AuthMethod `json:"auth_method" yaml:"auth_method"`
 	SSHKey      string     `json:"ssh_key,omitempty" yaml:"ssh_key,omitempty"`           // PEM private key content
 	SSHPassword string     `json:"ssh_password,omitempty" yaml:"ssh_password,omitempty"` // used with sshpass
-	JoinToken   string     `json:"join_token,omitempty" yaml:"join_token,omitempty"`     // invite-code registration
 }
 
 // ─── Executor ─────────────────────────────────────────────────────────────────

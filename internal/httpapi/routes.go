@@ -29,7 +29,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		ListenerSvc:     svcs.ListenerSvc,
 		NodeRepo:        svcs.NodeRepo,
 		NodeSvc:         svcs.NodeSvc,
-		NodeAuthSvc:     svcs.NodeAuthSvc,
 		GatewayInvRepo:  svcs.GatewayInvRepo,
 		GatewayInvSvc:   svcs.GatewayInvSvc,
 		TopologySvc:     svcs.TopologySvc,
@@ -234,9 +233,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/nodes/deploy", h.AdminDeployNode)
 
 	// Admin Node Join Tokens
-	mux.HandleFunc("POST /api/admin/v1/node-join-tokens", h.CreateJoinToken)
-	mux.HandleFunc("GET /api/admin/v1/node-join-tokens", h.ListJoinTokens)
-	mux.HandleFunc("POST /api/admin/v1/node-join-tokens/{id}/revoke", h.RevokeJoinToken)
 
 	// Admin Node Detail
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}", h.GetNode)
