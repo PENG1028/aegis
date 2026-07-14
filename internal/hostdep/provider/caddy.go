@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+
+	"aegis/internal/hostdep"
 	"os/user"
 	"strconv"
 	"strings"
@@ -293,9 +295,9 @@ var _ ConfigReader = (*CaddyProvider)(nil)
 // ─── LifecycleProvider ──────────────────────────────────────────────────────
 
 func (p *CaddyProvider) CanInstall() bool   { return true }
-func (p *CaddyProvider) Install() error     { return installPackage("caddy", "caddy") }
+func (p *CaddyProvider) Install() error     { return hostdep.InstallPackage("caddy", "caddy") }
 func (p *CaddyProvider) CanUninstall() bool { return true }
-func (p *CaddyProvider) Uninstall() error   { return uninstallPackage("caddy", "caddy") }
+func (p *CaddyProvider) Uninstall() error   { return hostdep.RemovePackage("caddy", "caddy") }
 
 // ─── ReloadableProvider ─────────────────────────────────────────────────────
 
@@ -313,4 +315,3 @@ func (p *CaddyProvider) GetCurrentConfig() (string, error) {
 	}
 	return string(data), nil
 }
-

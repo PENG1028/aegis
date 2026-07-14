@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+
+	"aegis/internal/hostdep"
 	"strings"
 )
 
@@ -19,11 +21,11 @@ import (
 // a SINGLE Provider interface. Internal config file management is an
 // implementation detail.
 type HAProxyProvider struct {
-	configPath   string // primary config: /etc/haproxy/haproxy.cfg
+	configPath    string // primary config: /etc/haproxy/haproxy.cfg
 	tcpConfigPath string // TCP forwarding config: /etc/haproxy/haproxy_tcp.cfg
-	backupDir    string
-	binaryPath   string // resolved absolute path to haproxy binary
-	inspectDelay string
+	backupDir     string
+	binaryPath    string // resolved absolute path to haproxy binary
+	inspectDelay  string
 }
 
 // NewHAProxyProvider creates a unified HAProxy Provider.
@@ -87,20 +89,19 @@ func (p *HAProxyProvider) State() ProviderState {
 
 	// Port allocations now come from RuntimeMode (the single source of truth).
 	// HAProxy serves :443 in EdgeMux mode; in Legacy mode it may not be running at all.
-		// Ready check: can start right now?
-		if !state.Running {
-			state.Ready = p.canStart()
-			if !state.Ready {
-				for _, iss := range p.startupIssues() {
-					state.Issues = append(state.Issues, Issue{
-						Code: iss.code, Message: iss.message, Detail: iss.detail,
-					})
-				}
+	// Ready check: can start right now?
+	if !state.Running {
+		state.Ready = p.canStart()
+		if !state.Ready {
+			for _, iss := range p.startupIssues() {
+				state.Issues = append(state.Issues, Issue{
+					Code: iss.code, Message: iss.message, Detail: iss.detail,
+				})
 			}
-		} else {
-			state.Ready = true
 		}
-
+	} else {
+		state.Ready = true
+	}
 
 	return state
 }
@@ -281,9 +282,9 @@ var _ ConfigReader = (*HAProxyProvider)(nil)
 // ─── LifecycleProvider ──────────────────────────────────────────────────────
 
 func (p *HAProxyProvider) CanInstall() bool   { return true }
-func (p *HAProxyProvider) Install() error     { return installPackage("haproxy", "haproxy") }
+func (p *HAProxyProvider) Install() error     { return hostdep.InstallPackage("haproxy", "haproxy") }
 func (p *HAProxyProvider) CanUninstall() bool { return true }
-func (p *HAProxyProvider) Uninstall() error   { return uninstallPackage("haproxy", "haproxy") }
+func (p *HAProxyProvider) Uninstall() error   { return hostdep.RemovePackage("haproxy", "haproxy") }
 
 // ─── ReloadableProvider ─────────────────────────────────────────────────────
 
