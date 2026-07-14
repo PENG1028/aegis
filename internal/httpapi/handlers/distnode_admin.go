@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 
 	"aegis/internal/distnode"
 )
@@ -223,6 +224,48 @@ func (h *Handlers) callLocal(ctx context.Context, method, path string, body io.R
 	return json.RawMessage(rw.body.Bytes()), status, nil
 }
 
+// PeerResult is one peer's response from a fan-out call.
+type PeerResult struct {
+	NodeID     string
+	StatusCode int
+	Body       json.RawMessage
+	Err        error
+}
+
+// fanOutToPeers sends the same ProxyRequest to every alive peer concurrently via
+// Aegis.ProxyRequest and collects each peer's response. This is the single peer
+// fan-out primitive: AdminDistNodeAggregate and locateServiceNode both use it, so
+// parallelism (and any future hop-guard / caching) lives in exactly one place.
+// The local node is NOT included — callers that need it add local separately.
+func (h *Handlers) fanOutToPeers(ctx context.Context, req ProxyRequest) []PeerResult {
+	dn := h.DistNode
+	if dn == nil {
+		return nil
+	}
+	peers := dn.Membership.AlivePeers()
+	results := make([]PeerResult, len(peers))
+	var wg sync.WaitGroup
+	for i, p := range peers {
+		wg.Add(1)
+		go func(idx int, nodeID string) {
+			defer wg.Done()
+			defer func() {
+				if rec := recover(); rec != nil {
+					results[idx] = PeerResult{NodeID: nodeID, StatusCode: 500, Err: fmt.Errorf("panic: %v", rec)}
+				}
+			}()
+			var resp ProxyResponse
+			if err := dn.Transport.Call(ctx, nodeID, "Aegis.ProxyRequest", req, &resp); err != nil {
+				results[idx] = PeerResult{NodeID: nodeID, StatusCode: 502, Err: err}
+				return
+			}
+			results[idx] = PeerResult{NodeID: nodeID, StatusCode: resp.StatusCode, Body: resp.Body}
+		}(i, p.Info.ID)
+	}
+	wg.Wait()
+	return results
+}
+
 // AdminDistNodeAggregate handles GET /api/admin/v1/distnode/aggregate?path=/api/...
 //
 // Calls the same API path on every known node (local + all alive peers) and returns
@@ -266,18 +309,12 @@ func (h *Handlers) AdminDistNodeAggregate(w http.ResponseWriter, r *http.Request
 		results = append(results, aggResult{NodeID: dn.ID, Status: localStatus, Body: localData})
 	}
 
-	// 2. Remote execution on all alive peers
-	for _, p := range dn.Membership.AlivePeers() {
-		var resp ProxyResponse
-		req := ProxyRequest{
-			Method: "GET",
-			Path:   path,
-		}
-		err := dn.Transport.Call(r.Context(), p.Info.ID, "Aegis.ProxyRequest", req, &resp)
-		if err != nil {
-			results = append(results, aggResult{NodeID: p.Info.ID, Status: 502, Error: err.Error()})
+	// 2. Remote execution on all alive peers (shared fan-out primitive)
+	for _, pr := range h.fanOutToPeers(r.Context(), ProxyRequest{Method: "GET", Path: path}) {
+		if pr.Err != nil {
+			results = append(results, aggResult{NodeID: pr.NodeID, Status: pr.StatusCode, Error: pr.Err.Error()})
 		} else {
-			results = append(results, aggResult{NodeID: p.Info.ID, Status: resp.StatusCode, Body: resp.Body})
+			results = append(results, aggResult{NodeID: pr.NodeID, Status: pr.StatusCode, Body: pr.Body})
 		}
 	}
 

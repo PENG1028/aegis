@@ -481,33 +481,28 @@ func (h *Handlers) forwardServiceCall(w http.ResponseWriter, r *http.Request, no
 	}
 }
 
-// locateServiceNode fans out to alive peers and returns the node ID of the first
-// peer whose local registry has an active registration for name (with a
-// listen_port). It reuses Aegis.ProxyRequest against the existing service list
-// endpoint — no new transport method, same fan-out骨架 as AdminDistNodeAggregate.
-// Returns "" when no peer hosts the service.
+// locateServiceNode fans out to alive peers (via the shared fanOutToPeers
+// primitive) and returns the node ID of the first peer whose local registry has
+// an active registration for name with a listen_port. No new transport method,
+// no duplicated fan-out loop. Returns "" when no peer hosts the service.
 func (h *Handlers) locateServiceNode(ctx context.Context, name string) string {
 	if h.DistNode == nil {
 		return ""
 	}
-	for _, p := range h.DistNode.Membership.AlivePeers() {
-		req := ProxyRequest{Method: "GET", Path: "/api/admin/v1/service-auth/services"}
-		var resp ProxyResponse
-		if err := h.DistNode.Transport.Call(ctx, p.Info.ID, "Aegis.ProxyRequest", req, &resp); err != nil {
-			continue
-		}
-		if resp.StatusCode != 200 || len(resp.Body) == 0 {
+	req := ProxyRequest{Method: "GET", Path: "/api/admin/v1/service-auth/services"}
+	for _, pr := range h.fanOutToPeers(ctx, req) {
+		if pr.Err != nil || pr.StatusCode != 200 || len(pr.Body) == 0 {
 			continue
 		}
 		var listResp struct {
 			Services []serviceauth.ServiceRecord `json:"services"`
 		}
-		if err := json.Unmarshal(resp.Body, &listResp); err != nil {
+		if err := json.Unmarshal(pr.Body, &listResp); err != nil {
 			continue
 		}
 		for _, s := range listResp.Services {
 			if s.Name == name && s.Status == "active" && s.ListenPort > 0 {
-				return p.Info.ID
+				return pr.NodeID
 			}
 		}
 	}
