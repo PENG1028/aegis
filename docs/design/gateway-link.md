@@ -134,5 +134,5 @@ POST   /api/admin/v1/gateway-links/{id}/rotate # 轮换（返回新 token 一次
 |------|------|
 | HMAC 签名/验证 | `internal/gateway_link/crypto.go` |
 | 路由绑定 | `internal/apply/planner.go` |
-| Caddy 渲染 | `internal/provider/caddy_http.go` |
+| Caddy 渲染 | `internal/hostdep/provider/caddy_http.go` |
 | 跨节���路由解析 | `internal/noderuntime/caddy_applier.go` |

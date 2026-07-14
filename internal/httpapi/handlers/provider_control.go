@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 func (h *Handlers) providerForName(name string) provider.Provider {

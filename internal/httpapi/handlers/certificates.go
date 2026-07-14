@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"aegis/internal/certstore"
-	"aegis/internal/infra"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/tool"
+	"aegis/internal/hostdep/provider"
 )
 
 // ─── Certificate handlers ───
@@ -172,7 +172,7 @@ func (h *Handlers) AdminACMEStatus(w http.ResponseWriter, r *http.Request) {
 	if h.Config != nil {
 		email = h.Config.Proxy.Email
 	}
-	writeJSON(w, http.StatusOK, infra.DetectACME(email))
+	writeJSON(w, http.StatusOK, tool.DetectACME(email))
 }
 
 // ─── Certificate Renewal ───
@@ -244,10 +244,10 @@ func (h *Handlers) AdminInfraStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": []infra.Status{
-			infra.DetectACME(email),
-			infra.DetectIPTables(),
-			infra.DetectDNSMasq(),
+		"items": []tool.Status{
+			tool.DetectACME(email),
+			tool.DetectIPTables(),
+			tool.DetectDNSMasq(),
 		},
 	})
 }

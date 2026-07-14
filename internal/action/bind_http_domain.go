@@ -9,7 +9,7 @@ import (
 
 	"aegis/internal/endpoint"
 	"aegis/internal/core"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/route"
 	"aegis/internal/service"
 )

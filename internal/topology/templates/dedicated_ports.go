@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/topology"
 )
 

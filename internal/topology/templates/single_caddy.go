@@ -3,7 +3,7 @@ package templates
 import (
 	"fmt"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/topology"
 )
 

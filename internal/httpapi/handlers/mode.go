@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 // ModePreview shows the impact of switching to a different runtime mode.

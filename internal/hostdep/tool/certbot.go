@@ -1,4 +1,4 @@
-package infra
+package tool
 
 // DetectACME checks whether ACME certificate management is available.
 // Uses the embedded lego client — no external certbot dependency.

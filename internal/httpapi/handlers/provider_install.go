@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 // ProviderInstall installs a middleware provider.

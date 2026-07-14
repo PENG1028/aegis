@@ -16,7 +16,7 @@ import (
 	"aegis/internal/certstore"
 	"aegis/internal/config"
 	"aegis/internal/logs"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/topology"
 )
 

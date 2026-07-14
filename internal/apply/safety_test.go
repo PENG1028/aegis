@@ -6,7 +6,7 @@ import (
 
 	"aegis/internal/endpoint"
 	"aegis/internal/fake"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 func TestFakeProvider(t *testing.T) {

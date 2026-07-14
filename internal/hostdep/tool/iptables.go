@@ -1,6 +1,6 @@
 //go:build linux
 
-package infra
+package tool
 
 import (
 	"os/exec"

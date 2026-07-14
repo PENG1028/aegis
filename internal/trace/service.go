@@ -11,7 +11,7 @@ import (
 	"aegis/internal/gateway"
 	"aegis/internal/listener"
 	"aegis/internal/node"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/route"
 	"aegis/internal/safety"
 )

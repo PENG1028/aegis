@@ -14,7 +14,7 @@ import (
 	"aegis/internal/health"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/route"
 	"aegis/internal/trace"
 )

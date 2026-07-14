@@ -1,6 +1,6 @@
 package trace
 
-import "aegis/internal/provider"
+import "aegis/internal/hostdep/provider"
 
 // AccessPathTrace represents the complete access path for a domain, SNI host, or route.
 type AccessPathTrace struct {

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"aegis/internal/edgemux"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 
 	"github.com/spf13/cobra"
 )

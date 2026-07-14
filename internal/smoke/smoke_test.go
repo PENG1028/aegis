@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"aegis/internal/fake"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/trace"
 )
 

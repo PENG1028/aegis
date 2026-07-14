@@ -1,6 +1,6 @@
 # Provider Architecture — 三大真理源 + 红线规则
 
-> **自动加载范围：** `internal/provider/**`, `internal/topology/**`, `internal/apply/**`, `internal/httpapi/handlers/transparent.go`, `internal/httpapi/handlers/system.go`
+> **自动加载范围：** `internal/hostdep/provider/**`, `internal/topology/**`, `internal/apply/**`, `internal/httpapi/handlers/transparent.go`, `internal/httpapi/handlers/system.go`
 >
 > **目的：** 防止 agent 写出分叉代码。当你要加"判断能不能用"的逻辑时，先读这个文件。
 
@@ -10,7 +10,7 @@
 
 ### 真理源 A：组合能力注册表 — "能做哪些事"
 
-**文件：** `internal/provider/composition.go`
+**文件：** `internal/hostdep/provider/composition.go`
 
 6 个 CompDef：HTTP Route / HTTPS Route / TLS Passthrough / HTTP/3 / Raw TCP Forward / Raw UDP Forward
 
@@ -26,7 +26,7 @@
 
 ### 真理源 B：能力常量 — "Provider 能做什么"
 
-**文件：** `internal/provider/capability.go`
+**文件：** `internal/hostdep/provider/capability.go`
 
 30 个 Capability 常量，L3-L7 分层。每个 Provider 声明自己的 `[]Capability`。
 
@@ -39,7 +39,7 @@
 
 ### 真理源 C：运行时模式 — "端口怎么分"
 
-**文件：** `internal/provider/runtime_mode.go`（类型+检测）+ `internal/provider/mode_legacy.go` + `internal/provider/mode_edgemux.go`
+**文件：** `internal/hostdep/provider/runtime_mode.go`（类型+检测）+ `internal/hostdep/provider/mode_legacy.go` + `internal/hostdep/provider/mode_edgemux.go`
 
 定义每个模式下哪个 Provider 在哪个端口提供哪个原子。
 

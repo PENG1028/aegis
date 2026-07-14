@@ -57,7 +57,7 @@ TCP Forward:     tcp → raw_tcp
 这不在 DB 里额外存——Composition 定义已经包含了：
 
 ```go
-// internal/provider/composition.go
+// internal/hostdep/provider/composition.go
 var CompHTTPSRoute = CompDef{
     Key: "https_route",
     Atoms: []string{"tcp", "tls", "http"},

@@ -34,7 +34,7 @@ import (
 	"aegis/internal/node"
 	"aegis/internal/nodeauth"
 	"aegis/internal/project"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/route"
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"

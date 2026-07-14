@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 // TransparentProxyStatus returns the availability diagnosis for transparent proxy.

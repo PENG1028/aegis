@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync"
 
-	"aegis/internal/infra"
+	"aegis/internal/hostdep/tool"
 )
 
 // Manager manages transparent interception rules + proxy lifecycle.
@@ -167,8 +167,8 @@ func (m *Manager) StopRedirect(ruleID string) error {
 }
 
 // InfraStatus delegates to the centralized infra package.
-func (m *Manager) InfraStatus() infra.Status {
-	return infra.DetectIPTables()
+func (m *Manager) InfraStatus() tool.Status {
+	return tool.DetectIPTables()
 }
 
 // StopAll stops all active redirect rules and removes all iptables rules.

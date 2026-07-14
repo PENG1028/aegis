@@ -1,6 +1,6 @@
 //go:build !linux
 
-package infra
+package tool
 
 // DetectIPTables returns not-available on non-Linux platforms.
 func DetectIPTables() Status {

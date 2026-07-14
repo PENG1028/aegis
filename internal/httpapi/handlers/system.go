@@ -21,7 +21,7 @@ import (
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
 	"aegis/internal/nodeauth"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
 	"aegis/internal/topology"

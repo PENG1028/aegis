@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 // FakeProvider implements the Provider interface for testing failure scenarios.

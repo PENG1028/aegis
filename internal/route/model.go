@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 // Route represents a routing rule that maps a domain to a backend service.

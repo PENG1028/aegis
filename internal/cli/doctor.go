@@ -9,7 +9,7 @@ import (
 
 	"aegis/internal/config"
 	"aegis/internal/listener"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 
 	"github.com/spf13/cobra"
 )

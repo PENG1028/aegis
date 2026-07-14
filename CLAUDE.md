@@ -18,7 +18,7 @@ Aegis 是一个**个人基础设施网关控制平面**（Go + SQLite + React UI
 - 一个管理跨项目服务入口的 CLI / API / Web UI 工具
 - 一个安全的配置下发器（校验 → 备份 → 替换 → 重载 → 审计）
 - Caddy（80 HTTP）+ HAProxy（443 TLS SNI）的配置生成器
-- 一个通过 `internal/provider/` 统一渲染/生命周期管理中间件的控制器
+- 一个通过 `internal/hostdep/provider/` 统一渲染/生命周期管理中间件的控制器
 - 一个分布式节点运行时（`internal/distnode/`，静态 peer + HMAC 认证 + Transport RPC）
 - 一个服务间认证网关（`internal/serviceauth/`，Ed25519 ticket + 拓扑发现）
 - 内置 ACME 客户端（`internal/acme/`，lego，替代 certbot）
@@ -90,7 +90,10 @@ internal/
   manageddomain/# 受管域名（DNS TXT 验证）
   exposure/     # TCP/UDP 端口暴露
   apply/        # 配置下发（计划→校验→备份→替换→重载）
-  provider/     # Provider 抽象 + 渲染 + 生命周期（Caddy/HAProxy 全在此）
+  hostdep/      # ⭐ 宿主依赖统一底座（进程外碰宿主机的一切）
+    ·           #   PackageManager（apt/yum/apk 适配）+ HostDependency 契约 + InstallPackage 流程
+    provider/   #   网关中间件（Caddy/HAProxy）= HostDependency + 渲染 + 能力匹配
+    tool/       #   普通宿主工具（iptables/dnsmasq/acme 探测）= 纯 HostDependency
   edgemux/      # HAProxy SNI 路由
   listener/     # 端口监听管理
   topology/     # 网络拓扑 + 模板（topology/templates）
@@ -124,7 +127,6 @@ internal/
   deploy/       # 可复用 SSH 部署工具箱
   deployment/   # 部署记录 + 快照（model/repository/snapshot）
   maintenance/  # 清理 / 冲突检测 / 漂移检测
-  infra/        # 基础设施依赖探测
   addr/         # 统一地址类型（TCP/UDP/unix/unixgram）
   sync/         # 同步循环
   smoke/        # 冒烟测试
@@ -142,7 +144,7 @@ tests/e2e/      # E2E 测试脚本
 
 > **注意：已删除的包。** `internal/proxy/`（代理抽象层）、`internal/nodeagent/`、
 > `internal/noderuntime/`、`internal/nodestate/` 已全部删除。
-> - Caddy/HAProxy 的渲染/校验/重载全部收敛到 `internal/provider/`，不再有独立的 proxy 抽象层。
+> - Caddy/HAProxy 的渲染/校验/重载全部收敛到 `internal/hostdep/provider/`，不再有独立的 proxy 抽象层。
 > - 跨节点通信全部收敛到 `internal/distnode/`，旧的 nodeagent/noderuntime/nodestate 三套心跳同步机制已废弃并移除。
 
 ---
@@ -337,7 +339,7 @@ credential://pg-db → AES-256-GCM 解密 → 解析 host:port:user:db
 ## 七、关键设计决策
 
 1. **Aegis 不在数据路径中** — Caddy/HAProxy 独立服务流量，Aegis 只负责配置管理
-2. **Provider 是中间件的唯一抽象** — 渲染/校验/重载/生命周期全走 `internal/provider/`，无独立 proxy 包
+2. **Provider 是中间件的唯一抽象** — 渲染/校验/重载/生命周期全走 `internal/hostdep/provider/`，无独立 proxy 包
 3. **distnode 是唯一跨节点层** — 静态 peer + Transport RPC，无 HTTP 心跳，无 nodeagent
 4. **Endpoint 解析顺序固定** — `local → private → public → fail`，不做智能调度
 5. **ManagedDomain 必须 DNS 验证** — 绑定已有 Service，不允许任意 upstream
@@ -351,7 +353,7 @@ credential://pg-db → AES-256-GCM 解密 → 解析 host:port:user:db
 
 ## 七·五、Provider 生命周期管理
 
-中间件（Caddy/HAProxy 等）的所有生命周期操作**都通过 `internal/provider/provider.go`
+中间件（Caddy/HAProxy 等）的所有生命周期操作**都通过 `internal/hostdep/provider/provider.go`
 里的可选扩展接口**完成，绝不按名字 if/else，也不直接 `exec` systemctl。
 
 | 接口 | 方法 | 用途 |

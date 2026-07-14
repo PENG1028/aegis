@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 // =============================================================================

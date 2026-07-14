@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 // driftRoutes converts DB routes to RouteSpecs for drift comparison.

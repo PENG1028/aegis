@@ -8,7 +8,7 @@ import (
 	"aegis/internal/certstore"
 	"aegis/internal/endpoint"
 	gatewaylink "aegis/internal/gateway"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/route"
 	"aegis/internal/safety"
 	"aegis/internal/secrets"

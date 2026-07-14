@@ -12,7 +12,7 @@
 //	certbot.go   — ACME/lego detection (embedded — not installable)
 //	iptables.go  — iptables detection (linux: real, !linux: stub)
 //	dnsmasq.go   — dnsmasq detection
-package infra
+package tool
 
 import "aegis/internal/hostdep"
 

@@ -26,7 +26,7 @@ import (
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
 	"aegis/internal/project"
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/dns"
 	"aegis/internal/route"
 	"aegis/internal/safety"

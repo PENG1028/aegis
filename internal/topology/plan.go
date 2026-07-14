@@ -1,6 +1,6 @@
 package topology
 
-import "aegis/internal/provider"
+import "aegis/internal/hostdep/provider"
 
 // ============================================================================
 // TopologyPlan — planner output

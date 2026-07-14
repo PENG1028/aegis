@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"aegis/internal/provider"
+	"aegis/internal/hostdep/provider"
 )
 
 func TestAccessPathTrace_ModelFields(t *testing.T) {

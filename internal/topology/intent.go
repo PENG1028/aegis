@@ -12,7 +12,7 @@
 //   - Execute iptables rules (that's transparent.Manager)
 package topology
 
-import "aegis/internal/provider"
+import "aegis/internal/hostdep/provider"
 
 // ============================================================================
 // GatewayIntent — user's traffic routing requirement
