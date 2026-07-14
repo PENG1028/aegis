@@ -491,7 +491,7 @@ v1.9B-2: 后续小修复
 - 部分 slog 迁移未完成（DNS、transparent 还在用 log.Printf）
 - 无 Dockerfile
 - `internal/nodeauth/` 是 distnode 之前的历史遗留，仍在但不应新增引用
-- 部分老旧 doc（README.md、docs/v1.8/）路由前缀可能已过时，以 `internal/httpapi/routes.go` 为准
+- 部分老旧 doc（README.md）路由前缀可能已过时，以 `internal/httpapi/routes.go` 为准
 
 ---
 
@@ -506,7 +506,6 @@ v1.9B-2: 后续小修复
 | `docs/distnode-onboarding-fix.md` | distnode 节点加入流程 |
 | `docs/apply-safety.md` | Apply 安全机制 |
 | `docs/mode-switch-safety.md` | Provider 模式切换安全 |
-| `docs/code-fork-audit.md` | 防分叉审计记录 |
 | `docs/boundary/` | 能力边界 / 维度矩阵 |
 | `docs/runbooks/` | 回滚/重启/安装等运维手册 |
 | `docs/design/` | 各项设计文档 |
