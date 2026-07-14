@@ -254,6 +254,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/distnode/status", h.AdminDistNodeStatus)
 	mux.HandleFunc("POST /api/admin/v1/distnode/check", h.AdminDistNodeCheck)
 	mux.HandleFunc("POST /api/admin/v1/distnode/ping/{id}", h.AdminDistNodePingPeer)
+	mux.HandleFunc("POST /api/admin/v1/distnode/peer/{id}/revoke", h.AdminDistNodeRevokePeer)
 	mux.HandleFunc("GET /api/admin/v1/distnode/aggregate", h.AdminDistNodeAggregate)
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/distnode-overview", h.AdminDistNodeOverview)
 

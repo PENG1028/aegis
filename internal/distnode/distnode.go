@@ -79,6 +79,11 @@ type Config struct {
 type PeerConfig struct {
 	ID   string `yaml:"id" json:"id"`
 	Addr string `yaml:"addr" json:"addr"`
+	// Secret is this peer's own credential (per-peer auth, Phase 1). When set,
+	// calls FROM this peer are verified against it, and revoking the peer denies
+	// only that node. Empty falls back to the cluster shared secret (Phase 0),
+	// so existing single-secret deployments keep working byte-for-byte.
+	Secret string `yaml:"secret,omitempty" json:"secret,omitempty"`
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -106,6 +111,12 @@ type Peer struct {
 	AliveAt   time.Time   `json:"alive_at,omitempty"`
 	DeadAt    time.Time   `json:"dead_at,omitempty"`
 	FailCount int         `json:"-"`
+	// Secret is this peer's per-peer credential (Phase 1). Empty = use the
+	// cluster shared secret to verify this peer's calls (Phase 0).
+	Secret string `json:"-"`
+	// Revoked denies this peer's cluster access regardless of a valid token.
+	// Cryptographically enforced when Secret is set; cooperative otherwise.
+	Revoked bool `json:"revoked,omitempty"`
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -243,7 +254,8 @@ func newMembership(cfg Config) *Membership {
 				Addr:   pc.Addr,
 				Status: StatusDead,
 			},
-			Alive: false,
+			Alive:  false,
+			Secret: pc.Secret,
 		}
 	}
 	return m
@@ -309,9 +321,44 @@ func (m *Membership) AddPeer(pc PeerConfig) {
 			Addr:   pc.Addr,
 			Status: StatusDead,
 		},
-		Alive: false,
+		Alive:  false,
+		Secret: pc.Secret,
 	}
 	m.logf("[distnode] peer %s (%s) added dynamically", pc.ID, pc.Addr)
+}
+
+// PeerSecret returns the per-peer credential for id, or "" if the peer is
+// unknown or has no per-peer secret (falls back to the cluster shared secret).
+func (m *Membership) PeerSecret(id string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if p := m.peers[id]; p != nil {
+		return p.Secret
+	}
+	return ""
+}
+
+// IsRevoked reports whether the peer's cluster access has been revoked.
+func (m *Membership) IsRevoked(id string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	p := m.peers[id]
+	return p != nil && p.Revoked
+}
+
+// RevokePeer denies a peer's cluster access. Enforced cryptographically when the
+// peer has a per-peer secret; cooperative (ID-based) otherwise. Returns false if
+// the peer is unknown.
+func (m *Membership) RevokePeer(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p := m.peers[id]
+	if p == nil {
+		return false
+	}
+	p.Revoked = true
+	m.logf("[distnode] peer %s revoked", id)
+	return true
 }
 
 // AlivePeers returns all peers currently marked alive.
@@ -487,6 +534,7 @@ func (t *Transport) Call(ctx context.Context, targetID, method string, args, rep
 		return &CallError{Method: method, Err: err}
 	}
 	req.Header.Set("Authorization", "Bearer "+t.secret)
+	req.Header.Set("X-Aegis-Node-ID", t.selfID)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := t.client.Do(req)
@@ -548,7 +596,7 @@ func (t *Transport) serveCall(w http.ResponseWriter, r *http.Request) {
 
 	// Authenticate the caller
 	auth := r.Header.Get("Authorization")
-	callerID, err := t.authenticateCaller(auth)
+	callerID, err := t.authenticateCaller(r.Header.Get("X-Aegis-Node-ID"), auth)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -583,12 +631,21 @@ func (t *Transport) serveCall(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(callResponse{Result: mustMarshalJSON(result)})
 }
 
-func (t *Transport) authenticateCaller(auth string) (string, error) {
+// authenticateCaller verifies an incoming call. callerID comes from the
+// X-Aegis-Node-ID header (may be empty for legacy callers), auth from the
+// Authorization header.
+//
+// Resolution (Phase 1, backward-compatible):
+//   - Known + revoked peer            → reject
+//   - Known peer with per-peer secret → verify against THAT secret (strict)
+//   - Otherwise                       → verify against the cluster shared secret
+//
+// So pure Phase-0 clusters (no per-peer secrets, no revocations) behave exactly
+// as before; per-peer secrets enable real per-node revocation.
+func (t *Transport) authenticateCaller(callerID, auth string) (string, error) {
 	if auth == "" {
 		return "", ErrUnauthorized
 	}
-	// Phase 0: shared secret
-	// Expected format: "Bearer <secret>"
 	var token string
 	if len(auth) > 7 && auth[:7] == "Bearer " {
 		token = auth[7:]
@@ -596,12 +653,25 @@ func (t *Transport) authenticateCaller(auth string) (string, error) {
 	if token == "" {
 		return "", ErrUnauthorized
 	}
+
+	// Per-peer path: only when the caller is identified and known.
+	if callerID != "" && t.members != nil {
+		if t.members.IsRevoked(callerID) {
+			return "", ErrUnauthorized
+		}
+		if peerSecret := t.members.PeerSecret(callerID); peerSecret != "" {
+			if !hmac.Equal([]byte(token), []byte(peerSecret)) {
+				return "", ErrUnauthorized
+			}
+			return callerID, nil
+		}
+	}
+
+	// Fallback: cluster shared secret (Phase 0).
 	if !hmac.Equal([]byte(token), []byte(t.secret)) {
 		return "", ErrUnauthorized
 	}
-	// With a shared secret we can't identify the specific caller.
-	// Return empty callerID — per-node auth can fill this in later.
-	return "", nil
+	return callerID, nil
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

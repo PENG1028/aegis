@@ -76,8 +76,9 @@ type DistNodeConfig struct {
 
 // DistNodePeer defines a known cluster member.
 type DistNodePeer struct {
-	ID   string `yaml:"id"`
-	Addr string `yaml:"addr"`
+	ID     string `yaml:"id"`
+	Addr   string `yaml:"addr"`
+	Secret string `yaml:"secret,omitempty"` // per-peer credential (Phase 1); empty = cluster shared secret
 }
 
 // DNSConfig holds local DNS resolver settings.

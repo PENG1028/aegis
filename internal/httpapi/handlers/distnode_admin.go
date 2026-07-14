@@ -155,6 +155,31 @@ func (h *Handlers) AdminDistNodePingPeer(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// AdminDistNodeRevokePeer handles POST /api/admin/v1/distnode/peer/{id}/revoke
+// Revokes a peer's cluster access (Phase 1 per-node credential revocation).
+// Enforced cryptographically when the peer has a per-peer secret; cooperative
+// (ID-based) otherwise. Replaces the deprecated nodeauth credential revocation.
+func (h *Handlers) AdminDistNodeRevokePeer(w http.ResponseWriter, r *http.Request) {
+	dn := h.DistNode
+	if dn == nil {
+		writeError(w, http.StatusNotImplemented, "distnode not enabled")
+		return
+	}
+	targetID := r.PathValue("id")
+	if targetID == "" {
+		writeError(w, http.StatusBadRequest, "peer id required")
+		return
+	}
+	if !dn.Membership.RevokePeer(targetID) {
+		writeError(w, http.StatusNotFound, "peer not found: "+targetID)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"peer_id": targetID,
+		"revoked": true,
+	})
+}
+
 // AdminDistNodeOverview handles GET /api/admin/v1/nodes/{id}/distnode-overview
 // Returns the target node's system overview via distnode transport.
 // This is the cross-node perspective primitive — it lets one panel

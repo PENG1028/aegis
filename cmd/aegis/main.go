@@ -436,7 +436,7 @@ func main() {
 			Secret: cfg.DistNode.Secret,
 		}
 		for _, p := range cfg.DistNode.Peers {
-			distCfg.Peers = append(distCfg.Peers, distnode.PeerConfig{ID: p.ID, Addr: p.Addr})
+			distCfg.Peers = append(distCfg.Peers, distnode.PeerConfig{ID: p.ID, Addr: p.Addr, Secret: p.Secret})
 		}
 		dn = distnode.New(distCfg)
 		handlers.RegisterDistNodeHandlers(dn)
