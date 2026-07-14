@@ -3,55 +3,52 @@ package provider
 import (
 	"fmt"
 	"os/exec"
+
+	"aegis/internal/hostdep"
 )
 
 // ============================================================================
-// installPackage — shared apt-get installation helper for Debian/Ubuntu.
+// installPackage / uninstallPackage — the single install path for providers.
 //
-// Used by Provider.Install() implementations. Each provider calls this with
-// its package name and systemd service name.
+// Package installation is delegated to hostdep.PackageManager (the adaptation
+// layer), so provider install is no longer hardcoded to apt-get. Service
+// enable/start/stop still uses systemctl inline here — that is unified into a
+// host service manager in a later step.
 //
 // This is the SINGLE installation path for all external providers.
 // If you find another apt-get invocation in the codebase, it should use this.
 // ============================================================================
 
-// installPackage installs a Debian/Ubuntu package via apt-get and enables the
-// corresponding systemd service. Returns nil on success.
-// uninstallPackage removes a Debian/Ubuntu package via apt-get.
-// Stops the service first, then purges the package. Config files are preserved.
-func uninstallPackage(pkg, service string) error {
-	// Stop service
-	exec.Command("sudo", "systemctl", "stop", service).Run()
-
-	// Purge package (apt-get remove, not purge — leaves config files)
-	removeCmd := exec.Command("sudo", "apt-get", "remove", "-y", "-qq", pkg)
-	if out, err := removeCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("apt-get remove %s failed: %w\n%s", pkg, err, string(out))
+// installPackage installs a package via the host's package manager and enables
+// the corresponding systemd service. Returns nil on success.
+func installPackage(pkg, service string) error {
+	pm := hostdep.Detect()
+	if pm == nil {
+		return fmt.Errorf("no supported package manager found on host (need apt-get)")
 	}
-
+	if err := pm.Update(); err != nil {
+		return err
+	}
+	if err := pm.Install(pkg); err != nil {
+		return err
+	}
+	// Enable and start the service (systemd). Unified into a host service
+	// manager in a later step of the host-dependency refactor.
+	if out, err := exec.Command("sudo", "systemctl", "enable", "--now", service).CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl enable %s failed: %w\n%s", service, err, string(out))
+	}
 	return nil
 }
 
-// installPackage installs a Debian/Ubuntu package via apt-get and enables the
-// corresponding systemd service. Returns nil on success.
-func installPackage(pkg, service string) error {
-	// Update package lists
-	updateCmd := exec.Command("sudo", "apt-get", "update", "-qq")
-	if out, err := updateCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("apt-get update failed: %w\n%s", err, string(out))
-	}
+// uninstallPackage removes a package via the host's package manager after
+// stopping its service. Config files are preserved.
+func uninstallPackage(pkg, service string) error {
+	// Stop service first (best-effort).
+	exec.Command("sudo", "systemctl", "stop", service).Run()
 
-	// Install
-	installCmd := exec.Command("sudo", "apt-get", "install", "-y", "-qq", pkg)
-	if out, err := installCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("apt-get install %s failed: %w\n%s", pkg, err, string(out))
+	pm := hostdep.Detect()
+	if pm == nil {
+		return fmt.Errorf("no supported package manager found on host")
 	}
-
-	// Enable and start
-	enableCmd := exec.Command("sudo", "systemctl", "enable", "--now", service)
-	if out, err := enableCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl enable %s failed: %w\n%s", service, err, string(out))
-	}
-
-	return nil
+	return pm.Remove(pkg)
 }
