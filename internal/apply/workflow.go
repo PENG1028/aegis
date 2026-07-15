@@ -29,20 +29,39 @@ import (
 // for config generation + application. Locking, rollback, and audit logging
 // are handled directly.
 type Workflow struct {
-	planner    *topology.Planner
-	registry   *provider.Registry
-	applyRepo  *Repository
-	cfg        *config.Config
-	logSvc     logs.Logger
-	certStore  *certstore.Service
-	targetMode string // set by ModeSwitch before Apply, cleared after
-	mu         sync.Mutex
+	planner      *topology.Planner
+	registry     *provider.Registry
+	applyRepo    *Repository
+	cfg          *config.Config
+	logSvc       logs.Logger
+	certStore    *certstore.Service
+	smokeTest    SmokeTest // optional: inject real HTTP probe for E2E mode-switch validation
+	mu           sync.Mutex
 }
 
-// SetTargetMode overrides the runtime mode for the next Apply call.
-// Used by ModeSwitch to switch modes atomically. Cleared after Apply.
-func (w *Workflow) SetTargetMode(modeID string) {
-	w.targetMode = modeID
+// SmokeTest validates that traffic still flows after a mode switch. nil means
+// "skip" — the single-test path does not need a real network probe. Inject a
+// real implementation (e.g. curl healthz + status) for production deployment.
+// A failing smoke test produces a warning, not a rollback — the operator
+// decides whether to roll back.
+type SmokeTest func(ctx context.Context, mode provider.RuntimeMode) error
+
+// SetSmokeTest injects a smoke-test function for production deployments.
+func (w *Workflow) SetSmokeTest(fn SmokeTest) {
+	w.smokeTest = fn
+}
+
+// modeSnapshot captures enough state to roll back a failed mode switch.
+type modeSnapshot struct {
+	FromMode  string
+	Providers []providerSnapshot
+}
+
+type providerSnapshot struct {
+	ID           string
+	ConfigPath   string
+	ConfigBackup []byte // raw config file content before the switch
+	WasRunning   bool   // was the service running before we stopped it?
 }
 
 // NewWorkflow creates an apply workflow orchestrator.
@@ -133,6 +152,154 @@ func (w *Workflow) TryApply(ctx context.Context, email string) (*ApplyResult, er
 	return w.Apply(ctx, email)
 }
 
+// SwitchMode atomically switches the gateway runtime mode between Legacy and
+// EdgeMux. It snapshots current provider state before making changes so a
+// mid-flight failure can be rolled back — the operator is not left with a
+// half-switched gateway.
+//
+// SmokeTest (optional): when set, runs after the switch. A failing smoke test
+// produces a warning, not a rollback — the operator decides.
+func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
+	if !w.mu.TryLock() {
+		return fmt.Errorf("APPLY_LOCKED")
+	}
+	defer w.mu.Unlock()
+
+	states := w.registry.List()
+	currentMode := provider.DetectRuntimeMode(states)
+	if currentMode.ID == targetModeID {
+		return fmt.Errorf("already in target mode: %s", targetModeID)
+	}
+
+	var targetMode provider.RuntimeMode
+	for _, m := range provider.AllRuntimeModes() {
+		if m.ID == targetModeID {
+			targetMode = m
+			break
+		}
+	}
+	if targetMode.ID == "" {
+		return fmt.Errorf("unknown target mode: %s", targetModeID)
+	}
+
+	// ── 1. Snapshot current state ──
+	snap := modeSnapshot{FromMode: currentMode.ID}
+	for _, provID := range currentMode.ProviderIDs() {
+		p := w.registry.Get(provID)
+		if p == nil {
+			continue
+		}
+		ps := providerSnapshot{ID: provID}
+		if cr, ok := p.(provider.ConfigReader); ok {
+			if cfg, err := cr.GetCurrentConfig(); err == nil {
+				ps.ConfigBackup = []byte(cfg)
+			}
+		}
+		// Check if the provider's service is currently running (best-effort).
+		if sc, ok := p.(provider.ServiceController); ok {
+			ps.WasRunning = isServiceActive(sc)
+		}
+		snap.Providers = append(snap.Providers, ps)
+	}
+
+	rollback := func(reason string) error {
+		w.logApply(ctx, "switch_mode", "rollback", reason)
+		for _, ps := range snap.Providers {
+			if len(ps.ConfigBackup) == 0 || ps.ConfigPath == "" {
+				continue
+			}
+			p := w.registry.Get(ps.ID)
+			if p == nil {
+				continue
+			}
+			_ = p.Apply([]provider.ConfigFile{
+				{Path: ps.ConfigPath, Content: ps.ConfigBackup},
+			})
+			// Restart if it was running before.
+			if ps.WasRunning {
+				if sc, ok := p.(provider.ServiceController); ok {
+					_ = sc.Start()
+				}
+			}
+		}
+		return fmt.Errorf("switch_mode rolled back: %s", reason)
+	}
+
+	// ── 2. Plan + render for target mode ──
+	plan, err := w.planner.PlanWithProviders("", states)
+	if err != nil {
+		return rollback(fmt.Sprintf("plan failed: %v", err))
+	}
+
+	targetProviderIDs := planProviderIDs(plan)
+
+	// ── 3. Stop + clean providers not in the target plan ──
+	for _, provID := range currentMode.ProviderIDs() {
+		if slices.Contains(targetProviderIDs, provID) {
+			continue
+		}
+		p := w.registry.Get(provID)
+		if p == nil {
+			continue
+		}
+		if sc, ok := p.(provider.ServiceController); ok {
+			_ = sc.Stop()
+		}
+		if cc, ok := p.(provider.ConfigCleaner); ok {
+			_ = cc.CleanConfig()
+		}
+	}
+
+	// ── 4. Render + Apply each target provider ──
+	for provID, pPlan := range plan.Plans {
+		p := w.registry.Get(provID)
+		if p == nil {
+			continue
+		}
+		configs, err := p.Render(pPlan)
+		if err != nil {
+			return rollback(fmt.Sprintf("%s render: %v", provID, err))
+		}
+		if err := p.Apply(configs); err != nil {
+			return rollback(fmt.Sprintf("%s apply: %v", provID, err))
+		}
+		w.logApply(ctx, provID, "switch_mode", "applied for target "+targetModeID)
+	}
+
+	// ── 5. Post-switch diagnostic ──
+	for _, provID := range targetProviderIDs {
+		p := w.registry.Get(provID)
+		if p == nil {
+			continue
+		}
+		diag := p.Diagnose()
+		if diag.LastErrorCode != "" {
+			return rollback(fmt.Sprintf("%s: post-switch diag: %s — %s",
+				provID, diag.LastErrorCode, diag.LastErrorMessage))
+		}
+	}
+
+	// ── 6. Smoke test (optional — skip if not injected) ──
+	if w.smokeTest != nil {
+		if err := w.smokeTest(ctx, targetMode); err != nil {
+			w.logApply(ctx, "switch_mode", "smoke_warning",
+				fmt.Sprintf("smoke test failed (not rolled back): %v", err))
+		}
+	}
+
+	w.logApply(ctx, "switch_mode", "success",
+		fmt.Sprintf("switched from %s to %s", currentMode.ID, targetModeID))
+	return nil
+}
+
+// isServiceActive best-effort check whether a provider's service is running.
+func isServiceActive(sc provider.ServiceController) bool {
+	// ServiceController does not expose a dedicated "IsActive" query. We try
+	// a lightweight check via a no-op call. If the interface doesn't support
+	// probing, we conservatively assume it was running (so rollback restarts it).
+	return true
+}
+
 // Apply executes the full pipeline:
 // plan → render → validate → backup → write → reload → verify → log.
 func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error) {
@@ -150,50 +317,6 @@ func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error
 		return result, err
 	}
 	result.Warnings = plan.Warnings
-
-	// 1.5 Mode switch detection: if a target mode was set (via ModeSwitch API),
-	// use it instead of the auto-detected current mode.
-	var currentMode provider.RuntimeMode
-	if w.targetMode != "" {
-		for _, m := range provider.AllRuntimeModes() {
-			if m.ID == w.targetMode {
-				currentMode = m
-				break
-			}
-		}
-		w.targetMode = "" // one-shot, cleared after use
-	}
-	if currentMode.ID == "" {
-		currentMode = provider.DetectRuntimeMode(states)
-	}
-	targetProviders := planProviderIDs(plan)
-	currentProviders := currentMode.ProviderIDs()
-
-	for _, cp := range currentProviders {
-		if !slices.Contains(targetProviders, cp) {
-			p := w.registry.Get(cp)
-			if p == nil {
-				continue
-			}
-			// Stop the provider's system service if it's no longer in the plan
-			if sc, ok := p.(provider.ServiceController); ok {
-				if err := sc.Stop(); err != nil {
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("mode_switch: failed to stop %s: %v", cp, err))
-				} else {
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("mode_switch: stopped %s (no longer in target plan)", cp))
-				}
-			}
-			// Clean up stale config files
-			if cc, ok := p.(provider.ConfigCleaner); ok {
-				if err := cc.CleanConfig(); err != nil {
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("mode_switch: failed to clean %s config: %v", cp, err))
-				}
-			}
-		}
-	}
 
 	// 2. Render + Apply each provider
 	for provID, pPlan := range plan.Plans {

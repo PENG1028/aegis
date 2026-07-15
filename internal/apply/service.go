@@ -74,9 +74,9 @@ func (s *AppService) DryRun(ctx context.Context) (*ApplyPlan, error) {
 
 // TryApply acquires the apply lock and executes Apply.
 
-// SetTargetMode sets a target mode override for the next Apply call.
-func (s *AppService) SetTargetMode(modeID string) {
-	s.workflow.SetTargetMode(modeID)
+// SwitchMode delegates to the workflow's standalone mode-switch method.
+func (s *AppService) SwitchMode(ctx context.Context, targetModeID string) error {
+	return s.workflow.SwitchMode(ctx, targetModeID)
 }
 
 func (s *AppService) TryApply(ctx context.Context) (*ApplyPlan, error) {

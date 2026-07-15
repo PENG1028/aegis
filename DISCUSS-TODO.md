@@ -5,25 +5,20 @@
 
 ---
 
-## B1. 模式切换拆 SwitchMode + 回滚
+## B1. 模式切换拆 SwitchMode + 回滚 ⏳ 进行中
 
-**现状**：网关模式切换（Legacy ↔ EdgeMux）寄生在 `apply/workflow.go` 的 `Apply()` 里，
-通过 side-channel 变量 `targetMode` 触发。`Apply()` 有一个 `if w.targetMode != ""` 分支。
+**验收标准**：
+- AC1: Apply() 不再含任何模式切换逻辑（zero targetMode residue）
+- AC2: 独立的 SwitchMode() 可独立调用、独立测试
+- AC3: 切换成功 → 两个 provider 都在新模式运行(Diagnose 全健康)
+- AC4: 切换失败 → 自动回滚到旧模式(旧 provider 重启、旧配置恢复)
+- AC5: 切换幂等(调到已在的目标模式 → 跳过)
+- AC6: 不影响普通 Apply(全量测试仍绿)
+- AC7: 烟雾测试钩子(SmokeTest 接口,单测可跳过,真机注入真实 HTTP 探测)
+- AC8: 真机验证 — 真实切换 Legacy↔EdgeMux + curl 验证 80/443 仍有响应 + 连续 3 次不退化
 
-**问题**：
-- 切换和普通 Apply 耦合，同一个方法两种行为
-- 切到一半失败（旧 provider 已停、新配置没写）→ 系统卡在中间状态，无自动回滚
-
-**待讨论**：
-- 是否值得拆成独立 `SwitchMode()` 方法？
-- 回滚需要快照什么？（provider 配置文件 + systemctl 运行状态）
-- 验证用 `Diagnose()` 够不够，还是要发真实烟雾测试请求？
-- 切换频率低（人工触发），投入产出比如何？
-
-**涉及文件**：`internal/apply/workflow.go`、`internal/provider/mode_switch.go`、
-`internal/httpapi/handlers/mode.go`
-
----
+**改动范围**：`apply/workflow.go`(拆 SwitchMode + 快照/回滚,删 targetMode)、
+`handlers/mode.go`(调 SwitchMode)、`apply/workflow_test.go`(新增,控制流全覆盖)
 
 ## B2. 域名解析逻辑合并（现在剩 2 套）
 
