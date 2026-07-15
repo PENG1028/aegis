@@ -279,6 +279,21 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 		w.logApply(ctx, provID, "switch_mode", "applied for target "+targetModeID)
 	}
 
+	// ── 4.5 Start target providers ──
+	// Apply (step 4) reloads configs via systemctl reload — it does NOT start
+	// a stopped service. Providers that were stopped in step 3 (shared or
+	// not-in-target) must be explicitly started with their new config so they
+	// come up in the target-mode configuration.
+	for _, provID := range targetProviderIDs {
+		p := w.registry.Get(provID)
+		if p == nil {
+			continue
+		}
+		if sc, ok := p.(provider.ServiceController); ok {
+			_ = sc.Start()
+		}
+	}
+
 	// ── 5. Post-switch diagnostic ──
 	for _, provID := range targetProviderIDs {
 		p := w.registry.Get(provID)
