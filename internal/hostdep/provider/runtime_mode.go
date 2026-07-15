@@ -466,21 +466,25 @@ func AllRuntimeModes() []RuntimeMode {
 // systemctl is-active — a separate detection path from the Planner's template
 // matching. Now both the Planner and the API use the same function.
 func DetectRuntimeMode(states []ProviderState) RuntimeMode {
-	// Prefer richer modes: when both Legacy (1 provider: Caddy) and EdgeMux
-	// (2 providers: Caddy + HAProxy) are satisfied, EdgeMux wins. Iterate in
-	// reverse so modes with more providers are checked first.
-	all := AllRuntimeModes()
-	for i := len(all) - 1; i >= 0; i-- {
-		mode := all[i]
+	// Collect all satisfied modes, then pick the one with the most active
+	// providers — not just the first match. When both Legacy (1 provider) and
+	// EdgeMux (2 providers) are satisfied, EdgeMux wins because it has more
+	// providers in a healthy state.
+	best := RuntimeModeLegacy
+	bestCount := 0
+	for _, mode := range AllRuntimeModes() {
 		if !mode.Implemented {
 			continue
 		}
 		if mode.isSatisfiedBy(states) {
-			return mode
+			count := len(mode.Providers)
+			if count > bestCount {
+				best = mode
+				bestCount = count
+			}
 		}
 	}
-	// Fallback: return Legacy (always works if Caddy is installed)
-	return RuntimeModeLegacy
+	return best
 }
 
 // isSatisfiedBy returns true if all providers in this mode have a healthy state.

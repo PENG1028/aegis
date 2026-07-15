@@ -204,11 +204,7 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 	}
 
 	rollback := func(reason string) error {
-		_ = w.applyRepo.Create(&ApplyVersion{
-			ID: core.NewID("apply"), Status: "failed",
-			Message: fmt.Sprintf("switch_mode rolled back: %s", reason),
-			BackupPath: "mode_switch", CreatedAt: time.Now(),
-		})
+		w.logSwitchAudit("failed", fmt.Sprintf("rolled back: %s", reason))
 		w.logApply(ctx, "switch_mode", "rollback", reason)
 		for _, ps := range snap.Providers {
 			if len(ps.ConfigBackup) == 0 || ps.ConfigPath == "" {
@@ -304,15 +300,7 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 		}
 	}
 
-	// Write an apply audit record so the switch appears in /api/admin/v1/apply-logs.
-	_ = w.applyRepo.Create(&ApplyVersion{
-		ID:         core.NewID("apply"),
-		Status:     "success",
-		Message:    fmt.Sprintf("switch_mode: %s -> %s", currentMode.ID, targetModeID),
-		BackupPath: "mode_switch",
-		CreatedAt:  time.Now(),
-	})
-
+	w.logSwitchAudit("success", fmt.Sprintf("switched from %s to %s", currentMode.ID, targetModeID))
 	w.logApply(ctx, "switch_mode", "success",
 		fmt.Sprintf("switched from %s to %s", currentMode.ID, targetModeID))
 	return nil
@@ -507,6 +495,23 @@ func (w *Workflow) logApply(ctx context.Context, provider, status, errMsg string
 		return
 	}
 	w.logSvc.Log(ctx, "apply", "provider", provider, status, errMsg, "system")
+}
+
+// logSwitchAudit writes a mode-switch entry to the apply audit log so it
+// appears in /api/admin/v1/apply-logs (same table as writeApplyLog uses).
+// Uses the same logSvc.LogApply interface as writeApplyLog, not applyRepo.
+func (w *Workflow) logSwitchAudit(status, detail string) {
+	if w.logSvc == nil {
+		return
+	}
+	w.logSvc.LogApply(&logs.ApplyLog{
+		ID:             core.NewID("applylog"),
+		Provider:       "switch_mode",
+		ValidateStatus: status,
+		Stderr:         detail,
+		StepLog:        "[]",
+		CreatedAt:      time.Now(),
+	})
 }
 
 // ============================================================================
