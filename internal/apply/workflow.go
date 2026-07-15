@@ -15,6 +15,7 @@ import (
 
 	"aegis/internal/certstore"
 	"aegis/internal/config"
+	"aegis/internal/core"
 	"aegis/internal/logs"
 	"aegis/internal/hostdep/provider"
 	"aegis/internal/topology"
@@ -203,6 +204,11 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 	}
 
 	rollback := func(reason string) error {
+		_ = w.applyRepo.Create(&ApplyVersion{
+			ID: core.NewID("apply"), Status: "failed",
+			Message: fmt.Sprintf("switch_mode rolled back: %s", reason),
+			BackupPath: "mode_switch", CreatedAt: time.Now(),
+		})
 		w.logApply(ctx, "switch_mode", "rollback", reason)
 		for _, ps := range snap.Providers {
 			if len(ps.ConfigBackup) == 0 || ps.ConfigPath == "" {
@@ -297,6 +303,15 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 				fmt.Sprintf("smoke test failed (not rolled back): %v", err))
 		}
 	}
+
+	// Write an apply audit record so the switch appears in /api/admin/v1/apply-logs.
+	_ = w.applyRepo.Create(&ApplyVersion{
+		ID:         core.NewID("apply"),
+		Status:     "success",
+		Message:    fmt.Sprintf("switch_mode: %s -> %s", currentMode.ID, targetModeID),
+		BackupPath: "mode_switch",
+		CreatedAt:  time.Now(),
+	})
 
 	w.logApply(ctx, "switch_mode", "success",
 		fmt.Sprintf("switched from %s to %s", currentMode.ID, targetModeID))
