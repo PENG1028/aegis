@@ -147,18 +147,18 @@ Does NOT:
 					}
 				} else {
 					fmt.Println("  Caddy not found. Install it to serve the panel on port 80:")
-					fmt.Println("    sudo apt-get install -y caddy")
+					fmt.Println("    sudo apt-get install -y <provider-package>")
 				}
 			}
 
 			fmt.Println()
 			fmt.Println("Bootstrap complete. Next steps:")
 			if !production {
-				fmt.Println("  1. Install caddy: sudo apt-get install -y caddy")
+				fmt.Println("  1. Install the gateway provider: sudo apt-get install -y <provider-package>")
 				fmt.Println("  2. Start Aegis: aegis serve")
 				fmt.Println("  3. Access panel: http://127.0.0.1:7380")
 			} else {
-				fmt.Println("  1. Install caddy: sudo apt-get install -y caddy")
+				fmt.Println("  1. Install the gateway provider: sudo apt-get install -y <provider-package>")
 				fmt.Println("  2. Start Aegis: systemctl start aegis")
 				fmt.Println("  3. Access panel: http://<server-public-ip>")
 			}
