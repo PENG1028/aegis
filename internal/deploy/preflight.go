@@ -9,10 +9,10 @@ import (
 // ─── Preflight Report Types ──────────────────────────────────────────────────
 
 type PreflightReport struct {
-	Aegis  *BinaryInfo `json:"aegis"`
-	Caddy  *BinaryInfo `json:"caddy"`
-	Config *ConfigInfo  `json:"config"`
-	Ports  []PortInfo   `json:"ports"`
+	Aegis     *BinaryInfo            `json:"aegis"`
+	Providers map[string]*BinaryInfo `json:"providers"` // per-provider binary detection (not just Caddy)
+	Config    *ConfigInfo            `json:"config"`
+	Ports     []PortInfo             `json:"ports"`
 }
 
 type BinaryInfo struct {
@@ -36,9 +36,11 @@ type PortInfo struct {
 
 // ─── Embedded detection script ───────────────────────────────────────────────
 
+// preflightScript detects installed middleware by probing common binary names
+// rather than hardcoding "caddy". The Go side extracts per-provider results
+// from the JSON output indexed by provider ID.
 const preflightScript = `#!/bin/sh
 af="false"; ap=""; av=""; ar="false"; as=""
-cf="false"; cp=""; cv=""; cr="false"; cs=""
 cof="false"; cop=""
 
 # Aegis
@@ -48,11 +50,18 @@ done
 if systemctl is-active aegis 2>/dev/null | grep -q '^active$'; then ar="true"; as="aegis"
 elif systemctl is-active aegis-node 2>/dev/null | grep -q '^active$'; then ar="true"; as="aegis-node"; fi
 
-# Caddy
-if cp=$(which caddy 2>/dev/null); then
-	cf="true"; cv=$(caddy version 2>/dev/null | head -1); [ -z "$cv" ] && cv="unknown"
-	if systemctl is-active caddy 2>/dev/null | grep -q '^active$'; then cr="true"; cs="caddy"; fi
-fi
+# Middleware providers — detect each by binary presence.
+# The Go side maps these to provider IDs from the registry.
+provs=""
+for name in caddy haproxy; do
+	pf="false"; pp=""; pv=""; pr="false"; ps=""
+	if pp=$(which $name 2>/dev/null); then
+		pf="true"; pv=$($name version 2>/dev/null | head -1); [ -z "$pv" ] && pv="unknown"
+		if systemctl is-active $name 2>/dev/null | grep -q '^active$'; then pr="true"; ps="$name"; fi
+	fi
+	[ -n "$provs" ] && provs="$provs,"
+	provs="$provs\"$name\":{\"found\":$pf,\"path\":\"$pp\",\"version\":\"$pv\",\"running\":$pr,\"service\":\"$ps\"}"
+done
 
 # Config
 for p in /etc/aegis/config.yaml /home/ubuntu/.aegis/config.yaml ~/.aegis/config.yaml; do
@@ -78,7 +87,7 @@ pj="$pj]"
 cat <<JSONEOF
 {
   "aegis":  {"found":$af,"path":"$ap","version":"$av","running":$ar,"service":"$as"},
-  "caddy":  {"found":$cf,"path":"$cp","version":"$cv","running":$cr,"service":"$cs"},
+  "providers": {$provs},
   "config": {"found":$cof,"path":"$cop"},
   "ports":  $pj
 }

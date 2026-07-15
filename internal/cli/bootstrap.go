@@ -28,7 +28,7 @@ Creates:
   - Panel Caddyfile for public access (--production)
 
 Does NOT:
-  - Install haproxy, caddy, or any system packages
+  - Install system packages (providers installed separately via UI or API)
   - Modify existing config files
   - Start or stop any services`,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -13,6 +13,7 @@ import (
 	"aegis/internal/config"
 	"aegis/internal/deploy"
 	"aegis/internal/distnode"
+	"aegis/internal/hostdep/provider"
 )
 
 // ─── Request / Response ──────────────────────────────────────────────────────
@@ -48,7 +49,8 @@ type DeployNodeRequest struct {
 	AuthMethod  string `json:"auth_method"`  // "key" | "password" | "token"
 	SSHKey      string `json:"ssh_key"`      // PEM private key content (for auth=key)
 	SSHPassword string `json:"ssh_password"` // SSH password (for auth=password)
-	NodeName    string `json:"node_name"`    // optional, defaults to hostname
+	NodeName    string   `json:"node_name"`    // optional, defaults to hostname
+	AutoInstall []string `json:"auto_install"`  // provider IDs to install on deploy (empty = detect only)
 }
 
 // DeployNodeResponse is returned after a deploy attempt.
@@ -154,8 +156,9 @@ func (h *Handlers) AdminDeployNode(w http.ResponseWriter, r *http.Request) {
 	// ── Deploy ──────────────────────────────────────────────────────────────
 	// @ui: Deployment steps are logged to LogOutput, which the frontend polls.
 	// Each step starts with a [N/7] marker — frontend renders these as:
-	//   [1/7] Testing SSH connection...     ✓
-	//   [2/7] Installing Caddy...           ✓
+	//   [1/5] Testing SSH connection...     ✓
+	//   [2/5] Detecting [2/7] Installing Caddy
+	// optionally installing middleware...           ✓
 	//   ...
 
 	var logBuf strings.Builder
@@ -186,7 +189,7 @@ func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, cpU
 	// @ui: If this step fails, the form stays visible with the error.
 	// If it succeeds, the form transitions to the log view.
 	logf("=== Deploying Aegis node to %s ===", req.TargetIP)
-	logf("[1/7] Connecting via SSH (%s auth)...", req.AuthMethod)
+	logf("[1/5] Connecting via SSH (%s auth)...", req.AuthMethod)
 
 	authMethod := deploy.AuthMethod(req.AuthMethod)
 	conn, err := deploy.Connect(ctx, deploy.SSHConfig{
@@ -207,24 +210,99 @@ func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, cpU
 	defer conn.Files.Close()
 	logf("  SSH connection OK")
 
-	// ── Step 2: Check/Install Caddy ──
-	// @ui: Shows "✔ Caddy already installed" or "⏳ Installing Caddy..."
-	logf("[2/7] Checking Caddy...")
-	result := conn.Executor.Run(ctx, "which caddy 2>/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq caddy 2>&1)")
-	if result.ExitCode == 0 && strings.Contains(result.Stdout, "caddy") {
-		logf("  Caddy already installed")
-	} else if result.ExitCode == 0 {
-		logf("  Caddy installed")
-	} else {
-		// Caddy is required for the node's edge — a failed install is a hard
-		// failure, not a warning. Reporting success here masked broken nodes.
-		return &DeployNodeResponse{Success: false,
-			Message: fmt.Sprintf("Caddy install failed on target (required for the edge): %s", result.Stderr)}, nil
+	// ── Step 2: Detect + optionally install middleware providers ──
+	// @ui: Shows a per-provider status line with version or install progress.
+	// When AutoInstall is empty, only detection runs (no install).
+	logf("[2/5] Detecting middleware...")
+
+	// Determine which providers are expected on this node from the active
+	// runtime mode — never hardcoded to a specific provider name.
+	type provInfo struct {
+		ID        string
+		Installed bool
+		Version   string
+		Action    string // "detected" | "installing" | "installed" | "failed" | "skipped"
+		Detail    string
+	}
+	var detected []provInfo
+
+	for _, p := range h.ProvReg.ListAll() {
+		diag := p.Diagnose()
+		info := provInfo{ID: p.State().ID}
+		if diag.Installed {
+			info.Installed = true
+			info.Version = diag.Version
+			info.Action = "detected"
+			info.Detail = fmt.Sprintf("version=%s", diag.Version)
+		} else {
+			info.Action = "not_installed"
+			info.Detail = "binary not found"
+		}
+		detected = append(detected, info)
+	}
+
+	// Auto-install if the operator opted in.
+	autoSet := make(map[string]bool, len(req.AutoInstall))
+	for _, id := range req.AutoInstall {
+		autoSet[id] = true
+	}
+
+	if len(autoSet) > 0 {
+		for i := range detected {
+			if !autoSet[detected[i].ID] || detected[i].Installed {
+				continue
+			}
+			detected[i].Action = "installing"
+			detected[i].Detail = "installing via local endpoint..."
+
+			p := h.ProvReg.Get(detected[i].ID)
+			if p == nil {
+				detected[i].Action = "failed"
+				detected[i].Detail = "provider not found in registry"
+				continue
+			}
+			lc, ok := p.(provider.LifecycleProvider)
+			if !ok || !lc.CanInstall() {
+				detected[i].Action = "skipped"
+				detected[i].Detail = "this provider does not support automatic installation"
+				continue
+			}
+			// Trigger install on the NEW node via its own HTTP endpoint — the
+			// node runs the install locally through LifecycleProvider.Install(),
+			// not remote apt-get from the control plane.
+			installCmd := fmt.Sprintf("curl -s -X POST http://127.0.0.1:7380/api/admin/v1/providers/%s/install", detected[i].ID)
+			instResult := conn.Executor.Run(ctx, installCmd)
+			if instResult.ExitCode != 0 {
+				detected[i].Action = "failed"
+				detected[i].Detail = fmt.Sprintf("install failed: %s", strings.TrimSpace(instResult.Stderr))
+			} else {
+				detected[i].Action = "installed"
+				detected[i].Installed = true
+				detected[i].Detail = "installed successfully"
+			}
+		}
+	}
+
+	for _, info := range detected {
+		switch info.Action {
+		case "detected":
+			logf("  ✓ %s %s", info.ID, info.Detail)
+		case "installing":
+			logf("  ⏳ Installing %s...", info.ID)
+		case "installed":
+			logf("  ✓ %s installed", info.ID)
+		case "failed":
+			logf("  ✗ %s: %s", info.ID, info.Detail)
+		case "skipped":
+			logf("  ⚠ %s: %s", info.ID, info.Detail)
+		default:
+			logf("  ⚠ %s 未安装 — 可在节点页面手动安装", info.ID)
+		}
 	}
 
 	// ── Step 3: Create directories ──
-	logf("[3/7] Creating directories...")
-	result = conn.Executor.Run(ctx, "sudo mkdir -p /etc/aegis /var/lib/aegis/backups/db /var/lib/aegis/keys /run/aegis /usr/local/bin && sudo chown -R $(whoami):$(whoami) /var/lib/aegis")
+	logf("[3/5] Creating directories...")
+	result := conn.Executor.Run(ctx, "sudo mkdir -p /etc/aegis /var/lib/aegis/backups/db /var/lib/aegis/keys /run/aegis /usr/local/bin && sudo chown -R $(whoami):$(whoami) /var/lib/aegis")
 	if result.Error != nil {
 		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Create dirs failed: %v", result.Error)}, nil
 	}
@@ -235,7 +313,7 @@ func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, cpU
 
 	// ── Step 4: Copy binary ──
 	// @ui: Shows "Copying aegis binary (16MB)..."
-	logf("[4/7] Copying aegis binary...")
+	logf("[2/5] Copying aegis binary...")
 	selfPath, err := os.Executable()
 	if err != nil {
 		selfPath = "/usr/local/bin/aegis"
@@ -255,7 +333,7 @@ func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, cpU
 	// ── Step 5: Write config ──
 	// @ui: Config files are generated server-side. The frontend doesn't
 	// need to know the details — it just sees "Writing configuration... ✓"
-	logf("[5/7] Writing configuration...")
+	logf("[3/5] Writing configuration...")
 
 	// Write node.yaml
 	cfgYAML := fmt.Sprintf(`control_plane_url: http://%s
@@ -275,7 +353,7 @@ reconcile_mode: apply
 
 	// ── Step 6: Install systemd service ──
 	// @ui: "Installing systemd service... ✓"
-	logf("[6/7] Installing systemd service...")
+	logf("[4/5] Installing systemd service...")
 	unitContent := `[Unit]
 Description=Aegis Node Agent
 After=network-online.target
@@ -301,7 +379,7 @@ WantedBy=multi-user.target
 
 	// ── Step 7: Start ──
 	// @ui: "Starting node agent... ✓" — the final step.
-	logf("[7/7] Starting node agent...")
+	logf("[5/5] Starting node agent...")
 	result = conn.Services.Start(ctx, "aegis-node")
 	if result.Error != nil || result.ExitCode != 0 {
 		// The node agent failing to start is a hard failure — don't report a
@@ -344,7 +422,7 @@ func isSSHAvailable() bool {
 //	└─────────────────────────────────────────────────────────┘
 func generateDeployCommand(req DeployNodeRequest) string {
 	target := fmt.Sprintf("%s@%s", req.SSHUser, req.TargetIP)
-	return fmt.Sprintf(`ssh %s "sudo apt-get update -qq && sudo apt-get install -y -qq caddy && sudo mkdir -p /etc/aegis /var/lib/aegis && echo 'control_plane_url: http://%s:7380
+	return fmt.Sprintf(`ssh %s "sudo mkdir -p /etc/aegis /var/lib/aegis && echo 'control_plane_url: http://%s:7380
 node_token_file: /etc/aegis/node.token
 cache_dir: /var/lib/aegis
 heartbeat_interval_seconds: 15

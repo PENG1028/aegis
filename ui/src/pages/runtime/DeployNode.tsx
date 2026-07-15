@@ -19,7 +19,7 @@ interface Preflight {
   success: boolean; error?: string;
   report?: {
     aegis:  { found: boolean; path?: string; version?: string; running: boolean; service?: string };
-    caddy:  { found: boolean; path?: string; version?: string; running: boolean; service?: string };
+    providers: Record<string, { found: boolean; path?: string; version?: string; running: boolean; service?: string }>;
     config: { found: boolean; path?: string };
     ports:  { port: number; process: string; listen: string }[];
   };
@@ -57,7 +57,31 @@ export default function DeployNode() {
   const [result, setResult] = useState<{ success: boolean; message: string; manualCommand?: string } | null>(null);
   const [joinResult, setJoinResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [skipCaddy, setSkipCaddy] = useState(false);
+  const [autoInstall, setAutoInstall] = useState<string[]>([]);
+  const [availableProviders, setAvailableProviders] = useState<{id: string; name: string}[]>([]);
+
+  // Fetch available providers from runtime mode
+  useEffect(() => {
+    fetch('/api/system/runtime-mode').then(r => r.json()).then(data => {
+      const current = data.current;
+      if (current?.provider_ids) {
+        // Map provider IDs to labels from the provider list
+        fetch('/api/admin/v1/providers').then(r => r.json()).then(pd => {
+          const provs = (pd?.providers || []).filter(
+            (p: any) => current.provider_ids.includes(p.id)
+          ).map((p: any) => ({ id: p.id, name: p.name || p.id }));
+          setAvailableProviders(provs);
+        }).catch(() => {
+          // Fallback: just use provider_ids as labels
+          setAvailableProviders(current.provider_ids.map((id: string) => ({ id, name: id })));
+        });
+      }
+    }).catch(() => {});
+  }, []);
+
+  const toggleProvider = (id: string) => {
+    setAutoInstall(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
+  };
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
@@ -89,7 +113,13 @@ export default function DeployNode() {
       });
       const data = await res.json();
       setPreflight(data);
-      if (data.report?.caddy?.found) setSkipCaddy(true);
+      // Auto-enable install for providers NOT already found
+      if (data.report?.providers) {
+        const missing = Object.keys(data.report.providers).filter(
+          (id: string) => !data.report.providers[id]?.found
+        );
+        if (missing.length > 0) setAutoInstall(missing);
+      }
       if (!data.success) toast(data.error || '检测失败', 'error');
     } catch (e: any) {
       setError(e.message || '预检请求失败');
@@ -123,7 +153,7 @@ export default function DeployNode() {
       const res = await fetch('/api/admin/v1/nodes/deploy', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...makeBody(), join_token: form.joinToken || undefined, skip_caddy: skipCaddy }),
+        body: JSON.stringify({ ...makeBody(), auto_install: autoInstall }),
       });
       const data = await res.json();
       if (data.log_output) setLogs(data.log_output.split('\n').filter(Boolean));
@@ -142,7 +172,7 @@ export default function DeployNode() {
   // ── Derived state from preflight ──
   const r = preflight?.report;
   const aegisRunning = r?.aegis?.running;
-  const isClean = r && !r.aegis.found && !r.caddy?.found;
+  const isClean = r && !r.aegis.found;
 
   return (
     <div className="p-6 space-y-6">
@@ -215,18 +245,45 @@ export default function DeployNode() {
                 {aegisRunning ? '🟢' : '🟡'} Aegis {r.aegis.version || '未知版本'} — {aegisRunning ? '运行中' : '已停止'}
               </div>
             )}
-            {r.caddy.found && <label className="flex items-center gap-2 text-a-muted cursor-pointer">
-              <input type="checkbox" checked={skipCaddy} onChange={e => setSkipCaddy(e.target.checked)} />
-              Caddy {r.caddy.version || ''} — 跳过安装
-            </label>}
+            {/* Per-provider detection results (not hardcoded to Caddy) */}
+            {r.providers && Object.entries(r.providers).map(([id, info]: [string, any]) => (
+              <div key={id} className={info.found ? 'text-[#4cd964]' : 'text-[#e8b830]'}>
+                {info.found ? '✓' : '⚠'} {id} {info.version || ''}
+                {info.found ? '' : ' — 建议一键安装'}
+              </div>
+            ))}
             {r.config.found && <div className="text-a-muted">📄 配置: {r.config.path}</div>}
-            {r.ports?.filter(p => p.process !== 'caddy').map((p, i) => (
+            {r.ports?.filter((p: any) => !availableProviders.some(ap => ap.id === p.process)).map((p, i) => (
               <div key={i} className="text-[#ff5c72] bg-[#ff5c72]/5 px-2 py-1 rounded">
                 🔴 端口 :{p.port} 被 {p.process} 占用
               </div>
             ))}
           </div>
 
+          {/* ── Auto-install provider select ──}
+          {availableProviders.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-a-border/30">
+              <label className="text-xs text-a-fg font-medium block mb-2">一键安装中间件（部署后自动安装）</label>
+              <div className="flex flex-wrap gap-2">
+                {availableProviders.map(ap => (
+                  <label key={ap.id} className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer border transition-colors",
+                    autoInstall.includes(ap.id) ? "bg-a-accent/10 border-a-accent/30 text-a-accent" : "bg-a-bg border-a-border text-a-muted hover:text-a-fg"
+                  )}>
+                    <input type="checkbox" className="sr-only"
+                      checked={autoInstall.includes(ap.id)}
+                      onChange={() => toggleProvider(ap.id)} />
+                    {ap.name}
+                  </label>
+                ))}
+              </div>
+              {autoInstall.length > 0 && (
+                <div className="text-[10px] text-a-muted mt-1">
+                  部署完成后，将在目标节点上安装选中的中间件
+                </div>
+              )}
+            </div>
+          )}
           {/* ── Actions — merged here, not in separate card ── */}
           <div className="mt-4 pt-3 border-t border-a-border/30 space-y-2">
             {error && (
