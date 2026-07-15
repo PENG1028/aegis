@@ -233,20 +233,31 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 
 	targetProviderIDs := planProviderIDs(plan)
 
-	// ── 3. Stop + clean providers not in the target plan ──
+	// ── 3. Handoff: stop providers that hold ports the target plan needs ──
+	// Without this, a provider in both current AND target (e.g. Caddy:
+	// Legacy binds :443 directly, EdgeMux binds :8443 with HAProxy on :443)
+	// keeps its old listener, blocking the new provider. Each will be
+	// restarted by the Apply in step 4 using the target-mode config.
 	for _, provID := range currentMode.ProviderIDs() {
-		if slices.Contains(targetProviderIDs, provID) {
-			continue
-		}
 		p := w.registry.Get(provID)
 		if p == nil {
 			continue
 		}
-		if sc, ok := p.(provider.ServiceController); ok {
-			_ = sc.Stop()
-		}
-		if cc, ok := p.(provider.ConfigCleaner); ok {
-			_ = cc.CleanConfig()
+		if !slices.Contains(targetProviderIDs, provID) {
+			// Not in the target plan — stop and clean.
+			if sc, ok := p.(provider.ServiceController); ok {
+				_ = sc.Stop()
+			}
+			if cc, ok := p.(provider.ConfigCleaner); ok {
+				_ = cc.CleanConfig()
+			}
+		} else {
+			// Shared: still in target, but needs to release its current port
+			// so the new provider(s) can bind it. Apply (step 4) will
+			// restart with the target-mode configuration.
+			if sc, ok := p.(provider.ServiceController); ok {
+				_ = sc.Stop()
+			}
 		}
 	}
 
