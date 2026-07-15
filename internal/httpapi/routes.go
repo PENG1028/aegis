@@ -39,7 +39,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		ServiceAuthSvc:  svcs.ServiceAuthSvc,
 		PolicySvc:       svcs.PolicySvc,
 		RoutingTableSvc: svcs.RoutingTableSvc,
-		RelayResolver:   &handlers.RelayResolver{Resolver: svcs.RelaySvc},
 		TransparentMgr:  svcs.TransparentMgr,
 		ProvReg:         svcs.ProvReg,   // v1.8L-19 — provider registry for install/uninstall/config handlers
 		EgressSvc:       svcs.EgressSvc, // v1.9A-5 — egress rule engine
@@ -190,15 +189,11 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/system/apply", h.AdminSystemApply)
 
 	// v1.8D Import — Caddyfile config migration
-	mux.HandleFunc("GET /api/admin/v1/import/caddy/preview", h.AdminImportCaddyPreview)
-	mux.HandleFunc("POST /api/admin/v1/import/caddy/confirm", h.AdminImportCaddyConfirm)
 	// v1.7 Node Capabilities
 	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/capabilities", h.GetNodeCapabilities)
 	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/refresh-capabilities", h.RefreshNodeCapabilities)
 
 	// v1.7 Gateway Abstraction (read-only consolidated views)
-	mux.HandleFunc("GET /api/admin/v1/gateway/domains", h.ListGatewayDomains)
-	mux.HandleFunc("GET /api/admin/v1/gateway/listeners", h.ListGatewayListeners)
 
 
 	// v1.7S Provider Diagnostics
@@ -216,7 +211,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/gateway-links/{id}", h.GetGatewayLink)
 	mux.HandleFunc("DELETE /api/admin/v1/gateway-links/{id}", h.DeleteGatewayLink)
 	mux.HandleFunc("POST /api/admin/v1/gateway-links/{id}/rotate", h.RotateGatewayLinkSecret)
-	mux.HandleFunc("GET /api/admin/v1/relay/resolve", h.ResolveRelay)
 	mux.HandleFunc("GET /api/admin/v1/trace/domain/{domain}", h.TraceDomain)
 	mux.HandleFunc("GET /api/admin/v1/trace/sni/{sni_host}", h.TraceSNI)
 	mux.HandleFunc("GET /api/admin/v1/trace/route/{route_id}", h.TraceRoute)
@@ -267,11 +261,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	}
 
 	// Admin Gateway Inventory
-	mux.HandleFunc("GET /api/admin/v1/gateways", h.AdminListGateways)
-	mux.HandleFunc("POST /api/admin/v1/gateways", h.AdminCreateGateway)
-	mux.HandleFunc("GET /api/admin/v1/gateways/{id}", h.AdminGetGateway)
-	mux.HandleFunc("PATCH /api/admin/v1/gateways/{id}", h.AdminUpdateGateway)
-	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/gateways", h.AdminListNodeGateways)
 
 	// Admin Topology
 	mux.HandleFunc("GET /api/admin/v1/topology/matrix", h.AdminGetTopologyMatrix)

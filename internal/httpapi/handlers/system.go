@@ -71,7 +71,6 @@ type Handlers struct {
 	CertStore       *certstore.Service      // v1.9C TLS certificate store
 	ACMEClient     *acme.Client            // v1.9C ACME via lego (replaces certbot)
 	SafetySvc       *safety.Service        // v1.7AB
-	RelayResolver   *RelayResolver         // v1.8B
 	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
 	GatewayInvSvc   *gateway.InventoryService       // v1.8C-2
 	DNSMgmt         *dns.Manager                    // v1.8E
