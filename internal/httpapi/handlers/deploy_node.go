@@ -3,17 +3,20 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"aegis/internal/config"
+	"aegis/internal/core"
 	"aegis/internal/deploy"
 	"aegis/internal/distnode"
-	"aegis/internal/hostdep/provider"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ─── Request / Response ──────────────────────────────────────────────────────
@@ -26,19 +29,15 @@ import (
 //
 //	"key"      — SSH private key (recommended for automation)
 //	"password" — SSH password via sshpass (simpler, for ad-hoc)
-//	"token"    — Join-token only (pull mode, no SSH; the node registers itself)
 //
 // @ui: Frontend form layout (see ui/src/pages/runtime/DeployNode.tsx):
 //
 //	┌─ 部署目标 ───────────────────────────────────┐
 //	│  SSH 地址: [user@host              ]  端口: [] │
 //	│                                                │
-//	│  认证方式:  ● SSH Key  ○ SSH Password  ○ Token │
+//	│  认证方式:  ● SSH Key  ○ SSH Password          │
 //	│  [SSH Key]  [-----BEGIN OPENSSH PRIVATE...]    │
 //	│  [或选择文件]                                   │
-//	│                                                │
-//	│  Join Token（可选，SSH模式传则自动注册）         │
-//	│  [jt_abc123...]  [新建]                        │
 //	│                                                │
 //	│  [测试连接]  [开始部署]                         │
 //	└────────────────────────────────────────────────┘
@@ -46,11 +45,10 @@ type DeployNodeRequest struct {
 	TargetIP    string `json:"target_ip"`    // e.g. "192.168.10.11"
 	SSHUser     string `json:"ssh_user"`     // e.g. "ubuntu", defaults to "root"
 	SSHPort     int    `json:"ssh_port"`     // SSH port, defaults to 22
-	AuthMethod  string `json:"auth_method"`  // "key" | "password" | "token"
+	AuthMethod  string `json:"auth_method"`  // "key" | "password"
 	SSHKey      string `json:"ssh_key"`      // PEM private key content (for auth=key)
 	SSHPassword string `json:"ssh_password"` // SSH password (for auth=password)
-	NodeName    string   `json:"node_name"`    // optional, defaults to hostname
-	AutoInstall []string `json:"auto_install"`  // provider IDs to install on deploy (empty = detect only)
+	NodeName    string `json:"node_name"`    // optional, defaults to hostname
 }
 
 // DeployNodeResponse is returned after a deploy attempt.
@@ -82,7 +80,6 @@ type DeployNodeResponse struct {
 //	    target_ip: "192.168.10.11",
 //	    auth_method: "key",
 //	    ssh_key: "-----BEGIN...",
-//	    join_token: "jt_xxx",  // optional
 //	})
 //
 // @ui: The frontend should poll the result — deployment takes 10-30 seconds.
@@ -132,15 +129,12 @@ func (h *Handlers) AdminDeployNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If SSH tools aren't available locally, fall back to manual command.
-	// @ui: When the API returns manual_command, the frontend should display it
-	// as a highlighted code block with a "复制命令" button.
+	// If SSH tools aren't available locally, SSH deployment cannot run from this
+	// control plane host.
 	if !isSSHAvailable() {
-		cmd := generateDeployCommand(req)
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success":        false,
-			"message":        "ssh not available on this server — run this command manually on your target machine:",
-			"manual_command": cmd,
+			"success": false,
+			"message": "ssh/scp is not available on this control plane host; install OpenSSH client or run deployment from a Linux control plane",
 		})
 		return
 	}
@@ -185,183 +179,95 @@ func (h *Handlers) AdminDeployNode(w http.ResponseWriter, r *http.Request) {
 //	Phase 3: Install     → steps 4-5
 //	Phase 4: Service     → steps 6-7
 func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, cpURL string, logf func(string, ...interface{})) (*DeployNodeResponse, error) {
-	// ── Connect ──
-	// @ui: If this step fails, the form stays visible with the error.
-	// If it succeeds, the form transitions to the log view.
-	logf("=== Deploying Aegis node to %s ===", req.TargetIP)
-	logf("[1/5] Connecting via SSH (%s auth)...", req.AuthMethod)
+	return h.executeDeployServe(ctx, req, cpURL, logf)
+}
 
-	authMethod := deploy.AuthMethod(req.AuthMethod)
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// isSSHAvailable checks if the local system has SSH tools.
+// @ui: If this returns false, the frontend switches to "manual command" mode.
+func (h *Handlers) executeDeployServe(ctx context.Context, req DeployNodeRequest, cpURL string, logf func(string, ...interface{})) (*DeployNodeResponse, error) {
+	if h.Config == nil || h.Config.DistNode.Secret == "" {
+		return &DeployNodeResponse{Success: false, Message: "distnode secret is not configured on this control plane"}, nil
+	}
+
+	logf("=== Deploying Aegis serve node to %s ===", req.TargetIP)
+	logf("[1/8] Connecting via SSH (%s auth)...", req.AuthMethod)
 	conn, err := deploy.Connect(ctx, deploy.SSHConfig{
 		Host:        req.TargetIP,
 		User:        req.SSHUser,
 		Port:        req.SSHPort,
-		AuthMethod:  authMethod,
+		AuthMethod:  deploy.AuthMethod(req.AuthMethod),
 		SSHKey:      req.SSHKey,
 		SSHPassword: req.SSHPassword,
 	})
 	if err != nil {
-		return &DeployNodeResponse{
-			Success: false,
-			Message: fmt.Sprintf("SSH connection failed: %v", err),
-		}, nil
+		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("SSH connection failed: %v", err)}, nil
 	}
 	defer conn.Executor.Close()
 	defer conn.Files.Close()
 	logf("  SSH connection OK")
 
-	// ── Step 2: Detect + optionally install middleware providers ──
-	// @ui: Shows a per-provider status line with version or install progress.
-	// When AutoInstall is empty, only detection runs (no install).
-	logf("[2/5] Detecting middleware...")
-
-	// Determine which providers are expected on this node from the active
-	// runtime mode — never hardcoded to a specific provider name.
-	type provInfo struct {
-		ID        string
-		Installed bool
-		Version   string
-		Action    string // "detected" | "installing" | "installed" | "failed" | "skipped"
-		Detail    string
+	logf("[2/8] Reading target identity...")
+	hostResult := conn.Executor.Run(ctx, "hostname")
+	targetName := strings.TrimSpace(hostResult.Stdout)
+	if req.NodeName != "" {
+		targetName = strings.TrimSpace(req.NodeName)
 	}
-	var detected []provInfo
-
-	for _, p := range h.ProvReg.ListAll() {
-		diag := p.Diagnose()
-		info := provInfo{ID: p.State().ID}
-		if diag.Installed {
-			info.Installed = true
-			info.Version = diag.Version
-			info.Action = "detected"
-			info.Detail = fmt.Sprintf("version=%s", diag.Version)
-		} else {
-			info.Action = "not_installed"
-			info.Detail = "binary not found"
-		}
-		detected = append(detected, info)
+	if targetName == "" {
+		targetName = req.TargetIP
 	}
+	targetNodeID := "node_" + targetName
+	cpHost := edgeHost(cpURL, req.TargetIP)
+	controlEdge := net.JoinHostPort(cpHost, "80")
+	targetEdge := net.JoinHostPort(req.TargetIP, "80")
+	logf("  Target name: %s", targetName)
+	logf("  Control edge: %s", controlEdge)
+	logf("  Target edge: %s", targetEdge)
 
-	// Auto-install if the operator opted in.
-	autoSet := make(map[string]bool, len(req.AutoInstall))
-	for _, id := range req.AutoInstall {
-		autoSet[id] = true
-	}
-
-	if len(autoSet) > 0 {
-		for i := range detected {
-			if !autoSet[detected[i].ID] || detected[i].Installed {
-				continue
-			}
-			detected[i].Action = "installing"
-			detected[i].Detail = "installing via local endpoint..."
-
-			p := h.ProvReg.Get(detected[i].ID)
-			if p == nil {
-				detected[i].Action = "failed"
-				detected[i].Detail = "provider not found in registry"
-				continue
-			}
-			lc, ok := p.(provider.LifecycleProvider)
-			if !ok || !lc.CanInstall() {
-				detected[i].Action = "skipped"
-				detected[i].Detail = "this provider does not support automatic installation"
-				continue
-			}
-			// Trigger install on the NEW node via its own HTTP endpoint — the
-			// node runs the install locally through LifecycleProvider.Install(),
-			// not remote apt-get from the control plane.
-			installCmd := fmt.Sprintf("curl -s -X POST http://127.0.0.1:7380/api/admin/v1/providers/%s/install", detected[i].ID)
-			instResult := conn.Executor.Run(ctx, installCmd)
-			if instResult.ExitCode != 0 {
-				detected[i].Action = "failed"
-				detected[i].Detail = fmt.Sprintf("install failed: %s", strings.TrimSpace(instResult.Stderr))
-			} else {
-				detected[i].Action = "installed"
-				detected[i].Installed = true
-				detected[i].Detail = "installed successfully"
-			}
-		}
-	}
-
-	for _, info := range detected {
-		switch info.Action {
-		case "detected":
-			logf("  ✓ %s %s", info.ID, info.Detail)
-		case "installing":
-			logf("  ⏳ Installing %s...", info.ID)
-		case "installed":
-			logf("  ✓ %s installed", info.ID)
-		case "failed":
-			logf("  ✗ %s: %s", info.ID, info.Detail)
-		case "skipped":
-			logf("  ⚠ %s: %s", info.ID, info.Detail)
-		default:
-			logf("  ⚠ %s 未安装 — 可在节点页面手动安装", info.ID)
-		}
-	}
-
-	// ── Step 3: Create directories ──
-	logf("[3/5] Creating directories...")
+	logf("[3/8] Creating directories...")
 	result := conn.Executor.Run(ctx, "sudo mkdir -p /etc/aegis /var/lib/aegis/backups/db /var/lib/aegis/keys /run/aegis /usr/local/bin && sudo chown -R $(whoami):$(whoami) /var/lib/aegis")
-	if result.Error != nil {
-		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Create dirs failed: %v", result.Error)}, nil
+	if result.Error != nil || result.ExitCode != 0 {
+		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Create dirs failed: %v %s", result.Error, result.Stderr)}, nil
 	}
-	if result.ExitCode != 0 {
-		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Create dirs failed: %s", result.Stderr)}, nil
-	}
-	logf("  Directories created")
+	logf("  Directories ready")
 
-	// ── Step 4: Copy binary ──
-	// @ui: Shows "Copying aegis binary (16MB)..."
-	logf("[2/5] Copying aegis binary...")
+	logf("[4/8] Copying aegis binary...")
 	selfPath, err := os.Executable()
 	if err != nil {
 		selfPath = "/usr/local/bin/aegis"
 	}
 	result = conn.Files.CopyTo(ctx, selfPath, "/tmp/aegis")
-	if result.Error != nil {
-		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Copy binary failed: %v", result.Error)}, nil
-	}
-	logf("  Binary copied (%s)", result.Stdout)
-
-	result = conn.Executor.Run(ctx, "sudo mv /tmp/aegis /usr/local/bin/aegis && sudo chmod +x /usr/local/bin/aegis")
 	if result.Error != nil || result.ExitCode != 0 {
-		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Install binary failed: %v", result.Error)}, nil
+		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Copy binary failed: %v %s", result.Error, result.Stderr)}, nil
 	}
-	logf("  Binary installed at /usr/local/bin/aegis")
-
-	// ── Step 5: Write config ──
-	// @ui: Config files are generated server-side. The frontend doesn't
-	// need to know the details — it just sees "Writing configuration... ✓"
-	logf("[3/5] Writing configuration...")
-
-	// Write node.yaml
-	cfgYAML := fmt.Sprintf(`control_plane_url: http://%s
-node_token_file: /etc/aegis/node.token
-cache_dir: /var/lib/aegis
-runtime_dir: /run/aegis
-heartbeat_interval_seconds: 15
-sync_interval_seconds: 15
-reconcile_mode: apply
-`, cpURL)
-	result = conn.Executor.Run(ctx, fmt.Sprintf("cat > /etc/aegis/node.yaml << 'CFG'\n%s\nCFG", cfgYAML))
-	if result.Error != nil {
-		logf("  Warning: write config: %s", result.Error)
-	} else {
-		logf("  node.yaml written")
+	result = conn.Executor.Run(ctx, "sudo install -m 0755 /tmp/aegis /usr/local/bin/aegis")
+	if result.Error != nil || result.ExitCode != 0 {
+		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Install binary failed: %v %s", result.Error, result.Stderr)}, nil
 	}
+	logf("  Binary installed")
 
-	// ── Step 6: Install systemd service ──
-	// @ui: "Installing systemd service... ✓"
-	logf("[4/5] Installing systemd service...")
+	logf("[5/8] Writing /etc/aegis/config.yaml...")
+	targetAdminToken := core.NewID("adm")
+	cfgYAML, err := renderNodeServeConfig(h.Config.Proxy, targetName, targetAdminToken, h.Config.DistNode.Secret, h.Config.DistNode.ID, controlEdge)
+	if err != nil {
+		return &DeployNodeResponse{Success: false, Message: "Render node config failed: " + err.Error()}, nil
+	}
+	result = conn.Executor.Run(ctx, fmt.Sprintf("cat > /tmp/aegis-config.yaml << 'CFG'\n%s\nCFG\nsudo mv /tmp/aegis-config.yaml /etc/aegis/config.yaml && sudo chmod 600 /etc/aegis/config.yaml", cfgYAML))
+	if result.Error != nil || result.ExitCode != 0 {
+		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Write config failed: %v %s", result.Error, result.Stderr)}, nil
+	}
+	logf("  config.yaml written")
+
+	logf("[6/8] Installing aegis.service...")
 	unitContent := `[Unit]
-Description=Aegis Node Agent
+Description=Aegis Gateway Control Plane
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/aegis node run --config /etc/aegis/node.yaml
+ExecStart=/usr/local/bin/aegis serve --config /etc/aegis/config.yaml
 Restart=always
 RestartSec=5
 TimeoutStartSec=30
@@ -370,37 +276,196 @@ TimeoutStopSec=10
 [Install]
 WantedBy=multi-user.target
 `
-	result = conn.Services.Install(ctx, "aegis-node", unitContent)
-	if result.Error != nil {
-		logf("  Warning: service install: %s", result.Error)
-	} else {
-		logf("  Service installed and enabled")
-	}
-
-	// ── Step 7: Start ──
-	// @ui: "Starting node agent... ✓" — the final step.
-	logf("[5/5] Starting node agent...")
-	result = conn.Services.Start(ctx, "aegis-node")
+	result = conn.Services.Install(ctx, "aegis", unitContent)
 	if result.Error != nil || result.ExitCode != 0 {
-		// The node agent failing to start is a hard failure — don't report a
-		// green deploy over a node that never came up.
-		return &DeployNodeResponse{Success: false,
-			Message: fmt.Sprintf("Node agent failed to start (exit=%d): %s", result.ExitCode, result.Stderr)}, nil
+		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Install service failed: %v %s", result.Error, result.Stderr)}, nil
 	}
-	logf("  Node agent started")
+	logf("  aegis.service installed")
 
-	logf("=== Deploy complete! Node should appear in the UI within 30 seconds. ===")
+	logf("[7/8] Starting aegis serve...")
+	result = conn.Services.Restart(ctx, "aegis")
+	if result.Error != nil || result.ExitCode != 0 {
+		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Aegis service failed to start: %v %s", result.Error, result.Stderr)}, nil
+	}
+	health := conn.Executor.Run(ctx, "sleep 3; curl -s http://127.0.0.1:7380/api/healthz")
+	if health.ExitCode != 0 || !strings.Contains(health.Stdout, "alive") {
+		return &DeployNodeResponse{Success: false, Message: fmt.Sprintf("Local health check failed: %s %s", health.Stdout, health.Stderr)}, nil
+	}
+	logf("  Local control plane is healthy")
+
+	logf("[8/8] Registering distnode peer and validating edge...")
+	if h.DistNode != nil {
+		h.DistNode.Membership.AddPeer(distnode.PeerConfig{ID: targetName, Addr: targetEdge})
+	}
+	if !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetName }) {
+		h.Config.DistNode.Peers = append(h.Config.DistNode.Peers, config.DistNodePeer{ID: targetName, Addr: targetEdge})
+		cpCfgPath := filepath.Join(h.Config.Runtime.ConfigDir, "config.yaml")
+		if err := h.Config.Save(cpCfgPath); err != nil {
+			return &DeployNodeResponse{Success: false, Message: "write control-plane config failed: " + err.Error()}, nil
+		}
+	}
+	if code := applyTarget(ctx, conn, targetAdminToken); code == "200" {
+		logf("  Target apply OK")
+	} else {
+		logf("  Warning: target apply returned HTTP %s; provider edge may need manual repair", code)
+	}
+	if err := waitHTTPAlive(ctx, "http://"+targetEdge+"/api/healthz", 12*time.Second); err != nil {
+		return &DeployNodeResponse{Success: false, NodeID: targetNodeID, Message: "Aegis installed, but target 80 /api/healthz is not reachable: " + err.Error()}, nil
+	}
+	logf("  Target edge /api/healthz reachable")
+	logf("=== Deploy complete: %s joined as %s ===", req.TargetIP, targetNodeID)
 
 	return &DeployNodeResponse{
 		Success: true,
-		Message: fmt.Sprintf("Node deployed to %s successfully. It will appear in the UI within 30 seconds.", req.TargetIP),
+		NodeID:  targetNodeID,
+		Message: fmt.Sprintf("Node deployed to %s and configured for distnode.", req.TargetIP),
 	}, nil
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+func edgeHost(host, fallback string) string {
+	host = strings.TrimSpace(host)
+	if host == "" || strings.HasPrefix(host, "127.") || host == "localhost" {
+		return fallback
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil && h != "" {
+		return h
+	}
+	if i := strings.LastIndex(host, ":"); i > -1 && !strings.Contains(host[i+1:], "]") {
+		return host[:i]
+	}
+	return host
+}
 
-// isSSHAvailable checks if the local system has SSH tools.
-// @ui: If this returns false, the frontend switches to "manual command" mode.
+func renderNodeServeConfig(controlProxy config.ProxyConfig, nodeName, adminToken, distSecret, controlPeerID, controlEdge string) (string, error) {
+	cfg := config.ProductionConfig()
+	cfg.Proxy = nodeProxyConfig(controlProxy)
+	cfg.Store = config.StoreConfig{
+		SQLitePath:    "/var/lib/aegis/aegis.db",
+		BackupEnabled: false,
+		BackupDir:     "/var/lib/aegis/backups/db",
+	}
+	cfg.Server = config.ServerConfig{
+		Addr:           "127.0.0.1:7380",
+		AdminToken:     adminToken,
+		SessionSecure:  false,
+		AllowedOrigins: []string{},
+	}
+	cfg.ManagedDomain = config.ManagedDomainConfig{}
+	cfg.DNS = config.DNSConfig{
+		Enabled:    true,
+		ListenAddr: ":5353",
+		Upstream:   "1.1.1.1:53",
+		RefreshSec: 10,
+	}
+	cfg.Egress = config.EgressConfig{Enabled: false}
+	cfg.DistNode = config.DistNodeConfig{
+		Enabled: true,
+		ID:      nodeName,
+		Name:    nodeName,
+		Addr:    "127.0.0.1:7380",
+		Secret:  distSecret,
+		Peers: []config.DistNodePeer{
+			{ID: controlPeerID, Addr: controlEdge},
+		},
+	}
+	cfg.Runtime = config.RuntimeConfig{
+		ConfigDir: "/etc/aegis",
+		DataDir:   "/var/lib/aegis",
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func nodeProxyConfig(control config.ProxyConfig) config.ProxyConfig {
+	proxy := config.ProductionConfig().Proxy
+	provider := strings.TrimSpace(control.Provider)
+	if provider == "" {
+		provider = proxy.Provider
+	}
+	proxy.Provider = provider
+
+	switch provider {
+	case "haproxy":
+		proxy.CaddyfilePath = "/etc/haproxy/haproxy.cfg"
+		proxy.CaddyBinary = "haproxy"
+		proxy.ReloadCommand = "systemctl reload haproxy"
+		proxy.ValidateCommand = "haproxy -c -f {{config_path}}"
+		proxy.BackupDir = "/var/lib/aegis/haproxy-backups"
+	case "caddy":
+		proxy.CaddyfilePath = "/etc/caddy/Caddyfile"
+		proxy.CaddyBinary = "caddy"
+		proxy.ReloadCommand = "systemctl reload caddy"
+		proxy.ValidateCommand = "caddy validate --adapter caddyfile --config {{config_path}}"
+		proxy.BackupDir = "/var/lib/aegis/backups"
+	}
+
+	if isLinuxSystemPath(control.CaddyfilePath) {
+		proxy.CaddyfilePath = control.CaddyfilePath
+	}
+	if strings.TrimSpace(control.CaddyBinary) != "" {
+		proxy.CaddyBinary = control.CaddyBinary
+	}
+	if strings.TrimSpace(control.ReloadCommand) != "" {
+		proxy.ReloadCommand = control.ReloadCommand
+	}
+	if strings.TrimSpace(control.ValidateCommand) != "" {
+		proxy.ValidateCommand = control.ValidateCommand
+	}
+	if isLinuxSystemPath(control.BackupDir) {
+		proxy.BackupDir = control.BackupDir
+	}
+	proxy.Email = control.Email
+	proxy.TlsCertFile = control.TlsCertFile
+	proxy.TlsKeyFile = control.TlsKeyFile
+	return proxy
+}
+
+func isLinuxSystemPath(path string) bool {
+	path = strings.TrimSpace(path)
+	return strings.HasPrefix(path, "/etc/") || strings.HasPrefix(path, "/var/")
+}
+
+func applyTarget(ctx context.Context, conn *deploy.Connection, adminToken string) string {
+	cmd := fmt.Sprintf("curl -s -o /dev/null -w '%%{http_code}' -X POST http://127.0.0.1:7380/api/apply -H 'Authorization: Bearer %s' -H 'Content-Type: application/json'", adminToken)
+	res := conn.Executor.Run(ctx, cmd)
+	if res.Error != nil || res.ExitCode != 0 {
+		return "000"
+	}
+	return strings.TrimSpace(res.Stdout)
+}
+
+func waitHTTPAlive(ctx context.Context, url string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 2 * time.Second}
+	var lastErr error
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return nil
+			}
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+		} else {
+			lastErr = err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	return lastErr
+}
+
 func isSSHAvailable() bool {
 	_, err := os.Stat("/usr/bin/ssh")
 	if err != nil {
@@ -409,50 +474,31 @@ func isSSHAvailable() bool {
 	return err == nil
 }
 
-// generateDeployCommand returns a one-liner for manual deployment.
-// @ui: The frontend renders this as a code block with a "复制命令" button.
-// Example layout:
-//
-//	┌─────────────────────────────────────────────────────────┐
-//	│ 面板检测到当前服务器没有 SSH 工具。请在目标机器上运行：  │
-//	│                                                         │
-//	│  ssh ubuntu@192.168.10.11 'sudo curl -sL ... | bash'     │
-//	│                                                         │
-//	│  [复制命令]                                              │
-//	└─────────────────────────────────────────────────────────┘
-func generateDeployCommand(req DeployNodeRequest) string {
-	target := fmt.Sprintf("%s@%s", req.SSHUser, req.TargetIP)
-	return fmt.Sprintf(`ssh %s "sudo mkdir -p /etc/aegis /var/lib/aegis && echo 'control_plane_url: http://%s:7380
-node_token_file: /etc/aegis/node.token
-cache_dir: /var/lib/aegis
-heartbeat_interval_seconds: 15
-sync_interval_seconds: 15
-reconcile_mode: apply' | sudo tee /etc/aegis/node.yaml > /dev/null && echo '[Unit]
-Description=Aegis Node Agent
-After=network-online.target
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/aegis node run --config /etc/aegis/node.yaml
-Restart=always
-[Install]
-WantedBy=multi-user.target' | sudo tee /etc/systemd/system/aegis-node.service > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable aegis-node && sudo systemctl start aegis-node"`,
-		target, req.TargetIP)
-}
-
-
 func (h *Handlers) AdminDeployPreflight(w http.ResponseWriter, r *http.Request) {
 	var req DeployNodeRequest
-	if err := decodeJSON(r, &req); err != nil { writeError(w, http.StatusBadRequest, "invalid JSON"); return }
-	if req.TargetIP == "" { writeError(w, http.StatusBadRequest, "target_ip required"); return }
-	if req.SSHUser == "" { req.SSHUser = "root" }
-	if req.SSHPort == 0 { req.SSHPort = 22 }
-	if req.AuthMethod == "" { req.AuthMethod = "key" }
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.TargetIP == "" {
+		writeError(w, http.StatusBadRequest, "target_ip required")
+		return
+	}
+	if req.SSHUser == "" {
+		req.SSHUser = "root"
+	}
+	if req.SSHPort == 0 {
+		req.SSHPort = 22
+	}
+	if req.AuthMethod == "" {
+		req.AuthMethod = "key"
+	}
 	req.TargetIP = strings.TrimSpace(req.TargetIP)
 
 	report, err := deploy.Preflight(r.Context(), deploy.SSHConfig{
 		Host: req.TargetIP, User: req.SSHUser, Port: req.SSHPort,
 		AuthMethod: deploy.AuthMethod(req.AuthMethod),
-		SSHKey: req.SSHKey, SSHPassword: req.SSHPassword,
+		SSHKey:     req.SSHKey, SSHPassword: req.SSHPassword,
 	})
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"success": false, "error": err.Error()})
@@ -471,17 +517,26 @@ func (h *Handlers) AdminJoinNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if req.TargetIP == "" { writeError(w, http.StatusBadRequest, "target_ip required"); return }
-	if req.SSHUser == "" { req.SSHUser = "root" }
-	if req.SSHPort == 0 { req.SSHPort = 22 }
-	if req.AuthMethod == "" { req.AuthMethod = "key" }
+	if req.TargetIP == "" {
+		writeError(w, http.StatusBadRequest, "target_ip required")
+		return
+	}
+	if req.SSHUser == "" {
+		req.SSHUser = "root"
+	}
+	if req.SSHPort == 0 {
+		req.SSHPort = 22
+	}
+	if req.AuthMethod == "" {
+		req.AuthMethod = "key"
+	}
 	req.TargetIP = strings.TrimSpace(req.TargetIP)
 
 	// Step 1: Preflight — is Aegis running?
 	report, err := deploy.Preflight(r.Context(), deploy.SSHConfig{
 		Host: req.TargetIP, User: req.SSHUser, Port: req.SSHPort,
 		AuthMethod: deploy.AuthMethod(req.AuthMethod),
-		SSHKey: req.SSHKey, SSHPassword: req.SSHPassword,
+		SSHKey:     req.SSHKey, SSHPassword: req.SSHPassword,
 	})
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -492,23 +547,23 @@ func (h *Handlers) AdminJoinNode(w http.ResponseWriter, r *http.Request) {
 	if report == nil || !report.Aegis.Found {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"success": false, "error": "目标未安装 Aegis，请使用「开始部署」先进行全量部署",
-			"action":  "deploy_first",
+			"action": "deploy_first",
 		})
 		return
 	}
 	if !report.Aegis.Running {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"success": false, "error": "目标 Aegis 未运行，请先启动服务: systemctl start aegis",
-			"action":  "start_first",
+			"action": "start_first",
 		})
 		return
 	}
 
-		// Step 2: Connect to target
+	// Step 2: Connect to target
 	conn, err := deploy.Connect(r.Context(), deploy.SSHConfig{
 		Host: req.TargetIP, User: req.SSHUser, Port: req.SSHPort,
 		AuthMethod: deploy.AuthMethod(req.AuthMethod),
-		SSHKey: req.SSHKey, SSHPassword: req.SSHPassword,
+		SSHKey:     req.SSHKey, SSHPassword: req.SSHPassword,
 	})
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{

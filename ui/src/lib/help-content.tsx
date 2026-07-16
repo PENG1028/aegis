@@ -62,26 +62,17 @@ export const HELP: Record<string, HelpEntry> = {
             <li><strong>degraded</strong> — 部分组件异常</li>
           </ul>
         </div>
-        <p>添加新节点需先在 <strong>Join Tokens</strong> 页面创建加入令牌。</p>
+        <p>添加新节点请进入 <strong>节点运行时 / 部署节点</strong>，可连接已有 Aegis 节点或通过 SSH 从零部署。</p>
       </div>
     ),
   },
 
   // ─── Join Tokens ───
   'join-tokens': {
-    title: 'Join Tokens',
+    title: '加入令牌',
     content: (
       <div className="space-y-3">
-        <p><strong>Join Token</strong> 是让新节点注册到控制面的一次性凭证。</p>
-        <div>
-          <p className="font-medium mb-1">使用流程：</p>
-          <ol className="list-decimal list-inside space-y-1 text-a-fg2">
-            <li>在此页面创建 Join Token，指定名称和过期时间</li>
-            <li>在目标服务器上运行 <code className="text-a-accent">aegis join &lt;token&gt;</code></li>
-            <li>节点自动注册到控制面，开始心跳上报</li>
-          </ol>
-        </div>
-        <p className="text-a-warn">⚠ Join Token 只展示一次，关闭后无法再次查看。</p>
+        <p>加入令牌接入暂未开放到主流程。当前请使用 <strong>节点运行时 / 部署节点</strong> 完成节点连接或 SSH 部署。</p>
       </div>
     ),
   },

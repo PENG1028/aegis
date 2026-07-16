@@ -65,7 +65,6 @@ import Acceptance from '@/pages/observe/Acceptance';
 
 // ── Access ──
 import Credentials from '@/pages/access/Credentials';
-import JoinTokens from '@/pages/access/JoinTokens';
 import AdminAccount from '@/pages/access/AdminAccount';
 import Certificates from '@/pages/access/Certificates';
 
@@ -199,7 +198,7 @@ export default function App() {
                   <Route index element={<Navigate to="/access/admin" replace />} />
                   <Route path="credentials" element={<Credentials />} />
                   <Route path="certificates" element={<Certificates />} />
-                  <Route path="tokens" element={<JoinTokens />} />
+                  <Route path="tokens" element={<Navigate to="/runtime/deploy" replace />} />
                   <Route path="admin" element={<AdminAccount />} />
                 </Route>
 

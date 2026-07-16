@@ -64,7 +64,6 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
     { path: '/access/admin', label: '管理员' },
     { path: '/access/credentials', label: '凭据' },
     { path: '/access/certificates', label: 'TLS 证书' },
-    { path: '/access/tokens', label: '加入令牌' },
   ],
   settings: [
     { path: '/settings', label: '面板' },
@@ -102,7 +101,7 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/listeners': '/fabric',
   '/nodes': '/runtime',
   '/sync': '/runtime/sync',
-  '/join-tokens': '/access/tokens',
+  '/join-tokens': '/runtime/deploy',
   '/apply': '/release',
   '/config': '/release',
   '/import': '/exposure',

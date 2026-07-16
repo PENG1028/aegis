@@ -8,11 +8,11 @@ import { Link } from 'react-router-dom';
 import { Card, PageHeader, Btn, useToast } from '@/components/shared';
 import Input from '@/components/ui/Input';
 
-type AuthMode = 'key' | 'password' | 'token';
+type AuthMode = 'key' | 'password';
 
 interface DeployForm {
   targetIp: string; sshUser: string; sshPort: string; authMode: AuthMode;
-  sshKey: string; sshPassword: string; joinToken: string;
+  sshKey: string; sshPassword: string;
 }
 
 interface Preflight {
@@ -46,7 +46,7 @@ export default function DeployNode() {
 
   const [form, setForm] = useState<DeployForm>({
     targetIp: '', sshUser: 'ubuntu', sshPort: '22', authMode: 'key',
-    sshKey: '', sshPassword: '', joinToken: '',
+    sshKey: '', sshPassword: '',
   });
 
   const [preflight, setPreflight] = useState<Preflight | null>(null);
@@ -57,31 +57,6 @@ export default function DeployNode() {
   const [result, setResult] = useState<{ success: boolean; message: string; manualCommand?: string } | null>(null);
   const [joinResult, setJoinResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [autoInstall, setAutoInstall] = useState<string[]>([]);
-  const [availableProviders, setAvailableProviders] = useState<{id: string; name: string}[]>([]);
-
-  // Fetch available providers from runtime mode
-  useEffect(() => {
-    fetch('/api/system/runtime-mode').then(r => r.json()).then(data => {
-      const current = data.current;
-      if (current?.provider_ids) {
-        // Map provider IDs to labels from the provider list
-        fetch('/api/admin/v1/providers').then(r => r.json()).then(pd => {
-          const provs = (pd?.providers || []).filter(
-            (p: any) => current.provider_ids.includes(p.id)
-          ).map((p: any) => ({ id: p.id, name: p.name || p.id }));
-          setAvailableProviders(provs);
-        }).catch(() => {
-          // Fallback: just use provider_ids as labels
-          setAvailableProviders(current.provider_ids.map((id: string) => ({ id, name: id })));
-        });
-      }
-    }).catch(() => {});
-  }, []);
-
-  const toggleProvider = (id: string) => {
-    setAutoInstall(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
-  };
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
@@ -89,7 +64,6 @@ export default function DeployNode() {
     if (!form.targetIp.trim()) return '请输入目标 IP 地址';
     if (form.authMode === 'key' && !form.sshKey.trim()) return '请粘贴 SSH 私钥或选择文件';
     if (form.authMode === 'password' && !form.sshPassword.trim()) return '请输入 SSH 密码';
-    if (form.authMode === 'token' && !form.joinToken.trim()) return '请输入 Join Token';
     return null;
   };
 
@@ -113,13 +87,6 @@ export default function DeployNode() {
       });
       const data = await res.json();
       setPreflight(data);
-      // Auto-enable install for providers NOT already found
-      if (data.report?.providers) {
-        const missing = Object.keys(data.report.providers).filter(
-          (id: string) => !data.report.providers[id]?.found
-        );
-        if (missing.length > 0) setAutoInstall(missing);
-      }
       if (!data.success) toast(data.error || '检测失败', 'error');
     } catch (e: any) {
       setError(e.message || '预检请求失败');
@@ -153,7 +120,7 @@ export default function DeployNode() {
       const res = await fetch('/api/admin/v1/nodes/deploy', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...makeBody(), auto_install: autoInstall }),
+        body: JSON.stringify(makeBody()),
       });
       const data = await res.json();
       if (data.log_output) setLogs(data.log_output.split('\n').filter(Boolean));
@@ -176,7 +143,7 @@ export default function DeployNode() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="部署节点" subtitle="SSH 远程安装 · 预检冲突 · 节点加入" />
+      <PageHeader title="部署节点" subtitle="连接已有 Aegis 节点，或通过 SSH 从零部署新节点" />
 
       {/* ── SSH Form ── */}
       <Card title="SSH 连接">
@@ -199,11 +166,11 @@ export default function DeployNode() {
           <div>
             <label className="text-xs text-a-muted block mb-2">认证方式</label>
             <div className="flex gap-4">
-              {(['key','password','token'] as AuthMode[]).map(m => (
+              {(['key','password'] as AuthMode[]).map(m => (
                 <label key={m} className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input type="radio" name="auth" checked={form.authMode === m}
                     onChange={() => setForm({...form, authMode: m})} className="accent-a-accent" />
-                  {m === 'key' ? 'SSH Key' : m === 'password' ? 'SSH 密码' : 'Join Token'}
+                  {m === 'key' ? 'SSH Key' : 'SSH 密码'}
                 </label>
               ))}
             </div>
@@ -223,11 +190,6 @@ export default function DeployNode() {
                 placeholder="••••••••" className="w-full px-3 py-2 rounded-a-sm bg-a-bg border border-a-border/50 text-sm text-a-fg placeholder:text-a-muted/30 focus:outline-none focus:border-a-accent/50" />
             </div>
           )}
-          <div>
-            <label className="text-xs text-a-muted block mb-1">Join Token（可选）</label>
-            <Input value={form.joinToken} onChange={e => setForm({...form, joinToken: e.target.value})}
-              placeholder="留空则跳过注册" />
-          </div>
           <Btn onClick={handlePreflight} disabled={checking} className="w-full">
             <SearchIcon /> {checking ? '检测中...' : '检测目标'}
           </Btn>
@@ -249,41 +211,17 @@ export default function DeployNode() {
             {r.providers && Object.entries(r.providers).map(([id, info]: [string, any]) => (
               <div key={id} className={info.found ? 'text-[#4cd964]' : 'text-[#e8b830]'}>
                 {info.found ? '✓' : '⚠'} {id} {info.version || ''}
-                {info.found ? '' : ' — 建议一键安装'}
+                {info.found ? '' : ' — 目标机缺少该 provider'}
               </div>
             ))}
             {r.config.found && <div className="text-a-muted">📄 配置: {r.config.path}</div>}
-            {r.ports?.filter((p: any) => !availableProviders.some(ap => ap.id === p.process)).map((p, i) => (
+            {r.ports?.map((p, i) => (
               <div key={i} className="text-[#ff5c72] bg-[#ff5c72]/5 px-2 py-1 rounded">
                 🔴 端口 :{p.port} 被 {p.process} 占用
               </div>
             ))}
           </div>
 
-          {/* ── Auto-install provider select ──}
-          {availableProviders.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-a-border/30">
-              <label className="text-xs text-a-fg font-medium block mb-2">一键安装中间件（部署后自动安装）</label>
-              <div className="flex flex-wrap gap-2">
-                {availableProviders.map(ap => (
-                  <label key={ap.id} className={cn(
-                    "flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer border transition-colors",
-                    autoInstall.includes(ap.id) ? "bg-a-accent/10 border-a-accent/30 text-a-accent" : "bg-a-bg border-a-border text-a-muted hover:text-a-fg"
-                  )}>
-                    <input type="checkbox" className="sr-only"
-                      checked={autoInstall.includes(ap.id)}
-                      onChange={() => toggleProvider(ap.id)} />
-                    {ap.name}
-                  </label>
-                ))}
-              </div>
-              {autoInstall.length > 0 && (
-                <div className="text-[10px] text-a-muted mt-1">
-                  部署完成后，将在目标节点上安装选中的中间件
-                </div>
-              )}
-            </div>
-          )}
           {/* ── Actions — merged here, not in separate card ── */}
           <div className="mt-4 pt-3 border-t border-a-border/30 space-y-2">
             {error && (
