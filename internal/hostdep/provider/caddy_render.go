@@ -30,7 +30,6 @@ package provider
 import (
 	"bytes"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -68,7 +67,7 @@ func (p *CaddyProvider) renderCaddyfile(plan Plan) []byte {
 	// Group routes by domain (Match.Host)
 	domainRoutes := make(map[string][]RouteSpec)
 	var domainOrder []string
-	for _, r := range plan.Routes {
+	for _, r := range SortRoutesForMatch(plan.Routes) {
 		if r.Match.Host == "" {
 			continue
 		}
@@ -85,18 +84,7 @@ func (p *CaddyProvider) renderCaddyfile(plan Plan) []byte {
 		siteAddr := caddySiteAddr(domain)
 		routes := domainRoutes[domain]
 
-		// Sort by path depth (longer paths first to match before shorter)
-		sort.Slice(routes, func(i, j int) bool {
-			di := len(strings.Split(strings.Trim(routes[i].Match.Path, "/"), "/"))
-			dj := len(strings.Split(strings.Trim(routes[j].Match.Path, "/"), "/"))
-			if routes[i].Match.Path == "" {
-				return false
-			}
-			if routes[j].Match.Path == "" {
-				return true
-			}
-			return di > dj
-		})
+		routes = SortRoutesForMatch(routes)
 
 		// Simple case: single route with no path prefix and no maintenance
 		if len(routes) == 1 && routes[0].Match.Path == "" && !routes[0].MaintenanceEnabled {

@@ -196,10 +196,10 @@ type Composition struct {
 
 // CompStatus constants for Composition.Status.
 const (
-	CompAvailable      = "available"
+	CompAvailable          = "available"
 	CompMissingProvider    = "missing_provider"
 	CompProviderNotRunning = "provider_not_running"
-	CompUnsupported    = "unsupported"
+	CompUnsupported        = "unsupported"
 )
 
 // EvalStatus computes the status of this composition given actual provider states.
@@ -228,12 +228,12 @@ func (c *Composition) EvalStatus(mode RuntimeMode, states []ProviderState) {
 	}
 	// Mode supports this composition. Check if required providers are installed.
 	installed := make(map[string]bool)
-		running := make(map[string]bool)
+	running := make(map[string]bool)
 	for _, s := range states {
 		if s.Installed {
-				if s.Running {
-					running[s.ID] = true
-				}
+			if s.Running {
+				running[s.ID] = true
+			}
 			installed[s.ID] = true
 		}
 	}
@@ -244,12 +244,13 @@ func (c *Composition) EvalStatus(mode RuntimeMode, states []ProviderState) {
 		}
 	}
 	for pid := range needsProviders {
-			if !running[pid] {
-				c.Status = CompProviderNotRunning
-				return
-			}
+		if !running[pid] {
+			c.Status = CompProviderNotRunning
+			return
 		}
-	
+	}
+	c.Status = CompAvailable
+
 }
 
 // EvalAllCompositions evaluates status for all compositions in this mode.
@@ -331,11 +332,11 @@ func (m RuntimeMode) ProviderIDs() []string {
 // Caddy terminates TLS, routes by Host/Path, handles auto-cert.
 // No HAProxy. No SNI passthrough. No raw TCP forwarding on shared ports.
 var RuntimeModeLegacy = RuntimeMode{
-	ID:          "legacy",
-	Label:       "Legacy",
-	Description: "Caddy 直接暴露 :80 + :443，TLS 终止后路由到 EP",
-	Implemented: true,
-	Atoms:       AllAtomsInDisplayOrder(),
+	ID:           "legacy",
+	Label:        "Legacy",
+	Description:  "Caddy 直接暴露 :80 + :443，TLS 终止后路由到 EP",
+	Implemented:  true,
+	Atoms:        AllAtomsInDisplayOrder(),
 	Compositions: buildCompositions("legacy"),
 	Providers: []ProviderAtoms{
 		{
@@ -353,7 +354,7 @@ var RuntimeModeLegacy = RuntimeMode{
 				"tls": {
 					{Port: 443, Protocol: "tcp", ListeningAt: "public :443/tcp", Action: "decrypt", Target: "L7", Required: true, Note: "TLS → HTTP/gRPC", Purpose: "https"},
 				},
-				"sni":  nil, // Caddy does not do SNI preread in Legacy
+				"sni": nil, // Caddy does not do SNI preread in Legacy
 				"quic": {
 					{Port: 443, Protocol: "udp", ListeningAt: "public :443/udp", Action: "terminate", Target: "EP", Required: false, Note: "HTTP/3 over QUIC", Purpose: "udp_exposure"},
 				},
@@ -378,11 +379,11 @@ var RuntimeModeLegacy = RuntimeMode{
 // to Caddy :8443; if the domain is a passthrough route, it forwards directly to the EP.
 // Caddy handles HTTP/1.1-2 on :80 and internal TLS termination on :8443.
 var RuntimeModeEdgeMux = RuntimeMode{
-	ID:          "edge_mux",
-	Label:       "EdgeMux",
-	Description: "HAProxy :443 SNI → Caddy :8443 TLS 终止 + Caddy :80 HTTP",
-	Implemented: true,
-	Atoms:       AllAtomsInDisplayOrder(),
+	ID:           "edge_mux",
+	Label:        "EdgeMux",
+	Description:  "HAProxy :443 SNI → Caddy :8443 TLS 终止 + Caddy :80 HTTP",
+	Implemented:  true,
+	Atoms:        AllAtomsInDisplayOrder(),
 	Compositions: buildCompositions("edge_mux"),
 	Providers: []ProviderAtoms{
 		{
@@ -426,7 +427,7 @@ var RuntimeModeEdgeMux = RuntimeMode{
 				},
 				"udp": nil,
 				// ── L5 安全 ──
-				"tls":  nil, // HAProxy does not terminate TLS in EdgeMux
+				"tls": nil, // HAProxy does not terminate TLS in EdgeMux
 				"sni": {
 					{Port: 443, Protocol: "tcp", ListeningAt: "public :443/tcp", Action: "preread", Target: "Caddy :8443 / EP", Required: true, Note: "TLS SNI 分流", Purpose: "tls_sni_mux"},
 				},

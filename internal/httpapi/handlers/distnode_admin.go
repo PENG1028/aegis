@@ -25,10 +25,10 @@ func (h *Handlers) AdminDistNodeStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Enrich peer info with a ping test
 	type peerStatus struct {
-		ID     string `json:"id"`
-		Addr   string `json:"addr"`
-		Alive  bool   `json:"alive"`
-		Since  string `json:"since,omitempty"`
+		ID    string `json:"id"`
+		Addr  string `json:"addr"`
+		Alive bool   `json:"alive"`
+		Since string `json:"since,omitempty"`
 	}
 
 	peers := make([]peerStatus, 0, len(allPeers))
@@ -109,10 +109,10 @@ func (h *Handlers) AdminDistNodeCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"node_id":   dn.ID,
-		"healthy":   allOK,
+		"node_id":    dn.ID,
+		"healthy":    allOK,
 		"peer_count": len(results),
-		"checks":    results,
+		"checks":     results,
 	})
 }
 
@@ -215,9 +215,9 @@ func (h *Handlers) AdminDistNodeOverview(w http.ResponseWriter, r *http.Request)
 	err := h.DistNode.Transport.Call(r.Context(), targetID, "Aegis.SystemOverview", nil, &result)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"node_id":  targetID,
-			"error":    err.Error(),
-			"source":   "remote",
+			"node_id":   targetID,
+			"error":     err.Error(),
+			"source":    "remote",
 			"reachable": false,
 		})
 		return
@@ -226,7 +226,6 @@ func (h *Handlers) AdminDistNodeOverview(w http.ResponseWriter, r *http.Request)
 	result["reachable"] = true
 	writeJSON(w, http.StatusOK, result)
 }
-
 
 // callLocal executes a request against the local mux and returns the response.
 // Used by AdminDistNodeAggregate to collect local node data in the same format
@@ -393,6 +392,25 @@ func RegisterAegisTransportHandlers(dn *distnode.DistNode, h *Handlers, mux *htt
 			return nil, err
 		}
 		return services, nil
+	})
+	dn.Transport.Register("Aegis.ClusterCatalog", func(ctx context.Context, callerID string, args json.RawMessage) (interface{}, error) {
+		nodes, err := h.NodeRepo.FindAll()
+		if err != nil {
+			return nil, err
+		}
+		services, err := h.Service.ListServices(ctx)
+		if err != nil {
+			return nil, err
+		}
+		endpoints, err := h.EndpointRepo.FindAllEnabled()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"nodes":     nodes,
+			"services":  services,
+			"endpoints": endpoints,
+		}, nil
 	})
 	// Aegis.ProxyRequest is the generic cross-node API mechanism.
 	// It executes any request against the local mux — no per-endpoint registration needed.

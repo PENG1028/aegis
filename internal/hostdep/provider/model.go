@@ -61,8 +61,8 @@ type Issue struct {
 // operations. Dimensions 1 and 2 read it to make rendering and planning decisions.
 type ProviderState struct {
 	// Identity
-	ID          string      `json:"id"`          // machine-readable: "caddy", "haproxy", "nginx"
-	Name        string      `json:"name"`        // human-readable: "Caddy HTTP", "HAProxy"
+	ID          string      `json:"id"`           // machine-readable: "caddy", "haproxy", "nginx"
+	Name        string      `json:"name"`         // human-readable: "Caddy HTTP", "HAProxy"
 	GatewayType GatewayType `json:"gateway_type"` // one of 5 fixed GatewayTypes
 
 	// Status — derived from installed + running + diagnostic
@@ -194,7 +194,18 @@ type RouteSpec struct {
 	MaintenanceMessage string            `json:"maintenance_message,omitempty"`
 	ExtraHeaders       map[string]string `json:"extra_headers,omitempty"` // headers to inject (e.g. Gateway Link auth)
 	StripPathPrefix    bool              `json:"strip_path_prefix,omitempty"`
+	Priority           int               `json:"priority,omitempty"` // higher priority routes match first
 }
+
+const (
+	// RoutePriorityDefault is used for normal user/business routes.
+	RoutePriorityDefault = 0
+
+	// RoutePriorityControlPlane is reserved for local node control-plane routes.
+	// Providers must match these before business fallback routes on the same
+	// listener so gateway-link or catch-all routes cannot capture node RPC.
+	RoutePriorityControlPlane = 1000
+)
 
 // ============================================================================
 // MatchSpec — traffic matching criteria
@@ -322,9 +333,9 @@ const (
 type ForwardKind string
 
 const (
-	ForwardHTTPProxy   ForwardKind = "http_proxy"    // HTTP reverse proxy
-	ForwardTCPStream   ForwardKind = "tcp_stream"    // raw TCP stream
-	ForwardUDPDatagram ForwardKind = "udp_datagram"  // raw UDP datagrams
+	ForwardHTTPProxy   ForwardKind = "http_proxy"   // HTTP reverse proxy
+	ForwardTCPStream   ForwardKind = "tcp_stream"   // raw TCP stream
+	ForwardUDPDatagram ForwardKind = "udp_datagram" // raw UDP datagrams
 )
 
 // RoutingGranularity describes route density per port.
@@ -370,6 +381,6 @@ type DependencyEdge struct {
 	From     DepNode     `json:"from"`
 	To       DepNode     `json:"to"`
 	Strength DepStrength `json:"strength"`
-	Impact   string      `json:"impact"`             // human-readable: "HTTPS 外部入口不可用"
-	Affects  []string    `json:"affects,omitempty"`  // which traffic types are affected
+	Impact   string      `json:"impact"`            // human-readable: "HTTPS 外部入口不可用"
+	Affects  []string    `json:"affects,omitempty"` // which traffic types are affected
 }

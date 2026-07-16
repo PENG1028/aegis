@@ -1,24 +1,26 @@
 package sync
 
 import (
+	stdsync "sync"
 	"time"
 
 	"aegis/internal/cluster"
+	sloglog "aegis/internal/core"
 	"aegis/internal/maintenance"
 	"aegis/internal/node"
-	sloglog "aegis/internal/core"
 )
 
 // ReconcileLoop periodically checks local state against the leader and repairs drift.
 // Uses adaptive intervals: 10s fast sync → 60s partial → 300s full reconciliation.
 type ReconcileLoop struct {
-	nodeRepo    *node.Repository
-	leaderSvc   *cluster.LeaderService
-	stateVer    *cluster.StateVersion
+	nodeRepo     *node.Repository
+	leaderSvc    *cluster.LeaderService
+	stateVer     *cluster.StateVersion
 	fastInterval time.Duration
 	fullInterval time.Duration
 	cycleCount   int
 	stopCh       chan struct{}
+	stopOnce     stdsync.Once
 }
 
 // NewReconcileLoop creates a reconcile loop with adaptive intervals.
@@ -102,7 +104,9 @@ func (rl *ReconcileLoop) fullReconciliation() {
 
 // Stop stops the reconcile loop.
 func (rl *ReconcileLoop) Stop() {
-	close(rl.stopCh)
+	rl.stopOnce.Do(func() {
+		close(rl.stopCh)
+	})
 }
 
 func (rl *ReconcileLoop) reconcile() {

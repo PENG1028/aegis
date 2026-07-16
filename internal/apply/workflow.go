@@ -16,8 +16,8 @@ import (
 	"aegis/internal/certstore"
 	"aegis/internal/config"
 	"aegis/internal/core"
-	"aegis/internal/logs"
 	"aegis/internal/hostdep/provider"
+	"aegis/internal/logs"
 	"aegis/internal/topology"
 )
 
@@ -30,14 +30,15 @@ import (
 // for config generation + application. Locking, rollback, and audit logging
 // are handled directly.
 type Workflow struct {
-	planner      *topology.Planner
-	registry     *provider.Registry
-	applyRepo    *Repository
-	cfg          *config.Config
-	logSvc       logs.Logger
-	certStore    *certstore.Service
-	smokeTest    SmokeTest // optional: inject real HTTP probe for E2E mode-switch validation
-	mu           sync.Mutex
+	planner     *topology.Planner
+	registry    *provider.Registry
+	applyRepo   *Repository
+	cfg         *config.Config
+	logSvc      logs.Logger
+	certStore   *certstore.Service
+	smokeTest   SmokeTest // optional: inject real HTTP probe for E2E mode-switch validation
+	planApplied PlanAppliedHook
+	mu          sync.Mutex
 }
 
 // SmokeTest validates that traffic still flows after a mode switch. nil means
@@ -47,9 +48,19 @@ type Workflow struct {
 // decides whether to roll back.
 type SmokeTest func(ctx context.Context, mode provider.RuntimeMode) error
 
+// PlanAppliedHook is called after provider configs have been applied
+// successfully. It lets runtime components consume planner outputs without
+// coupling them to provider rendering.
+type PlanAppliedHook func(plan *topology.TopologyPlan)
+
 // SetSmokeTest injects a smoke-test function for production deployments.
 func (w *Workflow) SetSmokeTest(fn SmokeTest) {
 	w.smokeTest = fn
+}
+
+// SetPlanAppliedHook injects a callback for successful apply operations.
+func (w *Workflow) SetPlanAppliedHook(fn PlanAppliedHook) {
+	w.planApplied = fn
 }
 
 // modeSnapshot captures enough state to roll back a failed mode switch.
@@ -308,6 +319,10 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 	}
 
 	// ── 6. Smoke test (optional — skip if not injected) ──
+	if w.planApplied != nil {
+		w.planApplied(plan)
+	}
+
 	if w.smokeTest != nil {
 		if err := w.smokeTest(ctx, targetMode); err != nil {
 			w.logApply(ctx, "switch_mode", "smoke_warning",
@@ -390,6 +405,9 @@ func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error
 
 	result.Status = "success"
 	result.Completed = time.Now()
+	if w.planApplied != nil {
+		w.planApplied(plan)
+	}
 
 	// Sync auto-certs into CertStore after successful apply.
 	// Caddy may have obtained new certs during reload.
@@ -565,4 +583,3 @@ func planProviderIDs(plan *topology.TopologyPlan) []string {
 	}
 	return ids
 }
-

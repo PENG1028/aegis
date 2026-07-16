@@ -33,6 +33,31 @@ func (r *Repository) Create(s *Service) error {
 	return nil
 }
 
+// Upsert inserts or updates a service by its stable service ID.
+func (r *Repository) Upsert(s *Service) error {
+	if s == nil || s.ID == "" {
+		return nil
+	}
+	now := time.Now()
+	if s.CreatedAt.IsZero() {
+		s.CreatedAt = now
+	}
+	if s.UpdatedAt.IsZero() {
+		s.UpdatedAt = now
+	}
+	existing, err := r.FindByID(s.ID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return r.Create(s)
+	}
+	if !existing.CreatedAt.IsZero() {
+		s.CreatedAt = existing.CreatedAt
+	}
+	return r.Update(s)
+}
+
 // FindAll returns all services ordered by name.
 func (r *Repository) FindAll() ([]Service, error) {
 	rows, err := r.DB.Query(

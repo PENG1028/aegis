@@ -20,13 +20,13 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	type fwdEntry struct {
-		Composition   string `json:"composition"`
-		Status        string `json:"status"` // "available" | "provider_missing" | "unsupported"
-		ProviderID    string `json:"provider_id,omitempty"`
-		Host          string `json:"host,omitempty"`
-		Port          int    `json:"port,omitempty"`
-		ProviderOK    bool   `json:"provider_ok"`
-		Detail        string `json:"detail"`
+		Composition string `json:"composition"`
+		Status      string `json:"status"` // "available" | "provider_missing" | "unsupported"
+		ProviderID  string `json:"provider_id,omitempty"`
+		Host        string `json:"host,omitempty"`
+		Port        int    `json:"port,omitempty"`
+		ProviderOK  bool   `json:"provider_ok"`
+		Detail      string `json:"detail"`
 	}
 
 	checks := make([]check, 0, 4)
@@ -153,10 +153,10 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 	allPassed := isLinux && iptErr == nil && (isRoot || sudoErr == nil) && gatewayReady
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"available":          allPassed,
-		"checks":             checks,
-		"forward_targets":    allForwardTargets,
-		"mode":               mode.Label,
+		"available":       allPassed,
+		"checks":          checks,
+		"forward_targets": allForwardTargets,
+		"mode":            mode.Label,
 	})
 }
 
@@ -164,8 +164,8 @@ func (h *Handlers) TransparentProxyStatus(w http.ResponseWriter, r *http.Request
 func (h *Handlers) AdminListTransparentRules(w http.ResponseWriter, r *http.Request) {
 	if h.TransparentMgr == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"rules":  []interface{}{},
-			"count":  0,
+			"rules":   []interface{}{},
+			"count":   0,
 			"message": "transparent proxy not configured",
 		})
 		return
@@ -182,6 +182,7 @@ func (h *Handlers) AdminListTransparentRules(w http.ResponseWriter, r *http.Requ
 			"local_proxy_port": rs.Rule.LocalProxyPort,
 			"target_service":   rs.Rule.TargetServiceID,
 			"target_node":      rs.Rule.TargetNodeID,
+			"target_edge_addr": rs.Rule.TargetEdgeAddr,
 			"description":      rs.Rule.Description,
 			"active":           rs.Active,
 			"bytes_in":         rs.BytesIn,

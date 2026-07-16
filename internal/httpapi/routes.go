@@ -40,12 +40,12 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		PolicySvc:       svcs.PolicySvc,
 		RoutingTableSvc: svcs.RoutingTableSvc,
 		TransparentMgr:  svcs.TransparentMgr,
-		ProvReg:         svcs.ProvReg,   // v1.8L-19 — provider registry for install/uninstall/config handlers
-		EgressSvc:       svcs.EgressSvc, // v1.9A-5 — egress rule engine
-		CertStore:       svcs.CertStore, // v1.9C — TLS certificate store
-		ACMEClient:         svcs.ACMEClient,   // v1.9C — ACME auto-cert manager
-		DistNode:        svcs.DistNode, // v1.9B — distributed node runtime (was never wired → admin/call endpoints saw nil)
-		DNSMgmt:         svcs.DNSMgmt,  // was never wired → egress toggle-off silently failed to stop the DNS resolver
+		ProvReg:         svcs.ProvReg,    // v1.8L-19 — provider registry for install/uninstall/config handlers
+		EgressSvc:       svcs.EgressSvc,  // v1.9A-5 — egress rule engine
+		CertStore:       svcs.CertStore,  // v1.9C — TLS certificate store
+		ACMEClient:      svcs.ACMEClient, // v1.9C — ACME auto-cert manager
+		DistNode:        svcs.DistNode,   // v1.9B — distributed node runtime (was never wired → admin/call endpoints saw nil)
+		DNSMgmt:         svcs.DNSMgmt,    // was never wired → egress toggle-off silently failed to stop the DNS resolver
 		Version:         svcs.Version,
 		BuildTime:       svcs.BuildTime,
 	}
@@ -125,7 +125,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/apply/dry-run", h.ApplyDryRun)
 	mux.HandleFunc("POST /api/rollback", h.Rollback)
 	mux.HandleFunc("GET /api/apply/history", h.ApplyHistory)
-		mux.HandleFunc("POST /api/admin/v1/quick-publish", h.AdminQuickPublish)
+	mux.HandleFunc("POST /api/admin/v1/quick-publish", h.AdminQuickPublish)
 
 	// Exposures
 	mux.HandleFunc("GET /api/exposures", h.ListExposures)
@@ -150,7 +150,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 
 	// Settings (read is public with redacted token; write is admin-only)
 	mux.HandleFunc("GET /api/settings", h.GetSettings)
-		mux.HandleFunc("GET /api/admin/v1/settings", h.GetSettings)
+	mux.HandleFunc("GET /api/admin/v1/settings", h.GetSettings)
 	mux.HandleFunc("PATCH /api/admin/v1/settings", h.UpdateSettings)
 
 	// v1.6 Action API
@@ -176,8 +176,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/routes", h.AdminListRoutes)
 	mux.HandleFunc("GET /api/admin/v1/edge-rules", h.AdminListEdgeRules)
 	mux.HandleFunc("GET /api/admin/v1/services", h.AdminListServices)
-		mux.HandleFunc("GET /api/admin/v1/services/{id}/endpoints", h.ListEndpoints)
-		mux.HandleFunc("GET /api/admin/v1/services/{id}", h.AdminGetService)
+	mux.HandleFunc("GET /api/admin/v1/services/{id}/endpoints", h.ListEndpoints)
+	mux.HandleFunc("GET /api/admin/v1/services/{id}", h.AdminGetService)
 	mux.HandleFunc("GET /api/admin/v1/scopes", h.AdminListScopes)
 	mux.HandleFunc("POST /api/admin/v1/scopes", h.AdminCreateSpace)
 	mux.HandleFunc("GET /api/admin/v1/operations", h.AdminListOperations)
@@ -194,7 +194,6 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/refresh-capabilities", h.RefreshNodeCapabilities)
 
 	// v1.7 Gateway Abstraction (read-only consolidated views)
-
 
 	// v1.7S Provider Diagnostics
 	mux.HandleFunc("GET /api/admin/v1/providers", h.ListProviders)
@@ -222,8 +221,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// Node API (no admin auth — uses node credential auth)
 
 	// Admin Node Deploy (one-click remote setup)
-		mux.HandleFunc("POST /api/admin/v1/nodes/preflight", h.AdminDeployPreflight)
-		mux.HandleFunc("POST /api/admin/v1/nodes/join", h.AdminJoinNode)
+	mux.HandleFunc("POST /api/admin/v1/nodes/preflight", h.AdminDeployPreflight)
+	mux.HandleFunc("POST /api/admin/v1/nodes/join", h.AdminJoinNode)
 	mux.HandleFunc("POST /api/admin/v1/nodes/deploy", h.AdminDeployNode)
 
 	// Admin Node Join Tokens
@@ -259,6 +258,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		// aggregate/RPC failed with "unknown method". Sets h.proxyMux = mux.
 		handlers.RegisterAegisTransportHandlers(h.DistNode, h, mux)
 	}
+	mux.HandleFunc("POST /api/transparent/v1/tunnel", h.TransparentTunnel)
 
 	// Admin Gateway Inventory
 
@@ -332,7 +332,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("GET /api/service-auth/v1/sync", h.ServiceAuthSync)
 		mux.HandleFunc("POST /api/service-auth/v1/report", h.ServiceAuthReport)
 		mux.HandleFunc("POST /api/service-auth/v1/heartbeat", h.ServiceAuthHeartbeat)
-			mux.HandleFunc("POST /api/service-auth/v1/call", h.ServiceAuthCall)
+		mux.HandleFunc("POST /api/service-auth/v1/call", h.ServiceAuthCall)
 		mux.HandleFunc("GET /api/service-auth/v1/services", h.ServiceAuthScopedServices)
 
 		mux.HandleFunc("GET /api/admin/v1/service-auth/services", h.AdminListServiceAuthServices)
@@ -360,9 +360,9 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// v1.9C Certificate store — user-uploaded TLS certificates
 	if svcs.CertStore != nil {
 		mux.HandleFunc("GET /api/admin/v1/certificates", h.AdminListCertificates)
-			mux.HandleFunc("GET /api/admin/v1/certificates/auto", h.AdminListAutoCertificates)
-			mux.HandleFunc("GET /api/admin/v1/certificates/expiry", h.AdminCheckCertExpiry)
-			mux.HandleFunc("POST /api/admin/v1/certificates/{id}/renew", h.AdminRenewCert)
+		mux.HandleFunc("GET /api/admin/v1/certificates/auto", h.AdminListAutoCertificates)
+		mux.HandleFunc("GET /api/admin/v1/certificates/expiry", h.AdminCheckCertExpiry)
+		mux.HandleFunc("POST /api/admin/v1/certificates/{id}/renew", h.AdminRenewCert)
 		mux.HandleFunc("POST /api/admin/v1/certificates", h.AdminUploadCertificate)
 		mux.HandleFunc("DELETE /api/admin/v1/certificates/{id}", h.AdminDeleteCertificate)
 		// ACME endpoints

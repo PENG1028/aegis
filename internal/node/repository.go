@@ -109,6 +109,44 @@ func (r *Repository) Create(n *NodeRecord) error {
 	return nil
 }
 
+// UpsertByNodeID inserts or updates a node using the stable logical node_id.
+// Local leadership/current flags are preserved for existing rows so a peer
+// catalog cannot accidentally demote the current machine.
+func (r *Repository) UpsertByNodeID(n *NodeRecord) error {
+	if n == nil || n.NodeID == "" {
+		return nil
+	}
+	now := time.Now()
+	if n.LastSeen.IsZero() {
+		n.LastSeen = now
+	}
+	if n.CreatedAt.IsZero() {
+		n.CreatedAt = now
+	}
+	if n.UpdatedAt.IsZero() {
+		n.UpdatedAt = now
+	}
+
+	existing, err := r.FindByNodeID(n.NodeID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return r.Create(n)
+	}
+
+	n.ID = existing.ID
+	n.IsCurrent = existing.IsCurrent
+	n.IsLeader = existing.IsLeader
+	if !existing.LeaderElectedAt.IsZero() {
+		n.LeaderElectedAt = existing.LeaderElectedAt
+	}
+	if !existing.CreatedAt.IsZero() {
+		n.CreatedAt = existing.CreatedAt
+	}
+	return r.Update(n)
+}
+
 // FindCurrent returns the current node record.
 func (r *Repository) FindCurrent() (*NodeRecord, error) {
 	var n NodeRecord

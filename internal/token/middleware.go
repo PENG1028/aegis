@@ -63,6 +63,9 @@ func isPublicPath(path, method string) bool {
 	if strings.HasPrefix(path, "/api/distnode/v1/") {
 		return true
 	}
+	if strings.HasPrefix(path, "/api/transparent/v1/") {
+		return true
+	}
 	if strings.HasPrefix(path, "/__aegis/") {
 		return true
 	}
@@ -147,7 +150,6 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 				}
 			}
 		}
-
 
 		logAuditEvent("service_key", "", "unauthorized_access", r, "", "missing_token", "failed", "UNAUTHORIZED")
 		writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid auth")

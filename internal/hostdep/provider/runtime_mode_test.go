@@ -6,6 +6,12 @@ func healthyState(id string) ProviderState {
 	return ProviderState{ID: id, Status: "ready", Installed: true, Running: true}
 }
 
+func healthyCaddyState() ProviderState {
+	s := healthyState("caddy")
+	s.Capabilities = caddyCapabilities()
+	return s
+}
+
 func TestDetectRuntimeMode_PrefersRicherMode(t *testing.T) {
 	// When BOTH Legacy AND EdgeMux are satisfied, EdgeMux should win because
 	// it has more providers (2 vs 1). This verifies the "richer mode" design,
@@ -49,4 +55,20 @@ func TestDetectRuntimeMode_EdgeMuxNotSatisfied(t *testing.T) {
 	if got.ID != RuntimeModeLegacy.ID {
 		t.Fatalf("HAProxy unhealthy → expected Legacy, got %s", got.ID)
 	}
+}
+
+func TestCompositionEvalStatus_AvailableWhenProviderInstalledAndRunning(t *testing.T) {
+	mode := RuntimeModeLegacy
+	mode.EvalAllCompositions([]ProviderState{healthyCaddyState()})
+
+	for _, comp := range mode.Compositions {
+		if comp.Name == "HTTP Route" {
+			if comp.Status != CompAvailable {
+				t.Fatalf("HTTP Route status = %q, want %q", comp.Status, CompAvailable)
+			}
+			return
+		}
+	}
+
+	t.Fatal("HTTP Route composition not found")
 }

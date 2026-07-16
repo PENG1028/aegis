@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,27 +14,27 @@ import (
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
 	"aegis/internal/apply"
+	"aegis/internal/certstore"
 	"aegis/internal/cluster"
 	"aegis/internal/config"
+	"aegis/internal/core"
 	"aegis/internal/credential"
+	"aegis/internal/distnode"
 	"aegis/internal/dns"
 	"aegis/internal/edgemux"
-	"aegis/internal/distnode"
-	"aegis/internal/httpapi/handlers"
-	"aegis/internal/certstore"
 	"aegis/internal/egress"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
 	"aegis/internal/gateway"
 	"aegis/internal/health"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/httpapi"
-	"aegis/internal/core"
+	"aegis/internal/httpapi/handlers"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
 	"aegis/internal/node"
 	"aegis/internal/project"
-	"aegis/internal/hostdep/provider"
 	"aegis/internal/route"
 	"aegis/internal/routingpolicy"
 	"aegis/internal/routingtable"
@@ -66,6 +67,10 @@ var (
 )
 
 func main() {
+	if handled := handleLightweightCommand(os.Args[1:]); handled {
+		return
+	}
+
 	configPath := ""
 	for i, arg := range os.Args {
 		if arg == "--config" && i+1 < len(os.Args) {
@@ -243,7 +248,7 @@ func main() {
 	})
 	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc, certStoreSvc)
 
-		applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
+	applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 
 	adminUserRepo := adminauth.NewAdminUserRepository(db)
 	adminSessionRepo := adminauth.NewAdminSessionRepository(db)
@@ -276,6 +281,7 @@ func main() {
 	routingTableSvc := routingtable.NewService()
 
 	transparentMgr := transparent.NewManager()
+	transparentMgr.SetTunnelSecret(cfg.DistNode.Secret)
 	defer transparentMgr.Shutdown()
 	if currentNode, err := nodeRepo.FindCurrent(); err == nil && currentNode != nil {
 		transparentMgr.SetCurrentNodeID(currentNode.NodeID)
@@ -287,11 +293,19 @@ func main() {
 	dsHook := &desiredStateHook{
 		gen:            nil,
 		transparentMgr: transparentMgr,
+		endpointRepo:   endpointRepo,
 		nodeRepo:       nodeRepo,
 	}
+	workflow.SetPlanAppliedHook(func(plan *topology.TopologyPlan) {
+		if plan == nil || plan.ForwardTarget == nil {
+			return
+		}
+		transparentMgr.SetForwardTarget(plan.ForwardTarget.Host, plan.ForwardTarget.Port)
+	})
 	routeSvc.SetMutationHook(dsHook)
 	serviceSvc.SetMutationHook(dsHook)
 	endpointSvc.SetMutationHook(dsHook)
+	dsHook.syncTransparentRules()
 
 	token.SetAuditLogger(logSvc)
 	adminauth.SetAuditLogger(logSvc)
@@ -299,8 +313,8 @@ func main() {
 	// --- Service Auth (v1.9A) ---
 	serviceAuthRepo := serviceauth.NewRepository(db)
 	serviceAuthSvc, err := serviceauth.NewService(serviceauth.Dependencies{
-		Repo:        serviceAuthRepo,
-		
+		Repo: serviceAuthRepo,
+
 		NodeChecker: serviceauthaegis.NewNodeCheckerAdapter(nodeRepo),
 		LogWriter:   serviceauthaegis.NewLogWriterAdapter(logSvc),
 		IDGen:       func() string { return core.NewID("sa") },
@@ -310,76 +324,76 @@ func main() {
 		fmt.Fprintf(os.Stderr, "warning: service auth init failed: %v\n", err)
 	} else {
 		token.SetServiceAuthChecker(serviceAuthSvc)
-			actionSvc.SetCallReporter(func(ctx context.Context, caller, target, api string, allowed bool, latencyMs int, errMsg string) error {
-					return serviceAuthSvc.Report(ctx, serviceauth.ReportRequest{
-						CallerService: caller,
-						TargetService: target,
-						TargetAPI:     api,
-						Allowed:       allowed,
-						LatencyMs:     latencyMs,
-						ErrorMsg:      errMsg,
-					})
-				})
+		actionSvc.SetCallReporter(func(ctx context.Context, caller, target, api string, allowed bool, latencyMs int, errMsg string) error {
+			return serviceAuthSvc.Report(ctx, serviceauth.ReportRequest{
+				CallerService: caller,
+				TargetService: target,
+				TargetAPI:     api,
+				Allowed:       allowed,
+				LatencyMs:     latencyMs,
+				ErrorMsg:      errMsg,
+			})
+		})
 
-			// Aegis self-registration with persistent key
-			go func() {
-				ctx := context.Background()
-				const aegisName = "aegis-gateway"
-				instanceID := "aegis-" + core.NewID("id")[3:]
+		// Aegis self-registration with persistent key
+		go func() {
+			ctx := context.Background()
+			const aegisName = "aegis-gateway"
+			instanceID := "aegis-" + core.NewID("id")[3:]
 
-				// Load or generate persistent Ed25519 key at /var/lib/aegis/keys/
-				keyDir := "/var/lib/aegis/keys"
-				keyPath := filepath.Join(keyDir, aegisName+".key")
-				os.MkdirAll(keyDir, 0700)
+			// Load or generate persistent Ed25519 key at /var/lib/aegis/keys/
+			keyDir := "/var/lib/aegis/keys"
+			keyPath := filepath.Join(keyDir, aegisName+".key")
+			os.MkdirAll(keyDir, 0700)
 
-				privKeyB64 := ""
-				if data, err := os.ReadFile(keyPath); err == nil && len(data) > 0 {
-					privKeyB64 = string(data)
-				}
-				var pubKey string
-				if privKeyB64 != "" {
-					privBytes, err := base64.StdEncoding.DecodeString(privKeyB64)
-					if err == nil {
-						priv := ed25519.PrivateKey(privBytes)
-						pub := priv.Public().(ed25519.PublicKey)
-						pubKey = base64.StdEncoding.EncodeToString(pub)
-					}
-				}
-				if pubKey == "" {
-					pub, priv, err := ed25519.GenerateKey(nil)
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "warning: aegis self-registration key generation failed: %v\n", err)
-						return
-					}
+			privKeyB64 := ""
+			if data, err := os.ReadFile(keyPath); err == nil && len(data) > 0 {
+				privKeyB64 = string(data)
+			}
+			var pubKey string
+			if privKeyB64 != "" {
+				privBytes, err := base64.StdEncoding.DecodeString(privKeyB64)
+				if err == nil {
+					priv := ed25519.PrivateKey(privBytes)
+					pub := priv.Public().(ed25519.PublicKey)
 					pubKey = base64.StdEncoding.EncodeToString(pub)
-					privKeyB64 = base64.StdEncoding.EncodeToString(priv)
-					os.WriteFile(keyPath, []byte(privKeyB64), 0600)
 				}
-
-				_, err := serviceAuthSvc.Register(ctx, serviceauth.RegisterRequest{
-					ServiceName: aegisName,
-					PublicKey:   pubKey,
-					InstanceID:  instanceID,
-				}, "127.0.0.1")
+			}
+			if pubKey == "" {
+				pub, priv, err := ed25519.GenerateKey(nil)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "warning: aegis self-registration failed: %v\n", err)
+					fmt.Fprintf(os.Stderr, "warning: aegis self-registration key generation failed: %v\n", err)
 					return
 				}
-				fmt.Fprintf(os.Stderr, "info: aegis self-registered as %s (%s) key=%s\n", aegisName, instanceID, keyPath)
+				pubKey = base64.StdEncoding.EncodeToString(pub)
+				privKeyB64 = base64.StdEncoding.EncodeToString(priv)
+				os.WriteFile(keyPath, []byte(privKeyB64), 0600)
+			}
 
-				ticker := time.NewTicker(30 * time.Second)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-ticker.C:
-						if err := serviceAuthSvc.Heartbeat(ctx, aegisName, instanceID); err != nil {
-							fmt.Fprintf(os.Stderr, "warning: aegis heartbeat: %v\n", err)
-						}
-					case <-ctx.Done():
-						return
+			_, err := serviceAuthSvc.Register(ctx, serviceauth.RegisterRequest{
+				ServiceName: aegisName,
+				PublicKey:   pubKey,
+				InstanceID:  instanceID,
+			}, "127.0.0.1")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: aegis self-registration failed: %v\n", err)
+				return
+			}
+			fmt.Fprintf(os.Stderr, "info: aegis self-registered as %s (%s) key=%s\n", aegisName, instanceID, keyPath)
+
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if err := serviceAuthSvc.Heartbeat(ctx, aegisName, instanceID); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: aegis heartbeat: %v\n", err)
 					}
+				case <-ctx.Done():
+					return
 				}
-			}() // bridge: Ticket → ActionContext
+			}
+		}() // bridge: Ticket → ActionContext
 	}
 	traceSvc := trace.NewService(trace.Dependencies{
 		RouteRepo:       routeRepo,
@@ -422,7 +436,6 @@ func main() {
 		}
 	}
 
-
 	// v1.9B: Distributed Node Runtime
 	var dn *distnode.DistNode
 	if cfg.DistNode.Enabled {
@@ -439,70 +452,73 @@ func main() {
 		handlers.RegisterDistNodeHandlers(dn)
 		fmt.Fprintf(os.Stderr, "info: distnode enabled - id=%s addr=%s peers=%d\n", dn.ID, distCfg.Addr, len(distCfg.Peers))
 
-			// Auto-register discovered peers in the nodes table so they appear in UI.
-			dn.Membership.OnEvent(func(evt distnode.PeerEvent) {
-				switch evt.Type {
-				case distnode.EventPeerAlive:
-					nodeRepo.Create(&node.NodeRecord{
-						NodeID:    evt.Peer.Info.ID,
-						PublicIP:  evt.Peer.Info.Addr,
-						Role:      "worker",
-						Status:    "online",
-						LastSeen:  time.Now(),
-						CreatedAt: time.Now(),
-						UpdatedAt: time.Now(),
-					})
-				case distnode.EventPeerDead:
-					nodeRepo.UpdateHeartbeat(evt.Peer.Info.ID, "offline", "", "", "", "", "", time.Now())
-				}
-			})
+		// Pull the stable service catalog from alive peers. Membership-only peers are
+		// already merged for UI display; persisted nodes should use stable node_id values.
+		dn.Membership.OnEvent(func(evt distnode.PeerEvent) {
+			switch evt.Type {
+			case distnode.EventPeerAlive:
+				go func(peerID string) {
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					if err := syncClusterCatalogFromPeer(ctx, dn, peerID, nodeRepo, serviceRepo, endpointRepo); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: sync catalog from peer %s failed: %v\n", peerID, err)
+						return
+					}
+					fmt.Fprintf(os.Stderr, "info: synced catalog from peer %s\n", peerID)
+					dsHook.syncTransparentRules()
+				}(evt.Peer.Info.ID)
+			case distnode.EventPeerDead:
+				nodeRepo.UpdateHeartbeat(evt.Peer.Info.ID, "offline", "", "", "", "", "", time.Now())
+			}
+		})
 
 		go dn.Start(context.Background())
+		go syncClusterCatalogFromAlivePeers(context.Background(), dn, nodeRepo, serviceRepo, endpointRepo, dsHook, 5, 3*time.Second)
 	} else {
 		fmt.Fprintf(os.Stderr, "info: distnode disabled\n")
 	}
-httpSvcs := &httpapi.Services{
-		DB:               db,
-		Config:           cfg,
-		Project:          projectSvc,
-		Service:          serviceSvc,
-		EndpointRepo:     endpointRepo,
-		EndpointSvc:      endpointSvc,
-		Route:            routeSvc,
-		ManagedDomain:    mdSvc,
-		Exposure:         exposureSvc,
-		Apply:            applySvc,
-		Workflow:         workflow,
-		Health:           healthSvc,
-		Logs:             logSvc,
-		Auth:             authMiddleware,
-		Action:           actionSvc,
-		Space:            spaceSvc,
-		AdminAuth:        adminAuthSvc,
-		EdgeSvc:          edgeSvc,
-		ListenerSvc:      listenerSvc,
-		NodeRepo:         nodeRepo,
-		NodeSvc:          nodeSvc,
-		GatewayInvRepo:   gatewayInvRepo,
-		GatewayInvSvc:    gatewayInvSvc,
-		TopologySvc:      topologySvc,
-		PolicySvc:        routingPolicySvc,
-		RoutingTableSvc:  routingTableSvc,
-		PendingState:     pendingState,
-		TraceSvc:         traceSvc,
-		GatewayLinkSvc:   gwLinkSvc,
-		SafetySvc:        safetySvc,
-		RelaySvc:         relaySvc,
-		DNSMgmt:        dnsMgmt,
-		TransparentMgr: transparentMgr,
-		CredentialSvc:  credSvc,
-		ServiceAuthSvc: serviceAuthSvc,
+	httpSvcs := &httpapi.Services{
+		DB:              db,
+		Config:          cfg,
+		Project:         projectSvc,
+		Service:         serviceSvc,
+		EndpointRepo:    endpointRepo,
+		EndpointSvc:     endpointSvc,
+		Route:           routeSvc,
+		ManagedDomain:   mdSvc,
+		Exposure:        exposureSvc,
+		Apply:           applySvc,
+		Workflow:        workflow,
+		Health:          healthSvc,
+		Logs:            logSvc,
+		Auth:            authMiddleware,
+		Action:          actionSvc,
+		Space:           spaceSvc,
+		AdminAuth:       adminAuthSvc,
+		EdgeSvc:         edgeSvc,
+		ListenerSvc:     listenerSvc,
+		NodeRepo:        nodeRepo,
+		NodeSvc:         nodeSvc,
+		GatewayInvRepo:  gatewayInvRepo,
+		GatewayInvSvc:   gatewayInvSvc,
+		TopologySvc:     topologySvc,
+		PolicySvc:       routingPolicySvc,
+		RoutingTableSvc: routingTableSvc,
+		PendingState:    pendingState,
+		TraceSvc:        traceSvc,
+		GatewayLinkSvc:  gwLinkSvc,
+		SafetySvc:       safetySvc,
+		RelaySvc:        relaySvc,
+		DNSMgmt:         dnsMgmt,
+		TransparentMgr:  transparentMgr,
+		CredentialSvc:   credSvc,
+		ServiceAuthSvc:  serviceAuthSvc,
 		EgressSvc:       egressSvc,
 		CertStore:       certStoreSvc,
 		ACMEClient:      acmeClient,
-		ProvReg:        provRegistry,
-		Version:        Version,
-		BuildTime:      BuildTime,
+		ProvReg:         provRegistry,
+		Version:         Version,
+		BuildTime:       BuildTime,
 		DistNode:        dn,
 		OnShutdown: func() {
 			fmt.Fprintf(os.Stderr, "stopping subsystems...\n")
@@ -548,6 +564,156 @@ httpSvcs := &httpapi.Services{
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func handleLightweightCommand(args []string) bool {
+	filtered := stripConfigArgs(args)
+	if len(filtered) == 0 {
+		return false
+	}
+	if len(filtered) == 1 && filtered[0] == "version" {
+		fmt.Printf("Aegis %s (built %s)\n", Version, BuildTime)
+		return true
+	}
+	if isHelpRequest(filtered) {
+		executeLightweightHelp(filtered)
+		return true
+	}
+	return false
+}
+
+func isHelpRequest(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	if args[0] == "help" {
+		return true
+	}
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" || arg == "help" {
+			return true
+		}
+	}
+	return false
+}
+
+func executeLightweightHelp(args []string) {
+	rootCmd := cli.NewRootCommand(&cli.Services{
+		Config:       config.DefaultConfig(),
+		HTTPServices: &httpapi.Services{},
+		Version:      Version,
+		BuildTime:    BuildTime,
+	})
+	rootCmd.SetArgs(args)
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func stripConfigArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--config" {
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--config=") {
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
+func transparentEdgeAddr(n *node.NodeRecord) string {
+	if n == nil || n.PublicIP == "" {
+		return ""
+	}
+	if host, port, err := net.SplitHostPort(n.PublicIP); err == nil && host != "" && port != "" {
+		return net.JoinHostPort(host, port)
+	}
+	return net.JoinHostPort(n.PublicIP, "80")
+}
+
+type clusterCatalog struct {
+	Nodes     []node.NodeRecord   `json:"nodes"`
+	Services  []service.Service   `json:"services"`
+	Endpoints []endpoint.Endpoint `json:"endpoints"`
+}
+
+func syncClusterCatalogFromPeer(ctx context.Context, dn *distnode.DistNode, peerID string, nodeRepo *node.Repository, serviceRepo *service.Repository, endpointRepo *endpoint.Repository) error {
+	if dn == nil || peerID == "" {
+		return nil
+	}
+
+	var catalog clusterCatalog
+	if err := dn.Transport.Call(ctx, peerID, "Aegis.ClusterCatalog", nil, &catalog); err != nil {
+		return err
+	}
+
+	for i := range catalog.Nodes {
+		n := catalog.Nodes[i]
+		if n.NodeID == "" || !strings.HasPrefix(n.NodeID, "node_") {
+			continue
+		}
+		n.IsCurrent = false
+		n.IsLeader = false
+		if err := nodeRepo.UpsertByNodeID(&n); err != nil {
+			return fmt.Errorf("upsert node %s: %w", n.NodeID, err)
+		}
+	}
+	for i := range catalog.Services {
+		s := catalog.Services[i]
+		if err := serviceRepo.Upsert(&s); err != nil {
+			return fmt.Errorf("upsert service %s: %w", s.ID, err)
+		}
+	}
+	for i := range catalog.Endpoints {
+		ep := catalog.Endpoints[i]
+		if ep.ServiceID == "" {
+			continue
+		}
+		if err := endpointRepo.Upsert(&ep); err != nil {
+			return fmt.Errorf("upsert endpoint %s: %w", ep.ID, err)
+		}
+	}
+	return nil
+}
+
+func syncClusterCatalogFromAlivePeers(ctx context.Context, dn *distnode.DistNode, nodeRepo *node.Repository, serviceRepo *service.Repository, endpointRepo *endpoint.Repository, dsHook *desiredStateHook, attempts int, interval time.Duration) {
+	if dn == nil || attempts <= 0 {
+		return
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(interval):
+			case <-ctx.Done():
+				return
+			}
+		}
+
+		synced := false
+		for _, peer := range dn.Membership.AlivePeers() {
+			if peer == nil || peer.Info.ID == "" {
+				continue
+			}
+			callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err := syncClusterCatalogFromPeer(callCtx, dn, peer.Info.ID, nodeRepo, serviceRepo, endpointRepo)
+			cancel()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: startup catalog sync from peer %s failed: %v\n", peer.Info.ID, err)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "info: startup catalog synced from peer %s\n", peer.Info.ID)
+			synced = true
+		}
+		if synced && dsHook != nil {
+			dsHook.syncTransparentRules()
+		}
 	}
 }
 
@@ -648,6 +814,7 @@ func (h *desiredStateHook) syncTransparentRules() {
 				OriginalPort:    port,
 				TargetServiceID: ep.ServiceID,
 				TargetNodeID:    ep.NodeID,
+				TargetEdgeAddr:  transparentEdgeAddr(targetNode),
 				Description:     fmt.Sprintf("%s → %s:%d", ep.ID, ip, port),
 			}
 		}

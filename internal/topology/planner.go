@@ -158,13 +158,13 @@ func (p *Planner) collectIntents() ([]RouteIntent, []string, error) {
 		}
 
 		ri := RouteIntent{
-			Domain:      rt.Domain,
-			Port:        compDef.Port,
-			Transport:   compDef.Transport,
-			TLSMode:     compDef.TLSMode,
-			Path:        rt.PathPrefix,
-			AppProtocol: compDef.AppProtocol,
-			Composition: rt.Composition,
+			Domain:             rt.Domain,
+			Port:               compDef.Port,
+			Transport:          compDef.Transport,
+			TLSMode:            compDef.TLSMode,
+			Path:               rt.PathPrefix,
+			AppProtocol:        compDef.AppProtocol,
+			Composition:        rt.Composition,
 			StripPathPrefix:    rt.StripPrefix,
 			MaintenanceEnabled: rt.MaintenanceEnabled,
 			MaintenanceMessage: rt.MaintenanceMessage,
@@ -388,12 +388,13 @@ func (p *Planner) injectControlPlaneRoute(plan *TopologyPlan, healthy []provider
 		AppProtocol: "http",
 		Match: provider.MatchSpec{
 			Host: "http://", // HTTP catch-all — matches raw-IP Host from distnode
-			Path: "/api",     // renderer wildcards to /api/* (healthz + distnode RPC)
+			Path: "/api",    // renderer wildcards to /api/* (healthz + distnode RPC)
 		},
 		Upstream: provider.UpstreamSpec{
 			Type:   "http",
 			Target: fmt.Sprintf("http://127.0.0.1:%d", p.deps.ControlPort),
 		},
+		Priority: provider.RoutePriorityControlPlane,
 	})
 	plan.Plans[targetID] = pl
 }

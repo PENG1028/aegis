@@ -38,6 +38,31 @@ func (r *Repository) Create(ep *Endpoint) error {
 	return nil
 }
 
+// Upsert inserts or updates an endpoint by its stable endpoint ID.
+func (r *Repository) Upsert(ep *Endpoint) error {
+	if ep == nil || ep.ID == "" {
+		return nil
+	}
+	now := time.Now()
+	if ep.CreatedAt.IsZero() {
+		ep.CreatedAt = now
+	}
+	if ep.UpdatedAt.IsZero() {
+		ep.UpdatedAt = now
+	}
+	existing, err := r.FindByID(ep.ID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return r.Create(ep)
+	}
+	if !existing.CreatedAt.IsZero() {
+		ep.CreatedAt = existing.CreatedAt
+	}
+	return r.Update(ep)
+}
+
 // FindByID returns an endpoint by ID.
 func (r *Repository) FindByID(id string) (*Endpoint, error) {
 	return scanEndpointRow(r.DB.QueryRow(
@@ -98,8 +123,8 @@ func (r *Repository) Update(ep *Endpoint) error {
 		enabledVal = 1
 	}
 	_, err := r.DB.Exec(
-		`UPDATE endpoints SET type=?, address=?, enabled=?, node_id=?, updated_at=? WHERE id=?`,
-		ep.Type, ep.Address, enabledVal, ep.NodeID,
+		`UPDATE endpoints SET service_id=?, type=?, address=?, enabled=?, node_id=?, updated_at=? WHERE id=?`,
+		ep.ServiceID, ep.Type, ep.Address, enabledVal, ep.NodeID,
 		ep.UpdatedAt.Format(time.RFC3339), ep.ID)
 	if err != nil {
 		return fmt.Errorf("update endpoint: %w", err)

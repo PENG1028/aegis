@@ -8,17 +8,17 @@ import (
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
+	"aegis/internal/gateway"
 	"aegis/internal/health"
-	"aegis/internal/listener"
 	"aegis/internal/httpapi"
-	"aegis/internal/node"
+	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
+	"aegis/internal/node"
 	"aegis/internal/project"
 	"aegis/internal/route"
-	"aegis/internal/service"
 	"aegis/internal/safety"
-"aegis/internal/gateway"
+	"aegis/internal/service"
 	"aegis/internal/smoke"
 	"aegis/internal/space"
 	"aegis/internal/trace"
@@ -30,37 +30,39 @@ import (
 
 // Services holds all application services for CLI commands.
 type Services struct {
-	Config        *config.Config
-	Project       *project.AppService
-	Service       *service.AppService
-	Route         *route.AppService
-	EndpointRepo  *endpoint.Repository
-	EndpointSvc   *endpoint.AppService
-	ManagedDomain *manageddomain.AppService
-	Exposure      *exposure.AppService
-	ListenerSvc   *listener.Service
-	EdgeSvc       *edgemux.AppService
-	LeaderSvc     *cluster.LeaderService
-	NodeRepo      *node.Repository
-	StateVer      *cluster.StateVersion
-	DB            *sql.DB
-	Apply         *apply.AppService
-	Health        *health.AppService
-	Logs          logs.Logger
-	Action        *action.ActionService
-	Space         *space.AppService
-	HTTPServices  *httpapi.Services
-	PendingState  *cluster.PendingState
-	TraceSvc      *trace.Service
-	SafetySvc     *safety.Service
-RelaySvc       *gateway.Resolver        // v1.8B
-TransparentMgr *transparent.Manager   // v1.8H
-	Version        string                // build-injected version
-	BuildTime      string                // build-injected timestamp
+	Config         *config.Config
+	Project        *project.AppService
+	Service        *service.AppService
+	Route          *route.AppService
+	EndpointRepo   *endpoint.Repository
+	EndpointSvc    *endpoint.AppService
+	ManagedDomain  *manageddomain.AppService
+	Exposure       *exposure.AppService
+	ListenerSvc    *listener.Service
+	EdgeSvc        *edgemux.AppService
+	LeaderSvc      *cluster.LeaderService
+	NodeRepo       *node.Repository
+	StateVer       *cluster.StateVersion
+	DB             *sql.DB
+	Apply          *apply.AppService
+	Health         *health.AppService
+	Logs           logs.Logger
+	Action         *action.ActionService
+	Space          *space.AppService
+	HTTPServices   *httpapi.Services
+	PendingState   *cluster.PendingState
+	TraceSvc       *trace.Service
+	SafetySvc      *safety.Service
+	RelaySvc       *gateway.Resolver    // v1.8B
+	TransparentMgr *transparent.Manager // v1.8H
+	Version        string               // build-injected version
+	BuildTime      string               // build-injected timestamp
 }
 
 // NewRootCommand creates the root aegis CLI command.
 func NewRootCommand(svcs *Services) *cobra.Command {
+	var configPath string
+
 	cmd := &cobra.Command{
 		Use:   "aegis",
 		Short: "Aegis - Infrastructure Gateway Control",
@@ -69,13 +71,15 @@ It handles Projects, Services, Endpoints, Routes, Managed Domains,
 and safely applies configuration to Caddy (or Nginx in the future).
 
 v1.8K — Production-hardened gateway control with HTTP API.`,
-			SilenceUsage:  true,
-			SilenceErrors: true,
-		}
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
 
-		// Register subcommands
-		cmd.AddCommand(newVersionCommand(svcs.Version, svcs.BuildTime))
-		cmd.AddCommand(newInitCommand())
+	cmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to config file")
+
+	// Register subcommands
+	cmd.AddCommand(newVersionCommand(svcs.Version, svcs.BuildTime))
+	cmd.AddCommand(newInitCommand())
 	cmd.AddCommand(newBootstrapCommand(svcs.Config, svcs.ListenerSvc))
 	cmd.AddCommand(newDoctorCommand(svcs.Config, svcs.ListenerSvc))
 	cmd.AddCommand(newSnapshotCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc, svcs.LeaderSvc, svcs.NodeRepo, svcs.StateVer))
@@ -110,7 +114,7 @@ v1.8K — Production-hardened gateway control with HTTP API.`,
 		cmd.AddCommand(newServeCommand(svcs.Config, svcs.HTTPServices))
 		if svcs.HTTPServices.TraceSvc != nil {
 			cmd.AddCommand(newTraceCommand(svcs.HTTPServices.TraceSvc))
-	}
+		}
 	}
 
 	// Trace from svcs directly (for CLI use without serve)
@@ -123,11 +127,10 @@ v1.8K — Production-hardened gateway control with HTTP API.`,
 		cmd.AddCommand(newSafetyCommand(svcs.SafetySvc))
 	}
 
-		// Relay commands
+	// Relay commands
 	if svcs.RelaySvc != nil {
 		cmd.AddCommand(newRelayCommand(svcs.RelaySvc))
 	}
-	
 
 	// Smoke commands
 	smokeSvc := buildSmokeService(svcs)

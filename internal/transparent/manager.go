@@ -12,18 +12,19 @@ import (
 // Manager manages transparent interception rules + proxy lifecycle.
 // Coordinates iptables DNAT rules with local transparent proxy instances.
 type Manager struct {
-	iptables   *iptablesManager
-	proxies    map[string]*TransparentProxy // keyed by rule ID
-	rulesByID  map[string]RedirectRule      // full rule state for ListStatus
-	mu         sync.Mutex
+	iptables  *iptablesManager
+	proxies   map[string]*TransparentProxy // keyed by rule ID
+	rulesByID map[string]RedirectRule      // full rule state for ListStatus
+	mu        sync.Mutex
 
 	currentNodeID string // set via SetCurrentNodeID, used to decide local vs cross-node
 
 	// ForwardTarget is the host:port where cross-node intercepted traffic
 	// is forwarded. Set by the topology Planner based on available providers.
 	// Defaults to 127.0.0.1:80 (Caddy) if not explicitly set.
-	forwardHost string
-	forwardPort int
+	forwardHost  string
+	forwardPort  int
+	tunnelSecret string
 
 	portStart int
 	portEnd   int
@@ -64,6 +65,13 @@ func (m *Manager) SetForwardTarget(host string, port int) {
 	defer m.mu.Unlock()
 	m.forwardHost = host
 	m.forwardPort = port
+}
+
+// SetTunnelSecret sets the shared secret used for cross-node transparent tunnels.
+func (m *Manager) SetTunnelSecret(secret string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tunnelSecret = secret
 }
 
 // StartRedirect begins transparent interception for the given rule:
@@ -121,11 +129,22 @@ func (m *Manager) StartRedirect(rule RedirectRule) error {
 		log.Printf("[transparent] %s: cross-node → forwarding via %s:%d", rule.ID, targetHost, targetPort)
 	}
 
+	var tunnel *TunnelConfig
+	if isCrossNode && rule.TargetEdgeAddr != "" && m.tunnelSecret != "" {
+		tunnel = &TunnelConfig{
+			EdgeAddr: rule.TargetEdgeAddr,
+			Secret:   m.tunnelSecret,
+			Rule:     rule,
+		}
+		log.Printf("[transparent] %s: cross-node tunnel via %s", rule.ID, rule.TargetEdgeAddr)
+	}
+
 	proxy := NewProxy(ProxyConfig{
 		ID:         rule.ID,
 		ListenAddr: fmt.Sprintf("127.0.0.1:%d", rule.LocalProxyPort),
 		TargetHost: targetHost,
 		TargetPort: targetPort,
+		Tunnel:     tunnel,
 	})
 	if err := proxy.Start(); err != nil {
 		return fmt.Errorf("start proxy: %w", err)

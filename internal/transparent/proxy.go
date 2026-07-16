@@ -21,6 +21,7 @@ type TransparentProxy struct {
 	listenAddr string
 	targetHost string
 	targetPort int
+	tunnel     *TunnelConfig
 
 	listener  net.Listener
 	connCount int64
@@ -43,6 +44,7 @@ type ProxyConfig struct {
 	ListenAddr string // e.g. "127.0.0.1:19100" — where this proxy listens
 	TargetHost string // where to forward accepted connections
 	TargetPort int
+	Tunnel     *TunnelConfig
 }
 
 // NewProxy creates a transparent proxy. Call Start() to begin listening.
@@ -52,6 +54,7 @@ func NewProxy(cfg ProxyConfig) *TransparentProxy {
 		listenAddr: cfg.ListenAddr,
 		targetHost: cfg.TargetHost,
 		targetPort: cfg.TargetPort,
+		tunnel:     cfg.Tunnel,
 		stopCh:     make(chan struct{}),
 	}
 }
@@ -150,11 +153,9 @@ func (p *TransparentProxy) handleConn(clientConn net.Conn) {
 		}
 	}
 
-	backendConn, err := net.DialTimeout("tcp",
-		fmt.Sprintf("%s:%d", p.targetHost, p.targetPort), 5*time.Second)
+	backendConn, err := p.dialBackend()
 	if err != nil {
-		log.Printf("[transparent] %s: dial backend %s:%d: %v",
-			p.id, p.targetHost, p.targetPort, err)
+		log.Printf("[transparent] %s: dial backend: %v", p.id, err)
 		return
 	}
 	defer backendConn.Close()
@@ -176,4 +177,12 @@ func (p *TransparentProxy) handleConn(clientConn net.Conn) {
 	}()
 
 	wg.Wait()
+}
+
+func (p *TransparentProxy) dialBackend() (net.Conn, error) {
+	if p.tunnel != nil {
+		return dialTunnel(*p.tunnel)
+	}
+	return net.DialTimeout("tcp",
+		fmt.Sprintf("%s:%d", p.targetHost, p.targetPort), 5*time.Second)
 }
