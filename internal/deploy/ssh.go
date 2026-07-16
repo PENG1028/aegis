@@ -180,7 +180,7 @@ func (s *minimalSFTP) Create(remotePath string) (io.WriteCloser, error) {
 }
 
 func (s *minimalSFTP) Close() error {
-	return s.client.Close()
+	return nil
 }
 
 type scpWriter struct {
@@ -205,9 +205,12 @@ type nativeServiceManager struct {
 }
 
 func (m *nativeServiceManager) Install(ctx context.Context, name, unitContent string) *RunResult {
-	cmd := fmt.Sprintf("cat > /tmp/%s.service << 'AEGISUNIT'\n%s\nAEGISUNIT && sudo mv /tmp/%s.service /etc/systemd/system/%s.service && sudo systemctl daemon-reload && sudo systemctl enable %s",
+	return m.executor.Run(ctx, serviceInstallCommand(name, unitContent))
+}
+
+func serviceInstallCommand(name, unitContent string) string {
+	return fmt.Sprintf("cat > /tmp/%s.service << 'AEGISUNIT'\n%s\nAEGISUNIT\nsudo mv /tmp/%s.service /etc/systemd/system/%s.service && sudo systemctl daemon-reload && sudo systemctl enable %s",
 		name, unitContent, name, name, name)
-	return m.executor.Run(ctx, cmd)
 }
 
 func (m *nativeServiceManager) Start(ctx context.Context, name string) *RunResult {
