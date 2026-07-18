@@ -17,6 +17,7 @@ func (e *fakePreflightExecutor) Run(ctx context.Context, command string) *RunRes
 	}
 	if command == "sh /tmp/aegis-preflight.sh" {
 		return &RunResult{ExitCode: 0, Stdout: `{
+  "host": {"os":"linux","arch":"x86_64"},
   "aegis": {"found":true,"path":"/usr/local/bin/aegis","version":"aegis test","running":true,"service":"aegis"},
   "providers": {"haproxy":{"found":true,"path":"/usr/sbin/haproxy","version":"2.8","running":true,"service":"haproxy"}},
   "config": {"found":true,"path":"/etc/aegis/config.yaml"},
@@ -37,6 +38,9 @@ func TestPreflightConnectionUsesExistingConnection(t *testing.T) {
 
 	if report == nil || report.Aegis == nil || !report.Aegis.Found || !report.Aegis.Running {
 		t.Fatalf("unexpected aegis report: %#v", report)
+	}
+	if report.Host == nil || report.Host.OS != "linux" || report.Host.Arch != "x86_64" {
+		t.Fatalf("host = %#v, want linux/x86_64", report.Host)
 	}
 	if got := report.Providers["haproxy"]; got == nil || !got.Found {
 		t.Fatalf("haproxy provider not parsed: %#v", report.Providers)

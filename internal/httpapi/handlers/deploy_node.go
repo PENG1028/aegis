@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -387,12 +386,22 @@ func (h *Handlers) installAegisNodeConnected(ctx context.Context, req DeployNode
 	logf("  Directories ready")
 	out.AddStep("prepare_dirs", onboarding.StepOK, "directories ready")
 
-	logf("[4/8] Copying aegis binary...")
-	selfPath, err := os.Executable()
+	logf("[4/8] Resolving and copying aegis binary...")
+	report, err := deploy.PreflightConnection(ctx, conn)
 	if err != nil {
-		selfPath = "/usr/local/bin/aegis"
+		out.AddStep("preflight", onboarding.StepFailed, err.Error())
+		out.Message = "Target preflight failed: " + err.Error()
+		return out
 	}
-	result = conn.Files.CopyTo(ctx, selfPath, "/tmp/aegis")
+	artifact, err := newLocalAegisArtifactProvider().Resolve(report)
+	if err != nil {
+		out.AddStep("resolve_artifact", onboarding.StepFailed, err.Error())
+		out.Message = "Resolve artifact failed: " + err.Error()
+		return out
+	}
+	logf("  Artifact: %s (%s)", artifact.LocalPath, artifact.Source)
+	out.AddStep("resolve_artifact", onboarding.StepOK, artifact.Source)
+	result = conn.Files.CopyTo(ctx, artifact.LocalPath, "/tmp/aegis")
 	if result.Error != nil || result.ExitCode != 0 {
 		out.AddStep("upload_artifact", onboarding.StepFailed, result.Stderr)
 		out.Message = fmt.Sprintf("Copy binary failed: %v %s", result.Error, result.Stderr)

@@ -9,10 +9,16 @@ import (
 // ─── Preflight Report Types ──────────────────────────────────────────────────
 
 type PreflightReport struct {
+	Host      *HostInfo              `json:"host,omitempty"`
 	Aegis     *BinaryInfo            `json:"aegis"`
 	Providers map[string]*BinaryInfo `json:"providers"` // per-provider binary detection (not just Caddy)
 	Config    *ConfigInfo            `json:"config"`
 	Ports     []PortInfo             `json:"ports"`
+}
+
+type HostInfo struct {
+	OS   string `json:"os,omitempty"`
+	Arch string `json:"arch,omitempty"`
 }
 
 type BinaryInfo struct {
@@ -40,6 +46,8 @@ type PortInfo struct {
 // rather than hardcoding "caddy". The Go side extracts per-provider results
 // from the JSON output indexed by provider ID.
 const preflightScript = `#!/bin/sh
+osn=$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+arch=$(uname -m 2>/dev/null)
 af="false"; ap=""; av=""; ar="false"; as=""
 cof="false"; cop=""
 
@@ -86,6 +94,7 @@ pj="$pj]"
 
 cat <<JSONEOF
 {
+  "host": {"os":"$osn","arch":"$arch"},
   "aegis":  {"found":$af,"path":"$ap","version":"$av","running":$ar,"service":"$as"},
   "providers": {$provs},
   "config": {"found":$cof,"path":"$cop"},
