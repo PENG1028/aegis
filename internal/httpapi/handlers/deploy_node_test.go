@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"aegis/internal/config"
+	"aegis/internal/distnode/onboarding"
 
 	"gopkg.in/yaml.v3"
 )
@@ -46,5 +47,29 @@ func TestNodeProxyConfigIgnoresDevelopmentPaths(t *testing.T) {
 	}
 	if proxy.BackupDir != "/var/lib/aegis/backups" {
 		t.Fatalf("backup dir = %q, want production backup path", proxy.BackupDir)
+	}
+}
+
+func TestDeployResponseFromEnsurePreservesLegacyFields(t *testing.T) {
+	resp := deployResponseFromEnsure(&onboarding.EnsureResult{
+		Success: true,
+		NodeID:  "node-b",
+		Message: "ok",
+	})
+
+	if !resp.Success {
+		t.Fatal("Success = false, want true")
+	}
+	if resp.NodeID != "node-b" {
+		t.Fatalf("NodeID = %q, want node-b", resp.NodeID)
+	}
+	if resp.Message != "ok" {
+		t.Fatalf("Message = %q, want ok", resp.Message)
+	}
+}
+
+func TestNativeSSHDoesNotRequireSystemSSHBinary(t *testing.T) {
+	if !isSSHAvailable() {
+		t.Fatal("native SSH deployment should not depend on an external ssh binary")
 	}
 }

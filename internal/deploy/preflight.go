@@ -103,6 +103,11 @@ func Preflight(ctx context.Context, cfg SSHConfig) (*PreflightReport, error) {
 	}
 	defer conn.Executor.Close()
 
+	return PreflightConnection(ctx, conn)
+}
+
+// PreflightConnection runs target detection over an existing connection.
+func PreflightConnection(ctx context.Context, conn *Connection) (*PreflightReport, error) {
 	// Write + execute script in one session
 	scriptFile := "/tmp/aegis-preflight.sh"
 	writeCmd := fmt.Sprintf("cat > %s << 'SCRIPTEOF'\n%s\nSCRIPTEOF\nchmod +x %s", scriptFile, preflightScript, scriptFile)
