@@ -393,11 +393,14 @@ func (h *Handlers) installAegisNodeConnected(ctx context.Context, req DeployNode
 		out.Message = "Target preflight failed: " + err.Error()
 		return out
 	}
-	artifact, err := newLocalAegisArtifactProvider().Resolve(report)
+	artifact, err := newLocalAegisArtifactProvider().Resolve(ctx, report)
 	if err != nil {
 		out.AddStep("resolve_artifact", onboarding.StepFailed, err.Error())
 		out.Message = "Resolve artifact failed: " + err.Error()
 		return out
+	}
+	if artifact.Cleanup != nil {
+		defer artifact.Cleanup()
 	}
 	logf("  Artifact: %s (%s)", artifact.LocalPath, artifact.Source)
 	out.AddStep("resolve_artifact", onboarding.StepOK, artifact.Source)
