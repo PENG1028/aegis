@@ -1,8 +1,8 @@
 package distnode_test
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -50,9 +50,9 @@ func TestRevokeHandler_RejectsAfterRevoke(t *testing.T) {
 	handler := dn.Transport.Handler()
 
 	// Before revoke: valid per-peer auth passes
-	req := httptest.NewRequest("POST", "/api/distnode/v1/call", postCall("Test.Ping", map[string]string{}))
+	req := httptest.NewRequest("POST", "/distnode/call", postCall("Test.Ping", map[string]string{}))
 	req.Header.Set("Authorization", "Bearer b-secret")
-	req.Header.Set("X-Aegis-Node-ID", "node-b")
+	req.Header.Set("X-DistNode-ID", "node-b")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -69,9 +69,9 @@ func TestRevokeHandler_RejectsAfterRevoke(t *testing.T) {
 	// After revoke: same valid per-peer secret is rejected (401)
 	hitTarget = false
 	w2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest("POST", "/api/distnode/v1/call", postCall("Test.Ping", map[string]string{}))
+	req2 := httptest.NewRequest("POST", "/distnode/call", postCall("Test.Ping", map[string]string{}))
 	req2.Header.Set("Authorization", "Bearer b-secret")
-	req2.Header.Set("X-Aegis-Node-ID", "node-b")
+	req2.Header.Set("X-DistNode-ID", "node-b")
 	req2.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(w2, req2)
 
@@ -97,9 +97,9 @@ func TestRevokeHandler_OnlyAffectsTarget(t *testing.T) {
 	dn.Membership.RevokePeer("node-b")
 
 	// node-c should still authenticate with its own per-peer secret
-	req := httptest.NewRequest("POST", "/api/distnode/v1/call", postCall("Test.Ping", map[string]string{}))
+	req := httptest.NewRequest("POST", "/distnode/call", postCall("Test.Ping", map[string]string{}))
 	req.Header.Set("Authorization", "Bearer c-secret")
-	req.Header.Set("X-Aegis-Node-ID", "node-c")
+	req.Header.Set("X-DistNode-ID", "node-c")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	dn.Transport.Handler().ServeHTTP(w, req)
@@ -117,7 +117,7 @@ func TestRevokeHandler_LegacyCaller_SharedSecret(t *testing.T) {
 		return map[string]string{"ok": "pong"}, nil
 	})
 
-	req := httptest.NewRequest("POST", "/api/distnode/v1/call", postCall("Test.Ping", map[string]string{}))
+	req := httptest.NewRequest("POST", "/distnode/call", postCall("Test.Ping", map[string]string{}))
 	req.Header.Set("Authorization", "Bearer cluster-secret")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -140,9 +140,9 @@ func TestRevokeHandler_MixedCluster(t *testing.T) {
 	})
 
 	// node-c with shared secret → should authenticate
-	req := httptest.NewRequest("POST", "/api/distnode/v1/call", postCall("Test.Ping", map[string]string{}))
+	req := httptest.NewRequest("POST", "/distnode/call", postCall("Test.Ping", map[string]string{}))
 	req.Header.Set("Authorization", "Bearer cluster-secret")
-	req.Header.Set("X-Aegis-Node-ID", "node-c")
+	req.Header.Set("X-DistNode-ID", "node-c")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	dn.Transport.Handler().ServeHTTP(w, req)
@@ -151,9 +151,9 @@ func TestRevokeHandler_MixedCluster(t *testing.T) {
 	}
 
 	// node-b with wrong secret → rejected
-	req2 := httptest.NewRequest("POST", "/api/distnode/v1/call", postCall("Test.Ping", map[string]string{}))
+	req2 := httptest.NewRequest("POST", "/distnode/call", postCall("Test.Ping", map[string]string{}))
 	req2.Header.Set("Authorization", "Bearer cluster-secret")
-	req2.Header.Set("X-Aegis-Node-ID", "node-b")
+	req2.Header.Set("X-DistNode-ID", "node-b")
 	req2.Header.Set("Content-Type", "application/json")
 	w2 := httptest.NewRecorder()
 	dn.Transport.Handler().ServeHTTP(w2, req2)
@@ -167,9 +167,9 @@ func TestRevokeHandler_WrongSecret(t *testing.T) {
 		{ID: "node-b", Addr: "10.0.0.2:80", Secret: "b-secret"},
 	})
 
-	req := httptest.NewRequest("POST", "/api/distnode/v1/call", postCall("Test.Ping", map[string]string{}))
+	req := httptest.NewRequest("POST", "/distnode/call", postCall("Test.Ping", map[string]string{}))
 	req.Header.Set("Authorization", "Bearer wrong-secret")
-	req.Header.Set("X-Aegis-Node-ID", "node-b")
+	req.Header.Set("X-DistNode-ID", "node-b")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	dn.Transport.Handler().ServeHTTP(w, req)
@@ -181,7 +181,7 @@ func TestRevokeHandler_WrongSecret(t *testing.T) {
 
 func TestRevokeHandler_MissingAuth(t *testing.T) {
 	dn := newTestDistNode("panel", nil)
-	req := httptest.NewRequest("POST", "/api/distnode/v1/call", postCall("Test.Ping", map[string]string{}))
+	req := httptest.NewRequest("POST", "/distnode/call", postCall("Test.Ping", map[string]string{}))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	dn.Transport.Handler().ServeHTTP(w, req)
@@ -197,7 +197,7 @@ func TestRevokeHandler_ShareSecretWrong(t *testing.T) {
 		return map[string]string{"ok": "pong"}, nil
 	})
 
-	req := httptest.NewRequest("POST", "/api/distnode/v1/call", postCall("Test.Ping", map[string]string{}))
+	req := httptest.NewRequest("POST", "/distnode/call", postCall("Test.Ping", map[string]string{}))
 	req.Header.Set("Authorization", "Bearer wrong")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

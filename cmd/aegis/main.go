@@ -440,10 +440,15 @@ func main() {
 	var dn *distnode.DistNode
 	if cfg.DistNode.Enabled {
 		distCfg := distnode.Config{
-			ID:     cfg.DistNode.ID,
-			Name:   cfg.DistNode.Name,
-			Addr:   cfg.DistNode.Addr,
-			Secret: cfg.DistNode.Secret,
+			ID:           cfg.DistNode.ID,
+			Name:         cfg.DistNode.Name,
+			Addr:         cfg.DistNode.Addr,
+			Secret:       cfg.DistNode.Secret,
+			Scheme:       "http",
+			HealthPath:   "/api/healthz",
+			CallPath:     "/api/distnode/v1/call",
+			NodeIDHeader: "X-Aegis-Node-ID",
+			DefaultRole:  "agent",
 		}
 		for _, p := range cfg.DistNode.Peers {
 			distCfg.Peers = append(distCfg.Peers, distnode.PeerConfig{ID: p.ID, Addr: p.Addr, Secret: p.Secret})

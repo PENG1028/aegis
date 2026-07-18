@@ -28,8 +28,42 @@ func TestNew(t *testing.T) {
 	if dn.ID != "node_a" {
 		t.Errorf("ID = %q, want %q", dn.ID, "node_a")
 	}
-	if dn.Role.Current() != "agent" {
-		t.Errorf("default role = %q, want %q", dn.Role.Current(), "agent")
+	if dn.Role.Current() != "node" {
+		t.Errorf("default role = %q, want %q", dn.Role.Current(), "node")
+	}
+	if dn.Config.HealthPath != "/healthz" {
+		t.Errorf("default health path = %q, want %q", dn.Config.HealthPath, "/healthz")
+	}
+	if dn.Config.CallPath != "/distnode/call" {
+		t.Errorf("default call path = %q, want %q", dn.Config.CallPath, "/distnode/call")
+	}
+	if dn.Config.NodeIDHeader != "X-DistNode-ID" {
+		t.Errorf("default node header = %q, want %q", dn.Config.NodeIDHeader, "X-DistNode-ID")
+	}
+}
+
+func TestCustomConfigSurface(t *testing.T) {
+	cfg := Config{
+		ID:           "node_a",
+		Scheme:       "http://",
+		HealthPath:   "ready",
+		CallPath:     "rpc/call",
+		NodeIDHeader: "X-Runner-Node-ID",
+		DefaultRole:  "worker",
+	}
+	dn := New(cfg)
+
+	if dn.Config.Scheme != "http" {
+		t.Errorf("scheme = %q, want %q", dn.Config.Scheme, "http")
+	}
+	if dn.Config.HealthPath != "/ready" {
+		t.Errorf("health path = %q, want %q", dn.Config.HealthPath, "/ready")
+	}
+	if dn.Config.CallPath != "/rpc/call" {
+		t.Errorf("call path = %q, want %q", dn.Config.CallPath, "/rpc/call")
+	}
+	if dn.Role.Current() != "worker" {
+		t.Errorf("role = %q, want %q", dn.Role.Current(), "worker")
 	}
 }
 
@@ -102,7 +136,7 @@ func TestTransportCall(t *testing.T) {
 	})
 
 	bMux := http.NewServeMux()
-	bMux.Handle("POST /api/distnode/v1/call", bDn.Transport.Handler())
+	bMux.Handle("POST "+bDn.Config.CallPath, bDn.Transport.Handler())
 	bSrv := httptest.NewServer(bMux)
 	defer bSrv.Close()
 
@@ -129,6 +163,52 @@ func TestTransportCall(t *testing.T) {
 	}
 	if result["reply"] != "pong: hello" {
 		t.Errorf("reply = %q, want %q", result["reply"], "pong: hello")
+	}
+}
+
+func TestTransportCallCustomPathAndHeader(t *testing.T) {
+	var gotCallerID string
+	bCfg := Config{
+		ID:           "node_b",
+		Addr:         "127.0.0.1:0",
+		Secret:       "shared-secret",
+		CallPath:     "/runner/dist/call",
+		NodeIDHeader: "X-Runner-Node-ID",
+	}
+	bDn := New(bCfg)
+	bDn.Transport.Register("Ping", func(ctx context.Context, callerID string, args json.RawMessage) (any, error) {
+		gotCallerID = callerID
+		return map[string]string{"reply": "pong"}, nil
+	})
+
+	bMux := http.NewServeMux()
+	bMux.Handle("POST /runner/dist/call", bDn.Transport.Handler())
+	bSrv := httptest.NewServer(bMux)
+	defer bSrv.Close()
+
+	aCfg := Config{
+		ID:           "node_a",
+		Addr:         "127.0.0.1:0",
+		Secret:       "shared-secret",
+		CallPath:     "/runner/dist/call",
+		NodeIDHeader: "X-Runner-Node-ID",
+		Peers:        []PeerConfig{{ID: "node_b", Addr: bSrv.Listener.Addr().String()}},
+	}
+	aDn := New(aCfg)
+	peer := aDn.Membership.GetPeer("node_b")
+	peer.Alive = true
+	peer.Info.Status = StatusAlive
+
+	var result map[string]string
+	err := aDn.Transport.Call(context.Background(), "node_b", "Ping", map[string]string{}, &result)
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+	if result["reply"] != "pong" {
+		t.Errorf("reply = %q, want %q", result["reply"], "pong")
+	}
+	if gotCallerID != "node_a" {
+		t.Errorf("callerID = %q, want %q", gotCallerID, "node_a")
 	}
 }
 
@@ -164,12 +244,12 @@ func TestTransportCallUnknownPeer(t *testing.T) {
 func TestTransportUnauthorized(t *testing.T) {
 	dn := New(Config{ID: "node_b", Secret: "real-secret"})
 	mux := http.NewServeMux()
-	mux.Handle("POST /api/distnode/v1/call", dn.Transport.Handler())
+	mux.Handle("POST "+dn.Config.CallPath, dn.Transport.Handler())
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
 	// Wrong secret
-	req, _ := http.NewRequest("POST", srv.URL+"/api/distnode/v1/call",
+	req, _ := http.NewRequest("POST", srv.URL+dn.Config.CallPath,
 		bytes.NewReader([]byte(`{"method":"Ping"}`)))
 	req.Header.Set("Authorization", "Bearer wrong-secret")
 	req.Header.Set("Content-Type", "application/json")
@@ -192,11 +272,11 @@ func TestTransportHandlerNotFound(t *testing.T) {
 	})
 
 	mux := http.NewServeMux()
-	mux.Handle("POST /api/distnode/v1/call", dn.Transport.Handler())
+	mux.Handle("POST "+dn.Config.CallPath, dn.Transport.Handler())
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	req, _ := http.NewRequest("POST", srv.URL+"/api/distnode/v1/call",
+	req, _ := http.NewRequest("POST", srv.URL+dn.Config.CallPath,
 		bytes.NewReader([]byte(`{"method":"DoesNotExist"}`)))
 	req.Header.Set("Authorization", "Bearer sec")
 	req.Header.Set("Content-Type", "application/json")
@@ -214,9 +294,9 @@ func TestTransportHandlerNotFound(t *testing.T) {
 // TestHealthCheck verifies the membership health-check loop detects alive peers.
 // This test runs the actual health check loop briefly.
 func TestHealthCheck(t *testing.T) {
-	// Server: node B with /api/healthz
+	// Server: node B with the default health endpoint.
 	bMux := http.NewServeMux()
-	bMux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
+	bMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	bSrv := httptest.NewServer(bMux)
@@ -246,6 +326,34 @@ func TestHealthCheck(t *testing.T) {
 	}
 	if peer.FailCount != 0 {
 		t.Errorf("FailCount = %d, want 0", peer.FailCount)
+	}
+}
+
+func TestHealthCheckCustomPath(t *testing.T) {
+	bMux := http.NewServeMux()
+	bMux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	bSrv := httptest.NewServer(bMux)
+	defer bSrv.Close()
+
+	dn := New(Config{
+		ID:         "node_a",
+		HealthPath: "ready",
+		Peers: []PeerConfig{{
+			ID:   "node_b",
+			Addr: bSrv.Listener.Addr().String(),
+		}},
+	})
+	peer := dn.Membership.GetPeer("node_b")
+	if peer == nil {
+		t.Fatal("peer not found")
+	}
+
+	dn.Membership.checkOne(context.Background(), peer)
+
+	if !peer.Alive {
+		t.Errorf("peer should be alive after custom health check")
 	}
 }
 

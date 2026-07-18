@@ -36,6 +36,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -58,8 +59,8 @@ type CallError struct {
 	Err    error
 }
 
-func (e *CallError) Error() string  { return fmt.Sprintf("distnode: call %s: %v", e.Method, e.Err) }
-func (e *CallError) Unwrap() error  { return e.Err }
+func (e *CallError) Error() string { return fmt.Sprintf("distnode: call %s: %v", e.Method, e.Err) }
+func (e *CallError) Unwrap() error { return e.Err }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Config
@@ -68,11 +69,60 @@ func (e *CallError) Unwrap() error  { return e.Err }
 // Config defines the static identity and peer list for a node.
 // Designed to be loaded from YAML/JSON by the embedding project.
 type Config struct {
-	ID      string       `yaml:"id" json:"id"`          // unique node ID
-	Name    string       `yaml:"name" json:"name"`      // human-readable name
-	Addr    string       `yaml:"addr" json:"addr"`      // control address ip:port (e.g. "10.0.0.1:7380")
-	Secret  string       `yaml:"secret" json:"secret"`  // cluster shared secret
-	Peers   []PeerConfig `yaml:"peers" json:"peers"`    // statically known peers
+	ID           string       `yaml:"id" json:"id"`                                             // unique node ID
+	Name         string       `yaml:"name" json:"name"`                                         // human-readable name
+	Addr         string       `yaml:"addr" json:"addr"`                                         // advertised address (for example "10.0.0.1:7380")
+	Secret       string       `yaml:"secret" json:"secret"`                                     // cluster shared secret
+	Peers        []PeerConfig `yaml:"peers" json:"peers"`                                       // statically known peers
+	Scheme       string       `yaml:"scheme,omitempty" json:"scheme,omitempty"`                 // peer HTTP scheme
+	HealthPath   string       `yaml:"health_path,omitempty" json:"health_path,omitempty"`       // peer health-check path
+	CallPath     string       `yaml:"call_path,omitempty" json:"call_path,omitempty"`           // peer RPC path
+	NodeIDHeader string       `yaml:"node_id_header,omitempty" json:"node_id_header,omitempty"` // caller identity header
+	DefaultRole  string       `yaml:"default_role,omitempty" json:"default_role,omitempty"`     // initial self-declared role
+}
+
+const (
+	defaultScheme       = "http"
+	defaultHealthPath   = "/healthz"
+	defaultCallPath     = "/distnode/call"
+	defaultNodeIDHeader = "X-DistNode-ID"
+	defaultRole         = "node"
+)
+
+func (cfg Config) withDefaults() Config {
+	if cfg.Scheme == "" {
+		cfg.Scheme = defaultScheme
+	}
+	cfg.Scheme = strings.TrimRight(cfg.Scheme, ":/")
+	if cfg.HealthPath == "" {
+		cfg.HealthPath = defaultHealthPath
+	}
+	cfg.HealthPath = ensureLeadingSlash(cfg.HealthPath)
+	if cfg.CallPath == "" {
+		cfg.CallPath = defaultCallPath
+	}
+	cfg.CallPath = ensureLeadingSlash(cfg.CallPath)
+	if cfg.NodeIDHeader == "" {
+		cfg.NodeIDHeader = defaultNodeIDHeader
+	}
+	if cfg.DefaultRole == "" {
+		cfg.DefaultRole = defaultRole
+	}
+	return cfg
+}
+
+func ensureLeadingSlash(path string) string {
+	if path == "" || strings.HasPrefix(path, "/") {
+		return path
+	}
+	return "/" + path
+}
+
+func peerURL(scheme, addr, path string) string {
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return strings.TrimRight(addr, "/") + ensureLeadingSlash(path)
+	}
+	return strings.TrimRight(scheme, ":/") + "://" + strings.TrimRight(addr, "/") + ensureLeadingSlash(path)
 }
 
 // PeerConfig defines a known peer's identity.
@@ -106,11 +156,11 @@ const (
 
 // Peer tracks the runtime state of a known cluster member.
 type Peer struct {
-	Info      NodeInfo    `json:"info"`
-	Alive     bool        `json:"alive"`
-	AliveAt   time.Time   `json:"alive_at,omitempty"`
-	DeadAt    time.Time   `json:"dead_at,omitempty"`
-	FailCount int         `json:"-"`
+	Info      NodeInfo  `json:"info"`
+	Alive     bool      `json:"alive"`
+	AliveAt   time.Time `json:"alive_at,omitempty"`
+	DeadAt    time.Time `json:"dead_at,omitempty"`
+	FailCount int       `json:"-"`
 	// Secret is this peer's per-peer credential (Phase 1). Empty = use the
 	// cluster shared secret to verify this peer's calls (Phase 0).
 	Secret string `json:"-"`
@@ -217,11 +267,13 @@ func (id *Identity) authHeader() string {
 //
 // Thread-safe.
 type Membership struct {
-	self      string
-	selfAddr  string
-	peers     map[string]*Peer
-	checkIntv time.Duration
-	onEvent   PeerEventHandler
+	self       string
+	selfAddr   string
+	scheme     string
+	healthPath string
+	peers      map[string]*Peer
+	checkIntv  time.Duration
+	onEvent    PeerEventHandler
 
 	httpClient *http.Client
 	mu         sync.RWMutex
@@ -236,13 +288,16 @@ const (
 )
 
 func newMembership(cfg Config) *Membership {
+	cfg = cfg.withDefaults()
 	m := &Membership{
-		self:      cfg.ID,
-		selfAddr:  cfg.Addr,
-		peers:     make(map[string]*Peer),
-		checkIntv: healthCheckInterval,
+		self:       cfg.ID,
+		selfAddr:   cfg.Addr,
+		scheme:     cfg.Scheme,
+		healthPath: cfg.HealthPath,
+		peers:      make(map[string]*Peer),
+		checkIntv:  healthCheckInterval,
 		httpClient: &http.Client{Timeout: healthCheckTimeout},
-		logf:      log.Printf,
+		logf:       log.Printf,
 	}
 	for _, pc := range cfg.Peers {
 		if pc.ID == cfg.ID {
@@ -395,7 +450,7 @@ func (m *Membership) PeerCount() int {
 // SelfInfo returns this node's own identity.
 func (m *Membership) SelfInfo() NodeInfo {
 	return NodeInfo{
-		ID: m.self,
+		ID:   m.self,
 		Addr: m.selfAddr,
 	}
 }
@@ -421,7 +476,7 @@ func (m *Membership) checkOne(ctx context.Context, p *Peer) {
 
 	alive := false
 	req, err := http.NewRequestWithContext(checkCtx, "GET",
-		"http://"+p.Info.Addr+"/api/healthz", nil)
+		peerURL(m.scheme, p.Info.Addr, m.healthPath), nil)
 	if err == nil {
 		resp, herr := m.httpClient.Do(req)
 		if herr == nil {
@@ -475,21 +530,28 @@ type Handler func(ctx context.Context, callerID string, args json.RawMessage) (a
 // Transport provides cross-node method calls.
 // Each node registers methods it exposes and can call methods on any peer.
 type Transport struct {
-	selfID   string
-	secret   string
-	handlers map[string]Handler
-	members  *Membership
-	client   *http.Client
-	mu       sync.RWMutex
+	selfID       string
+	secret       string
+	scheme       string
+	callPath     string
+	nodeIDHeader string
+	handlers     map[string]Handler
+	members      *Membership
+	client       *http.Client
+	mu           sync.RWMutex
 }
 
 func newTransport(cfg Config, members *Membership) *Transport {
+	cfg = cfg.withDefaults()
 	return &Transport{
-		selfID:   cfg.ID,
-		secret:   cfg.Secret,
-		handlers: make(map[string]Handler),
-		members:  members,
-		client:   &http.Client{Timeout: 30 * time.Second},
+		selfID:       cfg.ID,
+		secret:       cfg.Secret,
+		scheme:       cfg.Scheme,
+		callPath:     cfg.CallPath,
+		nodeIDHeader: cfg.NodeIDHeader,
+		handlers:     make(map[string]Handler),
+		members:      members,
+		client:       &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -528,13 +590,13 @@ func (t *Transport) Call(ctx context.Context, targetID, method string, args, rep
 		return &CallError{Method: method, Err: fmt.Errorf("marshal request: %w", err)}
 	}
 
-	url := "http://" + peer.Info.Addr + "/api/distnode/v1/call"
+	url := peerURL(t.scheme, peer.Info.Addr, t.callPath)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return &CallError{Method: method, Err: err}
 	}
 	req.Header.Set("Authorization", "Bearer "+t.secret)
-	req.Header.Set("X-Aegis-Node-ID", t.selfID)
+	req.Header.Set(t.nodeIDHeader, t.selfID)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := t.client.Do(req)
@@ -568,10 +630,10 @@ func (t *Transport) Call(ctx context.Context, targetID, method string, args, rep
 	return nil
 }
 
-// Handler returns an http.Handler that serves POST /api/distnode/v1/call.
-// Mount it in the project's HTTP mux:
+// Handler returns an http.Handler that serves the configured RPC endpoint.
+// Mount it in the embedding project's HTTP mux:
 //
-//	mux.Handle("POST /api/distnode/v1/call", dn.Transport.Handler())
+//	mux.Handle("POST "+dn.Config.CallPath, dn.Transport.Handler())
 func (t *Transport) Handler() http.Handler {
 	return http.HandlerFunc(t.serveCall)
 }
@@ -596,7 +658,7 @@ func (t *Transport) serveCall(w http.ResponseWriter, r *http.Request) {
 
 	// Authenticate the caller
 	auth := r.Header.Get("Authorization")
-	callerID, err := t.authenticateCaller(r.Header.Get("X-Aegis-Node-ID"), auth)
+	callerID, err := t.authenticateCaller(r.Header.Get(t.nodeIDHeader), auth)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -632,7 +694,7 @@ func (t *Transport) serveCall(w http.ResponseWriter, r *http.Request) {
 }
 
 // authenticateCaller verifies an incoming call. callerID comes from the
-// X-Aegis-Node-ID header (may be empty for legacy callers), auth from the
+// configured node ID header (may be empty for legacy callers), auth from the
 // Authorization header.
 //
 // Resolution (Phase 1, backward-compatible):
@@ -680,26 +742,20 @@ func (t *Transport) authenticateCaller(callerID, auth string) (string, error) {
 
 // Role manages this node's self-declared role.
 //
-// Roles are self-declared, not externally assigned.
-// This is the mechanism behind "节点自决定" — the node decides what it is,
-// and the system (or admin) can confirm or override.
-//
-// Built-in roles (for Aegis context):
-//
-//	panel   — serves the web UI and admin API
-//	agent   — background runner, no UI
-//	gateway — handles ingress traffic (80/443)
-//	leader  — holds domain names, externally accessible
+// Roles are project-defined strings, not externally assigned by DistNode.
+// The embedding system can confirm, reject, or override the value according to
+// its own rules.
 type Role struct {
-	self     string
-	current  string
-	mu       sync.RWMutex
+	self    string
+	current string
+	mu      sync.RWMutex
 }
 
 func newRole(cfg Config) *Role {
+	cfg = cfg.withDefaults()
 	return &Role{
 		self:    cfg.ID,
-		current: "agent", // default: headless agent
+		current: cfg.DefaultRole,
 	}
 }
 
@@ -790,6 +846,7 @@ type DistNode struct {
 // New creates a DistNode from config.
 // Does not start any goroutines — call Start() to begin.
 func New(cfg Config) *DistNode {
+	cfg = cfg.withDefaults()
 	id := newIdentity(cfg)
 	members := newMembership(cfg)
 	transport := newTransport(cfg, members)
@@ -816,8 +873,8 @@ func (dn *DistNode) Info() NodeInfo {
 }
 
 // Start begins the membership health-check loop.
-// Call this after the application has initialized its HTTP server
-// (so /api/healthz is already serving).
+// Call this after the application has initialized its configured health
+// endpoint.
 //
 // Blocks until ctx is cancelled. Run in a goroutine:
 //
