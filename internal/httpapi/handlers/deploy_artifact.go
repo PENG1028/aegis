@@ -19,8 +19,8 @@ const deployArtifactEnv = "AEGIS_DEPLOY_ARTIFACT"
 const deployArtifactURLEnv = "AEGIS_DEPLOY_ARTIFACT_URL"
 const deployArtifactURLTemplateEnv = "AEGIS_DEPLOY_ARTIFACT_URL_TEMPLATE"
 const deployArtifactSHA256Env = "AEGIS_DEPLOY_ARTIFACT_SHA256"
-const defaultDeployArtifactURLTemplate = "https://raw.githubusercontent.com/PENG1028/aegis/1f0137662214ac4b227cb0bb3addc035b67002a6/aegis-{os}-{arch}"
-const defaultLinuxAMD64SHA256 = "00f6591c6b9c5eac6b7cbb00baa2c6352854ac605d0df3c82737c48ccd0e9b34"
+const defaultDeployArtifactURLTemplate = "https://raw.githubusercontent.com/PENG1028/aegis/4808c3990b5712750f1038def58e2a76d5228207/aegis-{os}-{arch}"
+const defaultLinuxAMD64SHA256 = "3c1d26030ce74f3e2f668f70b5e6595155e8eb9a6d555b6dfb50ffd455a6ebd8"
 
 type aegisArtifact struct {
 	LocalPath string
