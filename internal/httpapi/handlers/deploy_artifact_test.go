@@ -113,6 +113,9 @@ func TestArtifactProviderRejectsUnsupportedCrossPlatformCurrentBinary(t *testing
 	if !strings.Contains(err.Error(), deployArtifactURLEnv) {
 		t.Fatalf("error = %q, want %s guidance", err.Error(), deployArtifactURLEnv)
 	}
+	if !strings.Contains(err.Error(), deployArtifactDirEnv) {
+		t.Fatalf("error = %q, want %s guidance", err.Error(), deployArtifactDirEnv)
+	}
 }
 
 func TestArtifactProviderUsesExplicitArtifactForCrossPlatform(t *testing.T) {
@@ -142,6 +145,107 @@ func TestArtifactProviderUsesExplicitArtifactForCrossPlatform(t *testing.T) {
 	}
 	if artifact.Source != deployArtifactEnv {
 		t.Fatalf("Source = %q, want %s", artifact.Source, deployArtifactEnv)
+	}
+}
+
+func TestArtifactProviderUsesArtifactDirectory(t *testing.T) {
+	p := localAegisArtifactProvider{
+		goos:   "windows",
+		goarch: "amd64",
+		getenv: func(key string) string {
+			if key == deployArtifactDirEnv {
+				return "F:/aegis-artifacts"
+			}
+			return ""
+		},
+		stat: func(path string) (os.FileInfo, error) {
+			if filepath.ToSlash(path) != "F:/aegis-artifacts/aegis-linux-amd64" {
+				return nil, os.ErrNotExist
+			}
+			return fakeFileInfo{}, nil
+		},
+	}
+
+	artifact, err := p.Resolve(context.Background(), &deploy.PreflightReport{Host: &deploy.HostInfo{OS: "linux", Arch: "x86_64"}})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if filepath.ToSlash(artifact.LocalPath) != "F:/aegis-artifacts/aegis-linux-amd64" {
+		t.Fatalf("LocalPath = %q, want artifact directory match", artifact.LocalPath)
+	}
+	if !strings.HasPrefix(artifact.Source, deployArtifactDirEnv+":") {
+		t.Fatalf("Source = %q, want %s source", artifact.Source, deployArtifactDirEnv)
+	}
+}
+
+func TestArtifactProviderUsesManifestLocalArtifact(t *testing.T) {
+	p := localAegisArtifactProvider{
+		goos:   "windows",
+		goarch: "amd64",
+		getenv: func(key string) string {
+			if key == deployArtifactManifestEnv {
+				return "F:/aegis-artifacts/manifest.json"
+			}
+			return ""
+		},
+		readFile: func(path string) ([]byte, error) {
+			if path != "F:/aegis-artifacts/manifest.json" {
+				return nil, os.ErrNotExist
+			}
+			return []byte(`{"artifacts":[{"os":"linux","arch":"x86_64","path":"F:/aegis-artifacts/aegis-linux-amd64"}]}`), nil
+		},
+		stat: func(path string) (os.FileInfo, error) {
+			if path != "F:/aegis-artifacts/aegis-linux-amd64" {
+				return nil, os.ErrNotExist
+			}
+			return fakeFileInfo{}, nil
+		},
+	}
+
+	artifact, err := p.Resolve(context.Background(), &deploy.PreflightReport{Host: &deploy.HostInfo{OS: "linux", Arch: "x86_64"}})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if artifact.LocalPath != "F:/aegis-artifacts/aegis-linux-amd64" {
+		t.Fatalf("LocalPath = %q, want manifest path", artifact.LocalPath)
+	}
+	if artifact.Source != deployArtifactManifestEnv+":F:/aegis-artifacts/aegis-linux-amd64" {
+		t.Fatalf("Source = %q, want manifest source", artifact.Source)
+	}
+}
+
+func TestArtifactProviderUsesManifestURLWithChecksum(t *testing.T) {
+	p := localAegisArtifactProvider{
+		goos:   "windows",
+		goarch: "amd64",
+		getenv: func(key string) string {
+			if key == deployArtifactManifestEnv {
+				return "F:/aegis-artifacts/manifest.json"
+			}
+			return ""
+		},
+		readFile: func(path string) ([]byte, error) {
+			return []byte(`{"artifacts":[{"os":"linux","arch":"amd64","url":"https://example.invalid/aegis-linux-amd64","sha256":"` + sha256Hex([]byte("binary")) + `"}]}`), nil
+		},
+		stat: func(string) (os.FileInfo, error) { return fakeFileInfo{}, nil },
+		download: func(ctx context.Context, url string) (string, func() error, error) {
+			if url != "https://example.invalid/aegis-linux-amd64" {
+				t.Fatalf("url = %q, want manifest URL", url)
+			}
+			path := writeTempArtifact(t, []byte("binary"))
+			return path, func() error { return os.Remove(path) }, nil
+		},
+	}
+
+	artifact, err := p.Resolve(context.Background(), &deploy.PreflightReport{Host: &deploy.HostInfo{OS: "linux", Arch: "x86_64"}})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if artifact.Source != deployArtifactManifestEnv+":https://example.invalid/aegis-linux-amd64" {
+		t.Fatalf("Source = %q, want manifest URL source", artifact.Source)
+	}
+	if artifact.Cleanup != nil {
+		artifact.Cleanup()
 	}
 }
 

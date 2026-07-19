@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,8 @@ import (
 )
 
 const deployArtifactEnv = "AEGIS_DEPLOY_ARTIFACT"
+const deployArtifactDirEnv = "AEGIS_DEPLOY_ARTIFACT_DIR"
+const deployArtifactManifestEnv = "AEGIS_DEPLOY_ARTIFACT_MANIFEST"
 const deployArtifactURLEnv = "AEGIS_DEPLOY_ARTIFACT_URL"
 const deployArtifactURLTemplateEnv = "AEGIS_DEPLOY_ARTIFACT_URL_TEMPLATE"
 const deployArtifactSHA256Env = "AEGIS_DEPLOY_ARTIFACT_SHA256"
@@ -34,7 +37,20 @@ type localAegisArtifactProvider struct {
 	executable func() (string, error)
 	getenv     func(string) string
 	stat       func(string) (os.FileInfo, error)
+	readFile   func(string) ([]byte, error)
 	download   func(context.Context, string) (string, func() error, error)
+}
+
+type deployArtifactManifest struct {
+	Artifacts []deployArtifactManifestEntry `json:"artifacts"`
+}
+
+type deployArtifactManifestEntry struct {
+	OS     string `json:"os"`
+	Arch   string `json:"arch"`
+	Path   string `json:"path,omitempty"`
+	URL    string `json:"url,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 func newLocalAegisArtifactProvider() localAegisArtifactProvider {
@@ -44,6 +60,7 @@ func newLocalAegisArtifactProvider() localAegisArtifactProvider {
 		executable: os.Executable,
 		getenv:     os.Getenv,
 		stat:       os.Stat,
+		readFile:   os.ReadFile,
 		download:   downloadArtifact,
 	}
 }
@@ -54,6 +71,9 @@ func (p localAegisArtifactProvider) Resolve(ctx context.Context, report *deploy.
 	}
 	if p.stat == nil {
 		p.stat = os.Stat
+	}
+	if p.readFile == nil {
+		p.readFile = os.ReadFile
 	}
 	if p.download == nil {
 		p.download = downloadArtifact
@@ -68,6 +88,12 @@ func (p localAegisArtifactProvider) Resolve(ctx context.Context, report *deploy.
 	targetOS, targetArch := targetPlatform(report)
 	hostOS := normalizeOS(p.goos)
 	hostArch := normalizeArch(p.goarch)
+	if artifact, err := p.resolveFromManifest(ctx, targetOS, targetArch); artifact != nil || err != nil {
+		return artifact, err
+	}
+	if artifact := p.resolveFromDir(targetOS, targetArch); artifact != nil {
+		return artifact, nil
+	}
 	if url := p.artifactURL(targetOS, targetArch); url != "" {
 		path, cleanup, err := p.download(ctx, url)
 		if err != nil {
@@ -81,7 +107,7 @@ func (p localAegisArtifactProvider) Resolve(ctx context.Context, report *deploy.
 	}
 
 	if targetOS != "" && targetArch != "" && (targetOS != hostOS || targetArch != hostArch) {
-		return nil, fmt.Errorf("target platform is %s/%s but current aegis binary is %s/%s; set %s to a matching target binary or %s to an artifact URL", targetOS, targetArch, hostOS, hostArch, deployArtifactEnv, deployArtifactURLEnv)
+		return nil, fmt.Errorf("target platform is %s/%s but current aegis binary is %s/%s; set %s to a matching target binary, %s to an artifact directory, %s to a manifest, or %s to an artifact URL", targetOS, targetArch, hostOS, hostArch, deployArtifactEnv, deployArtifactDirEnv, deployArtifactManifestEnv, deployArtifactURLEnv)
 	}
 
 	if p.executable == nil {
@@ -95,6 +121,67 @@ func (p localAegisArtifactProvider) Resolve(ctx context.Context, report *deploy.
 		return nil, fmt.Errorf("current aegis binary is not readable: %w", err)
 	}
 	return &aegisArtifact{LocalPath: path, Source: "current_binary"}, nil
+}
+
+func (p localAegisArtifactProvider) resolveFromManifest(ctx context.Context, targetOS, targetArch string) (*aegisArtifact, error) {
+	manifestPath := strings.TrimSpace(p.getenv(deployArtifactManifestEnv))
+	if manifestPath == "" || targetOS == "" || targetArch == "" {
+		return nil, nil
+	}
+	data, err := p.readFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("read %s=%s: %w", deployArtifactManifestEnv, manifestPath, err)
+	}
+	var manifest deployArtifactManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("parse %s=%s: %w", deployArtifactManifestEnv, manifestPath, err)
+	}
+	for _, entry := range manifest.Artifacts {
+		if normalizeOS(entry.OS) != targetOS || normalizeArch(entry.Arch) != targetArch {
+			continue
+		}
+		if local := strings.TrimSpace(entry.Path); local != "" {
+			if _, err := p.stat(local); err != nil {
+				return nil, fmt.Errorf("manifest artifact %s/%s path %s is not readable: %w", targetOS, targetArch, local, err)
+			}
+			return &aegisArtifact{LocalPath: local, Source: deployArtifactManifestEnv + ":" + local}, nil
+		}
+		if url := strings.TrimSpace(entry.URL); url != "" {
+			path, cleanup, err := p.download(ctx, url)
+			if err != nil {
+				return nil, err
+			}
+			if err := verifyArtifactSHA256(path, entry.SHA256); err != nil {
+				cleanup()
+				return nil, err
+			}
+			return &aegisArtifact{LocalPath: path, Source: deployArtifactManifestEnv + ":" + url, Cleanup: cleanup}, nil
+		}
+		return nil, fmt.Errorf("manifest artifact %s/%s has neither path nor url", targetOS, targetArch)
+	}
+	return nil, fmt.Errorf("manifest %s has no artifact for %s/%s", manifestPath, targetOS, targetArch)
+}
+
+func (p localAegisArtifactProvider) resolveFromDir(targetOS, targetArch string) *aegisArtifact {
+	dir := strings.TrimSpace(p.getenv(deployArtifactDirEnv))
+	if dir == "" || targetOS == "" || targetArch == "" {
+		return nil
+	}
+	for _, name := range artifactNames(targetOS, targetArch) {
+		path := filepath.Join(dir, name)
+		if _, err := p.stat(path); err == nil {
+			return &aegisArtifact{LocalPath: path, Source: deployArtifactDirEnv + ":" + path}
+		}
+	}
+	return nil
+}
+
+func artifactNames(targetOS, targetArch string) []string {
+	base := "aegis-" + targetOS + "-" + targetArch
+	if targetOS == "windows" {
+		return []string{base + ".exe", base}
+	}
+	return []string{base}
 }
 
 func (p localAegisArtifactProvider) artifactURL(targetOS, targetArch string) string {
