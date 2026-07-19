@@ -2,8 +2,11 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,23 +21,33 @@ func TestArtifactProviderUsesDefaultGitHubArtifactForLinuxAMD64(t *testing.T) {
 		getenv: func(string) string { return "" },
 		stat:   func(string) (os.FileInfo, error) { return fakeFileInfo{}, nil },
 		download: func(ctx context.Context, url string) (string, func() error, error) {
-			want := "https://raw.githubusercontent.com/PENG1028/aegis/codex/aegis-provider-safe-bin/aegis-linux-amd64"
+			want := "https://raw.githubusercontent.com/PENG1028/aegis/1f0137662214ac4b227cb0bb3addc035b67002a6/aegis-linux-amd64"
 			if url != want {
 				t.Fatalf("url = %q, want %q", url, want)
 			}
-			return "C:/Temp/aegis-linux-amd64", nil, nil
+			path := writeTempArtifact(t, []byte("binary"))
+			return path, func() error { return os.Remove(path) }, nil
 		},
+	}
+	p.getenv = func(key string) string {
+		if key == deployArtifactSHA256Env {
+			return sha256Hex([]byte("binary"))
+		}
+		return ""
 	}
 
 	artifact, err := p.Resolve(context.Background(), &deploy.PreflightReport{Host: &deploy.HostInfo{OS: "linux", Arch: "x86_64"}})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if artifact.LocalPath != "C:/Temp/aegis-linux-amd64" {
+	if !strings.Contains(filepath.Base(artifact.LocalPath), "aegis-test-artifact") {
 		t.Fatalf("LocalPath = %q, want downloaded artifact", artifact.LocalPath)
 	}
-	if artifact.Source != "https://raw.githubusercontent.com/PENG1028/aegis/codex/aegis-provider-safe-bin/aegis-linux-amd64" {
+	if artifact.Source != "https://raw.githubusercontent.com/PENG1028/aegis/1f0137662214ac4b227cb0bb3addc035b67002a6/aegis-linux-amd64" {
 		t.Fatalf("Source = %q, want default GitHub URL", artifact.Source)
+	}
+	if artifact.Cleanup != nil {
+		artifact.Cleanup()
 	}
 }
 
@@ -56,6 +69,32 @@ func TestArtifactProviderUsesCurrentBinaryWhenTargetPlatformUnknown(t *testing.T
 	}
 	if artifact.Source != "current_binary" {
 		t.Fatalf("Source = %q, want current_binary", artifact.Source)
+	}
+}
+
+func TestArtifactProviderRejectsChecksumMismatch(t *testing.T) {
+	p := localAegisArtifactProvider{
+		goos:   "windows",
+		goarch: "amd64",
+		getenv: func(key string) string {
+			if key == deployArtifactSHA256Env {
+				return sha256Hex([]byte("expected"))
+			}
+			return ""
+		},
+		stat: func(string) (os.FileInfo, error) { return fakeFileInfo{}, nil },
+		download: func(ctx context.Context, url string) (string, func() error, error) {
+			path := writeTempArtifact(t, []byte("actual"))
+			return path, func() error { return os.Remove(path) }, nil
+		},
+	}
+
+	_, err := p.Resolve(context.Background(), &deploy.PreflightReport{Host: &deploy.HostInfo{OS: "linux", Arch: "x86_64"}})
+	if err == nil {
+		t.Fatal("Resolve succeeded, want checksum mismatch")
+	}
+	if !strings.Contains(err.Error(), "SHA256 mismatch") {
+		t.Fatalf("error = %q, want SHA256 mismatch", err.Error())
 	}
 }
 
@@ -174,3 +213,26 @@ func (fakeFileInfo) Mode() os.FileMode  { return 0o755 }
 func (fakeFileInfo) ModTime() time.Time { return time.Time{} }
 func (fakeFileInfo) IsDir() bool        { return false }
 func (fakeFileInfo) Sys() any           { return nil }
+
+func writeTempArtifact(t *testing.T, data []byte) string {
+	t.Helper()
+	f, err := os.CreateTemp("", "aegis-test-artifact-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		t.Fatal(err)
+	}
+	return f.Name()
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}

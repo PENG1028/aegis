@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,7 +18,9 @@ import (
 const deployArtifactEnv = "AEGIS_DEPLOY_ARTIFACT"
 const deployArtifactURLEnv = "AEGIS_DEPLOY_ARTIFACT_URL"
 const deployArtifactURLTemplateEnv = "AEGIS_DEPLOY_ARTIFACT_URL_TEMPLATE"
-const defaultDeployArtifactURLTemplate = "https://raw.githubusercontent.com/PENG1028/aegis/codex/aegis-provider-safe-bin/aegis-{os}-{arch}"
+const deployArtifactSHA256Env = "AEGIS_DEPLOY_ARTIFACT_SHA256"
+const defaultDeployArtifactURLTemplate = "https://raw.githubusercontent.com/PENG1028/aegis/1f0137662214ac4b227cb0bb3addc035b67002a6/aegis-{os}-{arch}"
+const defaultLinuxAMD64SHA256 = "00f6591c6b9c5eac6b7cbb00baa2c6352854ac605d0df3c82737c48ccd0e9b34"
 
 type aegisArtifact struct {
 	LocalPath string
@@ -69,6 +73,10 @@ func (p localAegisArtifactProvider) Resolve(ctx context.Context, report *deploy.
 		if err != nil {
 			return nil, err
 		}
+		if err := verifyArtifactSHA256(path, p.expectedSHA256(targetOS, targetArch)); err != nil {
+			cleanup()
+			return nil, err
+		}
 		return &aegisArtifact{LocalPath: path, Source: url, Cleanup: cleanup}, nil
 	}
 
@@ -104,6 +112,37 @@ func (p localAegisArtifactProvider) artifactURL(targetOS, targetArch string) str
 		return ""
 	}
 	return strings.NewReplacer("{os}", targetOS, "{arch}", targetArch).Replace(tmpl)
+}
+
+func (p localAegisArtifactProvider) expectedSHA256(targetOS, targetArch string) string {
+	if explicit := strings.TrimSpace(p.getenv(deployArtifactSHA256Env)); explicit != "" {
+		return strings.ToLower(explicit)
+	}
+	if targetOS == "linux" && targetArch == "amd64" && strings.TrimSpace(p.getenv(deployArtifactURLEnv)) == "" && strings.TrimSpace(p.getenv(deployArtifactURLTemplateEnv)) == "" {
+		return defaultLinuxAMD64SHA256
+	}
+	return ""
+}
+
+func verifyArtifactSHA256(path, expected string) error {
+	expected = strings.ToLower(strings.TrimSpace(expected))
+	if expected == "" {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	sum := sha256.New()
+	if _, err := io.Copy(sum, f); err != nil {
+		return err
+	}
+	actual := hex.EncodeToString(sum.Sum(nil))
+	if actual != expected {
+		return fmt.Errorf("artifact SHA256 mismatch: got %s want %s", actual, expected)
+	}
+	return nil
 }
 
 func downloadArtifact(ctx context.Context, url string) (string, func() error, error) {
