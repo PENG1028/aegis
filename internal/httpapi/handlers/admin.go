@@ -26,17 +26,29 @@ func (h *Handlers) SystemOverview(w http.ResponseWriter, r *http.Request) {
 // DO NOT DUPLICATE: add new data sources here, not in the caller.
 func (h *Handlers) getSystemOverview(ctx context.Context) map[string]interface{} {
 	nodes, err := h.NodeRepo.FindAll()
-	if err != nil { log.Printf("[overview] nodes: %v", err) }
+	if err != nil {
+		log.Printf("[overview] nodes: %v", err)
+	}
 	routes, err := h.Route.ListRoutes(ctx)
-	if err != nil { log.Printf("[overview] routes: %v", err) }
+	if err != nil {
+		log.Printf("[overview] routes: %v", err)
+	}
 	services, err := h.Service.ListServices(ctx)
-	if err != nil { log.Printf("[overview] services: %v", err) }
+	if err != nil {
+		log.Printf("[overview] services: %v", err)
+	}
 	edgeRules, err := h.EdgeSvc.ListRules(ctx)
-	if err != nil { log.Printf("[overview] edge-rules: %v", err) }
+	if err != nil {
+		log.Printf("[overview] edge-rules: %v", err)
+	}
 	spaces, err := h.Space.ListSpaces(ctx)
-	if err != nil { log.Printf("[overview] spaces: %v", err) }
+	if err != nil {
+		log.Printf("[overview] spaces: %v", err)
+	}
 	history, err := h.Apply.History(ctx)
-	if err != nil { log.Printf("[overview] history: %v", err) }
+	if err != nil {
+		log.Printf("[overview] history: %v", err)
+	}
 
 	leaderID := ""
 	nodeCount := 0
@@ -58,13 +70,13 @@ func (h *Handlers) getSystemOverview(ctx context.Context) map[string]interface{}
 	}
 
 	return map[string]interface{}{
-		"node_count":       nodeCount,
-		"leader_node":      leaderID,
-		"route_count":      len(routes),
-		"edge_rule_count":  len(edgeRules),
-		"service_count":    len(services),
-		"space_count":      len(spaces),
-		"last_apply":       lastApply,
+		"node_count":      nodeCount,
+		"leader_node":     leaderID,
+		"route_count":     len(routes),
+		"edge_rule_count": len(edgeRules),
+		"service_count":   len(services),
+		"space_count":     len(spaces),
+		"last_apply":      lastApply,
 	}
 }
 
@@ -90,7 +102,7 @@ func (h *Handlers) AdminListNodes(w http.ResponseWriter, r *http.Request) {
 
 	// Build response with distnode metadata
 	resp := map[string]interface{}{
-		"data":  page,
+		"data": page,
 		"meta": paginationMeta{
 			Total:  total,
 			Limit:  limit,
@@ -100,10 +112,10 @@ func (h *Handlers) AdminListNodes(w http.ResponseWriter, r *http.Request) {
 
 	if h.DistNode != nil {
 		resp["distnode"] = map[string]interface{}{
-			"enabled":  true,
-			"node_id":  h.DistNode.ID,
-			"role":     h.DistNode.Role.Current(),
-			"addr":     h.DistNode.Config.Addr,
+			"enabled": true,
+			"node_id": h.DistNode.ID,
+			"role":    h.DistNode.Role.Current(),
+			"addr":    h.DistNode.Config.Addr,
 		}
 	}
 
@@ -127,7 +139,10 @@ func mergeMembershipNodes(dbNodes []node.NodeRecord, dn *distnode.DistNode) []no
 
 	// Process each membership peer
 	for _, p := range dn.Membership.AllPeers() {
-		pid := p.Info.ID
+		pid := node.StableNodeID(p.Info.ID)
+		if pid == "" {
+			continue
+		}
 		alive := p.Alive
 		status := "offline"
 		if alive {
@@ -145,11 +160,11 @@ func mergeMembershipNodes(dbNodes []node.NodeRecord, dn *distnode.DistNode) []no
 		} else {
 			// Peer unknown to SQLite — add as virtual node
 			virtual := node.NodeRecord{
-				NodeID:      pid,
-				Name:        pid,
-				Hostname:    p.Info.Addr,
-				Status:      status,
-				Role:        node.RoleWorker,
+				NodeID:       pid,
+				Name:         node.LegacyNodeName(pid),
+				Hostname:     p.Info.Addr,
+				Status:       status,
+				Role:         node.RoleWorker,
 				AgentVersion: "distnode",
 				Capabilities: node.DefaultCapabilities(),
 			}
@@ -232,7 +247,6 @@ func (h *Handlers) AdminCreateSpace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, sp)
 }
 
-
 // AdminListOperations handles GET /api/admin/v1/operations
 func (h *Handlers) AdminListOperations(w http.ResponseWriter, r *http.Request) {
 	ops, _ := h.Logs.ListLogs(r.Context(), "", "")
@@ -296,4 +310,3 @@ func (h *Handlers) AdminSystemApply(w http.ResponseWriter, r *http.Request) {
 		"warnings": len(plan.Warnings),
 	})
 }
-

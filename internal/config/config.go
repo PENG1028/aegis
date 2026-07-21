@@ -2,6 +2,7 @@ package config
 
 import (
 	"aegis/internal/core"
+	"aegis/internal/node"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -164,7 +165,7 @@ func ProductionConfig() *Config {
 		Server: ServerConfig{
 			Addr:           "127.0.0.1:7380",
 			AdminToken:     generateAdminToken(),
-			SessionSecure:  true, // prod: assume TLS
+			SessionSecure:  true,       // prod: assume TLS
 			AllowedOrigins: []string{}, // empty = serve from same origin (embedded UI)
 		},
 		DNS: DNSConfig{
@@ -246,12 +247,21 @@ func applyDistNodeDefaults(cfg *Config, path string) {
 		if err != nil || host == "" {
 			host = "aegis-node"
 		}
-		cfg.DistNode.ID = host
+		cfg.DistNode.ID = node.StableNodeID(host)
+		changed = true
+	} else if stable := node.StableNodeID(cfg.DistNode.ID); stable != cfg.DistNode.ID {
+		cfg.DistNode.ID = stable
 		changed = true
 	}
 	if cfg.DistNode.Name == "" {
 		cfg.DistNode.Name = cfg.DistNode.ID
 		changed = true
+	}
+	for i := range cfg.DistNode.Peers {
+		if stable := node.StableNodeID(cfg.DistNode.Peers[i].ID); stable != cfg.DistNode.Peers[i].ID {
+			cfg.DistNode.Peers[i].ID = stable
+			changed = true
+		}
 	}
 	if cfg.DistNode.Addr == "" {
 		// Advertisement metadata only — distnode reuses the aegis mux and opens

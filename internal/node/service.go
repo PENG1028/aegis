@@ -31,7 +31,7 @@ func (s *Service) RegisterCurrent() (*NodeRecord, error) {
 	publicIP := detectPublicIP()
 
 	now := time.Now()
-	nodeID := fmt.Sprintf("node_%s", hostname)
+	nodeID := StableNodeID(hostname)
 
 	// Check existing current node
 	existing, err := s.repo.FindCurrent()
@@ -181,12 +181,12 @@ func detectPrivateIP() string {
 // manually by the operator) or leave it empty.
 func detectPublicIP() string {
 	services := []string{
-		"http://myip.ipip.net",        // Chinese CDN, fast in Asia
-		"http://ip.sb",                // anycast
+		"http://myip.ipip.net",         // Chinese CDN, fast in Asia
+		"http://ip.sb",                 // anycast
 		"http://checkip.amazonaws.com", // AWS global
-		"http://ident.me",             // global
-		"http://ifconfig.me",          // global
-		"http://icanhazip.com",        // global
+		"http://ident.me",              // global
+		"http://ifconfig.me",           // global
+		"http://icanhazip.com",         // global
 	}
 
 	client := &http.Client{Timeout: 3 * time.Second}

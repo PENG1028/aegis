@@ -15,6 +15,7 @@ import (
 	"aegis/internal/deploy"
 	"aegis/internal/distnode"
 	"aegis/internal/distnode/onboarding"
+	"aegis/internal/node"
 
 	"gopkg.in/yaml.v3"
 )
@@ -285,22 +286,24 @@ func (h *Handlers) joinExistingConnected(ctx context.Context, req DeployNodeRequ
 	if targetHostname == "" {
 		targetHostname = req.TargetIP
 	}
-	out.NodeID = targetHostname
+	targetNodeID := node.StableNodeID(targetHostname)
+	out.NodeID = targetNodeID
 
 	cpHost := edgeHost(cpURL, req.TargetIP)
 	aEdge := net.JoinHostPort(cpHost, "80")
 	bEdge := net.JoinHostPort(req.TargetIP, "80")
 	out.PeerAddr = bEdge
 	logf("  Target name: %s", targetHostname)
+	logf("  Target node_id: %s", targetNodeID)
 	logf("  Control edge: %s", aEdge)
 	logf("  Target edge: %s", bEdge)
 
 	logf("[4/8] Registering target as distnode peer...")
 	if h.DistNode != nil {
-		h.DistNode.Membership.AddPeer(distnode.PeerConfig{ID: targetHostname, Addr: bEdge})
+		h.DistNode.Membership.AddPeer(distnode.PeerConfig{ID: targetNodeID, Addr: bEdge})
 	}
-	if !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetHostname }) {
-		h.Config.DistNode.Peers = append(h.Config.DistNode.Peers, config.DistNodePeer{ID: targetHostname, Addr: bEdge})
+	if !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetNodeID }) {
+		h.Config.DistNode.Peers = append(h.Config.DistNode.Peers, config.DistNodePeer{ID: targetNodeID, Addr: bEdge})
 		cpCfgPath := filepath.Join(h.Config.Runtime.ConfigDir, "config.yaml")
 		if err := h.Config.Save(cpCfgPath); err != nil {
 			out.Action = "join_failed"
@@ -313,7 +316,7 @@ func (h *Handlers) joinExistingConnected(ctx context.Context, req DeployNodeRequ
 
 	logf("[5/8] Writing target distnode peer config...")
 	newBlock := fmt.Sprintf("distnode:\n  enabled: true\n  id: %q\n  name: %q\n  secret: %q\n  peers:\n    - id: %q\n      addr: %q\n",
-		targetHostname, targetHostname, h.Config.DistNode.Secret, h.Config.DistNode.ID, aEdge)
+		targetNodeID, targetHostname, h.Config.DistNode.Secret, h.Config.DistNode.ID, aEdge)
 	rewrite := "sudo cp /etc/aegis/config.yaml /etc/aegis/config.yaml.join-bak && " +
 		"sudo awk 'BEGIN{s=0} /^distnode:/{s=1;next} s==1 && /^[^[:space:]]/{s=0} s==0{print}' /etc/aegis/config.yaml.join-bak | sudo tee /etc/aegis/config.yaml.new >/dev/null && " +
 		fmt.Sprintf("cat <<'YAMLEOF' | sudo tee -a /etc/aegis/config.yaml.new >/dev/null\n%sYAMLEOF\n", newBlock) +
@@ -352,9 +355,9 @@ func (h *Handlers) joinExistingConnected(ctx context.Context, req DeployNodeRequ
 
 	out.Success = true
 	out.Action = "joined"
-	out.Message = "node joined successfully - " + targetHostname
+	out.Message = "node joined successfully - " + targetNodeID
 	out.NextStep = "target restarted and applied; refresh the node list, it should show online soon."
-	logf("=== Join complete: %s joined as %s ===", req.TargetIP, targetHostname)
+	logf("=== Join complete: %s joined as %s ===", req.TargetIP, targetNodeID)
 	return out
 }
 
@@ -368,11 +371,12 @@ func (h *Handlers) installAegisNodeConnected(ctx context.Context, req DeployNode
 	if targetName == "" {
 		targetName = req.TargetIP
 	}
-	targetNodeID := "node_" + targetName
+	targetNodeID := node.StableNodeID(targetName)
 	cpHost := edgeHost(cpURL, req.TargetIP)
 	controlEdge := net.JoinHostPort(cpHost, "80")
 	targetEdge := net.JoinHostPort(req.TargetIP, "80")
 	logf("  Target name: %s", targetName)
+	logf("  Target node_id: %s", targetNodeID)
 	logf("  Control edge: %s", controlEdge)
 	logf("  Target edge: %s", targetEdge)
 
@@ -480,10 +484,10 @@ WantedBy=multi-user.target
 
 	logf("[8/8] Registering distnode peer and validating edge...")
 	if h.DistNode != nil {
-		h.DistNode.Membership.AddPeer(distnode.PeerConfig{ID: targetName, Addr: targetEdge})
+		h.DistNode.Membership.AddPeer(distnode.PeerConfig{ID: targetNodeID, Addr: targetEdge})
 	}
-	if !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetName }) {
-		h.Config.DistNode.Peers = append(h.Config.DistNode.Peers, config.DistNodePeer{ID: targetName, Addr: targetEdge})
+	if !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetNodeID }) {
+		h.Config.DistNode.Peers = append(h.Config.DistNode.Peers, config.DistNodePeer{ID: targetNodeID, Addr: targetEdge})
 		cpCfgPath := filepath.Join(h.Config.Runtime.ConfigDir, "config.yaml")
 		if err := h.Config.Save(cpCfgPath); err != nil {
 			out.AddStep("register_peer", onboarding.StepFailed, err.Error())
@@ -532,6 +536,7 @@ func edgeHost(host, fallback string) string {
 }
 
 func renderNodeServeConfig(controlProxy config.ProxyConfig, nodeName, adminToken, distSecret, controlPeerID, controlEdge string) (string, error) {
+	nodeID := node.StableNodeID(nodeName)
 	cfg := config.ProductionConfig()
 	cfg.Proxy = nodeProxyConfig(controlProxy)
 	cfg.Store = config.StoreConfig{
@@ -555,7 +560,7 @@ func renderNodeServeConfig(controlProxy config.ProxyConfig, nodeName, adminToken
 	cfg.Egress = config.EgressConfig{Enabled: false}
 	cfg.DistNode = config.DistNodeConfig{
 		Enabled: true,
-		ID:      nodeName,
+		ID:      nodeID,
 		Name:    nodeName,
 		Addr:    "127.0.0.1:7380",
 		Secret:  distSecret,
