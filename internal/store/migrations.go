@@ -227,6 +227,11 @@ func AllMigrations() []Migration {
 			Name:    "svc_auth_listen_port",
 			UpSQL:   migration042,
 		},
+		{
+			Version: "043",
+			Name:    "canonical_node_ids",
+			UpSQL:   migration043,
+		},
 	}
 }
 
@@ -1220,4 +1225,80 @@ CREATE INDEX IF NOT EXISTS idx_certificates_source ON certificates(source);
 // via POST /api/service-auth/v1/call — Aegis proxies to <host>:<listen_port>.
 const migration042 = `
 ALTER TABLE svc_auth_services ADD COLUMN listen_port INTEGER NOT NULL DEFAULT 0;
+`
+
+// migration043 canonicalizes legacy hostname-style node IDs to the stable
+// Aegis node_id shape used by the node table and distnode adapter.
+const migration043 = `
+UPDATE endpoints
+SET node_id = 'node_' || node_id
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+
+UPDATE exposures
+SET node_id = 'node_' || node_id
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+
+UPDATE listeners
+SET node_id = 'node_' || node_id
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+
+UPDATE deployment_instances
+SET node_id = 'node_' || node_id
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+
+UPDATE trusted_gateways
+SET target_node_id = 'node_' || target_node_id
+WHERE target_node_id <> '' AND target_node_id NOT LIKE 'node_%';
+
+UPDATE node_join_tokens
+SET used_by_node_id = 'node_' || used_by_node_id
+WHERE used_by_node_id <> '' AND used_by_node_id NOT LIKE 'node_%';
+
+UPDATE node_credentials
+SET node_id = 'node_' || node_id
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+
+UPDATE gateways
+SET node_id = 'node_' || node_id
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+
+UPDATE OR IGNORE node_desired_states
+SET node_id = 'node_' || node_id
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+DELETE FROM node_desired_states
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+
+UPDATE OR IGNORE node_actual_states
+SET node_id = 'node_' || node_id
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+DELETE FROM node_actual_states
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%';
+
+UPDATE OR IGNORE topology_edges
+SET from_node_id = 'node_' || from_node_id
+WHERE from_node_id <> '' AND from_node_id NOT LIKE 'node_%';
+UPDATE OR IGNORE topology_edges
+SET to_node_id = 'node_' || to_node_id
+WHERE to_node_id <> '' AND to_node_id NOT LIKE 'node_%';
+DELETE FROM topology_edges
+WHERE (from_node_id <> '' AND from_node_id NOT LIKE 'node_%')
+   OR (to_node_id <> '' AND to_node_id NOT LIKE 'node_%');
+
+UPDATE nodes
+SET node_id = 'node_' || node_id,
+    name = CASE WHEN name = '' THEN node_id ELSE name END,
+    hostname = CASE WHEN hostname = '' THEN node_id ELSE hostname END,
+    updated_at = datetime('now')
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%'
+  AND NOT EXISTS (
+    SELECT 1 FROM nodes AS stable
+    WHERE stable.node_id = 'node_' || nodes.node_id
+  );
+
+DELETE FROM nodes
+WHERE node_id <> '' AND node_id NOT LIKE 'node_%'
+  AND EXISTS (
+    SELECT 1 FROM nodes AS stable
+    WHERE stable.node_id = 'node_' || nodes.node_id
+  );
 `
