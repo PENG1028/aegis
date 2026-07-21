@@ -21,7 +21,7 @@ func TestArtifactProviderUsesDefaultGitHubArtifactForLinuxAMD64(t *testing.T) {
 		getenv: func(string) string { return "" },
 		stat:   func(string) (os.FileInfo, error) { return fakeFileInfo{}, nil },
 		download: func(ctx context.Context, url string) (string, func() error, error) {
-			want := "https://raw.githubusercontent.com/PENG1028/aegis/fde575ffb4e8503739acb512fef4731f0b0202a2/aegis-linux-amd64"
+			want := "https://raw.githubusercontent.com/PENG1028/aegis/dd2fa39b22b54c6f56a7974f1f7035aaed52d8d4/aegis-linux-amd64"
 			if url != want {
 				t.Fatalf("url = %q, want %q", url, want)
 			}
@@ -43,7 +43,7 @@ func TestArtifactProviderUsesDefaultGitHubArtifactForLinuxAMD64(t *testing.T) {
 	if !strings.Contains(filepath.Base(artifact.LocalPath), "aegis-test-artifact") {
 		t.Fatalf("LocalPath = %q, want downloaded artifact", artifact.LocalPath)
 	}
-	if artifact.Source != "https://raw.githubusercontent.com/PENG1028/aegis/fde575ffb4e8503739acb512fef4731f0b0202a2/aegis-linux-amd64" {
+	if artifact.Source != "https://raw.githubusercontent.com/PENG1028/aegis/dd2fa39b22b54c6f56a7974f1f7035aaed52d8d4/aegis-linux-amd64" {
 		t.Fatalf("Source = %q, want default GitHub URL", artifact.Source)
 	}
 	if artifact.Cleanup != nil {
