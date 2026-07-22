@@ -59,11 +59,16 @@ type DeployNodeRequest struct {
 //	Success=false → red error + raw LogOutput for debugging
 //	SSH not available → manual_command shown in a code block
 type DeployNodeResponse struct {
-	Success       bool   `json:"success"`
-	NodeID        string `json:"node_id,omitempty"`
-	Message       string `json:"message"`
-	LogOutput     string `json:"log_output,omitempty"`
-	ManualCommand string `json:"manual_command,omitempty"` // fallback when SSH unavailable
+	Success       bool                    `json:"success"`
+	Action        string                  `json:"action,omitempty"`
+	NodeID        string                  `json:"node_id,omitempty"`
+	PeerAddr      string                  `json:"peer_addr,omitempty"`
+	Message       string                  `json:"message"`
+	NextStep      string                  `json:"next_step,omitempty"`
+	Steps         []onboarding.StepReport `json:"steps,omitempty"`
+	Capabilities  []onboarding.Capability `json:"capabilities,omitempty"`
+	LogOutput     string                  `json:"log_output,omitempty"`
+	ManualCommand string                  `json:"manual_command,omitempty"` // fallback when SSH unavailable
 }
 
 type ensureNodeMode = onboarding.Mode
@@ -211,9 +216,14 @@ func deployResponseFromEnsure(result *onboarding.EnsureResult) *DeployNodeRespon
 		return &DeployNodeResponse{Success: false, Message: "node ensure returned no result"}
 	}
 	return &DeployNodeResponse{
-		Success: result.Success,
-		NodeID:  result.NodeID,
-		Message: result.Message,
+		Success:      result.Success,
+		Action:       result.Action,
+		NodeID:       result.NodeID,
+		PeerAddr:     result.PeerAddr,
+		Message:      result.Message,
+		NextStep:     result.NextStep,
+		Steps:        result.Steps,
+		Capabilities: result.Capabilities,
 	}
 }
 

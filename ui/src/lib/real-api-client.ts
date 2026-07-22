@@ -1587,8 +1587,13 @@ export const adminApi = {
     node_name?: string;
   }): Promise<{
     success: boolean;
+    action?: string;
     node_id?: string;
+    peer_addr?: string;
     message: string;
+    next_step?: string;
+    steps?: { name: string; status: string; message?: string }[];
+    capabilities?: { name: string; available: boolean; detail?: string }[];
     log_output?: string;
     manual_command?: string;
   }> => post('/api/admin/v1/nodes/deploy', req),
