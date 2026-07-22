@@ -73,3 +73,102 @@ func TestNativeSSHDoesNotRequireSystemSSHBinary(t *testing.T) {
 		t.Fatal("native SSH deployment should not depend on an external ssh binary")
 	}
 }
+
+func TestResolveControlPeerRejectsLocalhostCurrentMode(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.DistNode.ID = "node_control"
+
+	_, err := h.resolveControlPeer(DeployNodeRequest{TargetIP: "43.160.211.232"}, "localhost:7380")
+	if err == nil {
+		t.Fatal("resolveControlPeer returned nil error for localhost current mode")
+	}
+	if !strings.Contains(err.Error(), "push_only") {
+		t.Fatalf("error = %q, want push_only guidance", err.Error())
+	}
+}
+
+func TestResolveControlPeerPushOnlyUsesExplicitControl(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.DistNode.ID = "node_laptop"
+
+	peer, err := h.resolveControlPeer(DeployNodeRequest{
+		ControllerMode:  controllerModePushOnly,
+		ControlNodeID:   "control-a",
+		ControlEdgeAddr: "43.159.34.11",
+		ControlSecret:   "cluster-secret",
+		TargetIP:        "43.160.211.232",
+	}, "localhost:7380")
+	if err != nil {
+		t.Fatalf("resolveControlPeer: %v", err)
+	}
+	if !peer.PushOnly {
+		t.Fatal("PushOnly = false, want true")
+	}
+	if peer.NodeID != "node_control-a" {
+		t.Fatalf("NodeID = %q, want node_control-a", peer.NodeID)
+	}
+	if peer.EdgeAddr != "43.159.34.11:80" {
+		t.Fatalf("EdgeAddr = %q, want 43.159.34.11:80", peer.EdgeAddr)
+	}
+	if peer.Secret != "cluster-secret" {
+		t.Fatalf("Secret = %q, want cluster-secret", peer.Secret)
+	}
+}
+
+func TestResolveControlPeerPushOnlyRequiresControlNodeID(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.DistNode.ID = "node_laptop"
+
+	_, err := h.resolveControlPeer(DeployNodeRequest{
+		ControllerMode:  controllerModePushOnly,
+		ControlEdgeAddr: "43.159.34.11:80",
+		TargetIP:        "43.160.211.232",
+	}, "localhost:7380")
+	if err == nil {
+		t.Fatal("resolveControlPeer returned nil error without control_node_id")
+	}
+	if !strings.Contains(err.Error(), "control_node_id") {
+		t.Fatalf("error = %q, want control_node_id guidance", err.Error())
+	}
+}
+
+func TestResolveControlPeerPushOnlyRequiresControlSecret(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.DistNode.ID = "node_laptop"
+
+	_, err := h.resolveControlPeer(DeployNodeRequest{
+		ControllerMode:  controllerModePushOnly,
+		ControlNodeID:   "node_control",
+		ControlEdgeAddr: "43.159.34.11:80",
+		TargetIP:        "43.160.211.232",
+	}, "localhost:7380")
+	if err == nil {
+		t.Fatal("resolveControlPeer returned nil error without control_secret")
+	}
+	if !strings.Contains(err.Error(), "control_secret") {
+		t.Fatalf("error = %q, want control_secret guidance", err.Error())
+	}
+}
+
+func TestResolveControlPeerCurrentUsesRequestHost(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.DistNode.ID = "node_control"
+	h.Config.DistNode.Secret = "current-secret"
+
+	peer, err := h.resolveControlPeer(DeployNodeRequest{TargetIP: "43.160.211.232"}, "43.159.34.11:7380")
+	if err != nil {
+		t.Fatalf("resolveControlPeer: %v", err)
+	}
+	if peer.PushOnly {
+		t.Fatal("PushOnly = true, want false")
+	}
+	if peer.NodeID != "node_control" {
+		t.Fatalf("NodeID = %q, want node_control", peer.NodeID)
+	}
+	if peer.EdgeAddr != "43.159.34.11:80" {
+		t.Fatalf("EdgeAddr = %q, want 43.159.34.11:80", peer.EdgeAddr)
+	}
+	if peer.Secret != "current-secret" {
+		t.Fatalf("Secret = %q, want current-secret", peer.Secret)
+	}
+}

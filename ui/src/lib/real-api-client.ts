@@ -1585,6 +1585,10 @@ export const adminApi = {
     ssh_password?: string;
     join_token?: string;
     node_name?: string;
+    controller_mode?: 'current' | 'push_only';
+    control_node_id?: string;
+    control_edge_addr?: string;
+    control_secret?: string;
   }): Promise<{
     success: boolean;
     action?: string;

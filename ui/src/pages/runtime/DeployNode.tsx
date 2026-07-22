@@ -5,6 +5,7 @@ import Input from '@/components/ui/Input';
 import { cn } from '@/lib/utils';
 
 type AuthMode = 'key' | 'password';
+type ControllerMode = 'current' | 'push_only';
 type StepStatus = 'pending' | 'skipped' | 'ok' | 'warning' | 'failed';
 
 interface DeployForm {
@@ -14,6 +15,10 @@ interface DeployForm {
   authMode: AuthMode;
   sshKey: string;
   sshPassword: string;
+  controllerMode: ControllerMode;
+  controlNodeId: string;
+  controlEdgeAddr: string;
+  controlSecret: string;
 }
 
 interface BinaryInfo {
@@ -71,6 +76,10 @@ const initialForm: DeployForm = {
   authMode: 'key',
   sshKey: '',
   sshPassword: '',
+  controllerMode: 'current',
+  controlNodeId: '',
+  controlEdgeAddr: '',
+  controlSecret: '',
 };
 
 const statusLabel: Record<StepStatus, string> = {
@@ -98,6 +107,9 @@ const actionLabel: Record<string, string> = {
   start_first: '需要先启动',
   join_failed: '接入失败',
   not_configured: '未配置',
+  control_plane_invalid: '控制节点无效',
+  push_only_joined: '本机推送接入',
+  push_only_deployed: '本机推送部署',
 };
 
 const SearchIcon = () => (
@@ -176,6 +188,9 @@ export default function DeployNode() {
     if (!form.targetIp.trim()) return '请输入目标 IP 或主机名';
     if (form.authMode === 'key' && !form.sshKey.trim()) return '请粘贴 SSH 私钥';
     if (form.authMode === 'password' && !form.sshPassword.trim()) return '请输入 SSH 密码';
+    if (form.controllerMode === 'push_only' && !form.controlNodeId.trim()) return '请输入公网控制节点 ID';
+    if (form.controllerMode === 'push_only' && !form.controlEdgeAddr.trim()) return '请输入公网控制节点地址';
+    if (form.controllerMode === 'push_only' && !form.controlSecret.trim()) return '请输入公网集群密钥';
     return null;
   };
 
@@ -186,6 +201,10 @@ export default function DeployNode() {
     auth_method: form.authMode,
     ssh_key: form.authMode === 'key' ? form.sshKey : undefined,
     ssh_password: form.authMode === 'password' ? form.sshPassword : undefined,
+    controller_mode: form.controllerMode,
+    control_node_id: form.controllerMode === 'push_only' ? form.controlNodeId.trim() : undefined,
+    control_edge_addr: form.controllerMode === 'push_only' ? form.controlEdgeAddr.trim() : undefined,
+    control_secret: form.controllerMode === 'push_only' ? form.controlSecret.trim() : undefined,
   });
 
   const runPreflight = async () => {
@@ -257,6 +276,58 @@ export default function DeployNode() {
             <Field label="SSH 用户">
               <Input value={form.sshUser} onChange={e => setForm({ ...form, sshUser: e.target.value })} placeholder="ubuntu" />
             </Field>
+
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-a-muted">控制节点</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {([
+                  { value: 'current', label: '当前控制节点', helper: '当前打开的 Aegis 可以被目标从 80/443 访问。' },
+                  { value: 'push_only', label: '本机仅推送', helper: '本机没有公网入口，目标加入另一个公网控制节点。' },
+                ] as const).map(option => (
+                  <label
+                    key={option.value}
+                    className={cn(
+                      'min-h-16 cursor-pointer rounded-a-sm border px-3 py-2 transition-colors',
+                      form.controllerMode === option.value ? 'border-a-accent bg-a-accent/10 text-a-fg' : 'border-a-border bg-a-bg text-a-muted hover:text-a-fg',
+                    )}
+                  >
+                    <div className="flex items-center gap-2 text-xs font-medium">
+                      <input
+                        type="radio"
+                        name="controllerMode"
+                        checked={form.controllerMode === option.value}
+                        onChange={() => setForm({ ...form, controllerMode: option.value })}
+                        className="accent-a-accent"
+                      />
+                      {option.label}
+                    </div>
+                    <div className="mt-1 pl-5 text-[11px] leading-relaxed text-a-muted">{option.helper}</div>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            {form.controllerMode === 'push_only' && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="公网控制节点 ID">
+                  <Input value={form.controlNodeId} onChange={e => setForm({ ...form, controlNodeId: e.target.value })} placeholder="node_VM-0-11-ubuntu" />
+                </Field>
+                <Field label="公网控制地址">
+                  <Input value={form.controlEdgeAddr} onChange={e => setForm({ ...form, controlEdgeAddr: e.target.value })} placeholder="43.159.34.11:80" />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="公网集群密钥">
+                    <input
+                      type="password"
+                      value={form.controlSecret}
+                      onChange={e => setForm({ ...form, controlSecret: e.target.value })}
+                      placeholder="DistNode secret / invite secret"
+                      className="w-full min-h-10 px-3 py-2 rounded-a-sm bg-a-bg border border-a-border text-sm text-a-fg placeholder:text-a-muted/40 focus:outline-none focus:border-a-accent"
+                    />
+                  </Field>
+                </div>
+              </div>
+            )}
 
             <fieldset className="space-y-2">
               <legend className="text-xs font-medium text-a-muted">认证方式</legend>

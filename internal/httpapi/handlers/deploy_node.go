@@ -43,13 +43,17 @@ import (
 //	│  [测试连接]  [开始部署]                         │
 //	└────────────────────────────────────────────────┘
 type DeployNodeRequest struct {
-	TargetIP    string `json:"target_ip"`    // e.g. "192.168.10.11"
-	SSHUser     string `json:"ssh_user"`     // e.g. "ubuntu", defaults to "root"
-	SSHPort     int    `json:"ssh_port"`     // SSH port, defaults to 22
-	AuthMethod  string `json:"auth_method"`  // "key" | "password"
-	SSHKey      string `json:"ssh_key"`      // PEM private key content (for auth=key)
-	SSHPassword string `json:"ssh_password"` // SSH password (for auth=password)
-	NodeName    string `json:"node_name"`    // optional, defaults to hostname
+	TargetIP        string `json:"target_ip"`         // e.g. "192.168.10.11"
+	SSHUser         string `json:"ssh_user"`          // e.g. "ubuntu", defaults to "root"
+	SSHPort         int    `json:"ssh_port"`          // SSH port, defaults to 22
+	AuthMethod      string `json:"auth_method"`       // "key" | "password"
+	SSHKey          string `json:"ssh_key"`           // PEM private key content (for auth=key)
+	SSHPassword     string `json:"ssh_password"`      // SSH password (for auth=password)
+	NodeName        string `json:"node_name"`         // optional, defaults to hostname
+	ControllerMode  string `json:"controller_mode"`   // "current" | "push_only"
+	ControlNodeID   string `json:"control_node_id"`   // required for push_only
+	ControlEdgeAddr string `json:"control_edge_addr"` // required for push_only, e.g. "43.159.34.11:80"
+	ControlSecret   string `json:"control_secret"`    // required for push_only
 }
 
 // DeployNodeResponse is returned after a deploy attempt.
@@ -77,6 +81,19 @@ const (
 	ensureNodeJoinOnly ensureNodeMode = onboarding.ModeJoinOnly
 	ensureNodeDeploy   ensureNodeMode = onboarding.ModeDeploy
 )
+
+const (
+	controllerModeCurrent  = "current"
+	controllerModePushOnly = "push_only"
+)
+
+type controlPeer struct {
+	NodeID    string
+	EdgeAddr  string
+	Secret    string
+	PushOnly  bool
+	HostLabel string
+}
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 // @ui: The handler does 3 things the frontend needs to know:
@@ -124,6 +141,10 @@ func (h *Handlers) AdminDeployNode(w http.ResponseWriter, r *http.Request) {
 	if req.SSHPort == 0 {
 		req.SSHPort = 22
 	}
+	if req.ControllerMode == "" {
+		req.ControllerMode = controllerModeCurrent
+	}
+	req.TargetIP = strings.TrimSpace(req.TargetIP)
 
 	// Validate auth-specific fields
 	switch req.AuthMethod {
@@ -227,17 +248,77 @@ func deployResponseFromEnsure(result *onboarding.EnsureResult) *DeployNodeRespon
 	}
 }
 
+func (h *Handlers) resolveControlPeer(req DeployNodeRequest, cpURL string) (controlPeer, error) {
+	mode := strings.TrimSpace(req.ControllerMode)
+	if mode == "" {
+		mode = controllerModeCurrent
+	}
+	switch mode {
+	case controllerModeCurrent:
+	case controllerModePushOnly:
+	default:
+		return controlPeer{}, fmt.Errorf("controller_mode must be %q or %q", controllerModeCurrent, controllerModePushOnly)
+	}
+
+	if mode == controllerModePushOnly {
+		controlID := node.StableNodeID(strings.TrimSpace(req.ControlNodeID))
+		if controlID == "" {
+			return controlPeer{}, fmt.Errorf("control_node_id is required for push_only mode")
+		}
+		controlSecret := strings.TrimSpace(req.ControlSecret)
+		if controlSecret == "" {
+			return controlPeer{}, fmt.Errorf("control_secret is required for push_only mode")
+		}
+		controlAddr, err := normalizeEdgeAddr(req.ControlEdgeAddr)
+		if err != nil {
+			return controlPeer{}, err
+		}
+		return controlPeer{NodeID: controlID, EdgeAddr: controlAddr, Secret: controlSecret, PushOnly: true, HostLabel: controlAddr}, nil
+	}
+
+	controlID := strings.TrimSpace(h.Config.DistNode.ID)
+	if controlID == "" {
+		controlID = node.StableNodeID(h.Config.DistNode.Name)
+	}
+	if controlID == "" || controlID == "node_" {
+		return controlPeer{}, fmt.Errorf("current control plane distnode id is not configured")
+	}
+	cpHost := edgeHost(cpURL, "")
+	if isLocalControlHost(cpHost) {
+		return controlPeer{}, fmt.Errorf("current UI/control plane is %q, which is not reachable from the target; use push_only mode with a public control endpoint", cpURL)
+	}
+	if cpHost == "" {
+		cpHost = strings.TrimSpace(req.TargetIP)
+	}
+	controlAddr := net.JoinHostPort(cpHost, "80")
+	return controlPeer{NodeID: controlID, EdgeAddr: controlAddr, Secret: h.Config.DistNode.Secret, HostLabel: cpHost}, nil
+}
+
 func (h *Handlers) ensureNode(ctx context.Context, req DeployNodeRequest, cpURL string, mode ensureNodeMode, logf func(string, ...interface{})) (*onboarding.EnsureResult, error) {
 	out := &onboarding.EnsureResult{Action: string(mode)}
 	if logf == nil {
 		logf = func(string, ...interface{}) {}
 	}
-	if h.Config == nil || h.Config.DistNode.Secret == "" {
+	if h.Config == nil {
+		out.Action = "not_configured"
+		out.Message = "control plane config is not available"
+		out.AddStep("config", onboarding.StepFailed, out.Message)
+		return out, nil
+	}
+	control, err := h.resolveControlPeer(req, cpURL)
+	if err != nil {
+		out.Action = "control_plane_invalid"
+		out.Message = err.Error()
+		out.AddStep("control_plane", onboarding.StepFailed, err.Error())
+		return out, nil
+	}
+	if !control.PushOnly && h.Config.DistNode.Secret == "" {
 		out.Action = "not_configured"
 		out.Message = "distnode secret is not configured on this control plane"
 		out.AddStep("config", onboarding.StepFailed, out.Message)
 		return out, nil
 	}
+	out.AddStep("control_plane", onboarding.StepOK, fmt.Sprintf("%s via %s", control.NodeID, control.EdgeAddr))
 	logf("=== Ensuring Aegis node %s (%s) ===", req.TargetIP, mode)
 	logf("[1/8] Connecting via SSH (%s auth)...", req.AuthMethod)
 	conn, err := deploy.Connect(ctx, deploy.SSHConfig{
@@ -280,13 +361,13 @@ func (h *Handlers) ensureNode(ctx context.Context, req DeployNodeRequest, cpURL 
 			return out, nil
 		}
 		out.AddStep("detect_aegis", onboarding.StepOK, "Aegis is running")
-		return h.joinExistingConnected(ctx, req, cpURL, conn, out, logf), nil
+		return h.joinExistingConnected(ctx, req, control, conn, out, logf), nil
 	}
 
-	return h.installAegisNodeConnected(ctx, req, cpURL, conn, out, logf), nil
+	return h.installAegisNodeConnected(ctx, req, control, conn, out, logf), nil
 }
 
-func (h *Handlers) joinExistingConnected(ctx context.Context, req DeployNodeRequest, cpURL string, conn *deploy.Connection, out *onboarding.EnsureResult, logf func(string, ...interface{})) *onboarding.EnsureResult {
+func (h *Handlers) joinExistingConnected(ctx context.Context, req DeployNodeRequest, control controlPeer, conn *deploy.Connection, out *onboarding.EnsureResult, logf func(string, ...interface{})) *onboarding.EnsureResult {
 	logf("[3/8] Reading target identity...")
 	hostResult := conn.Executor.Run(ctx, "hostname")
 	targetHostname := strings.TrimSpace(hostResult.Stdout)
@@ -299,20 +380,20 @@ func (h *Handlers) joinExistingConnected(ctx context.Context, req DeployNodeRequ
 	targetNodeID := node.StableNodeID(targetHostname)
 	out.NodeID = targetNodeID
 
-	cpHost := edgeHost(cpURL, req.TargetIP)
-	aEdge := net.JoinHostPort(cpHost, "80")
 	bEdge := net.JoinHostPort(req.TargetIP, "80")
 	out.PeerAddr = bEdge
 	logf("  Target name: %s", targetHostname)
 	logf("  Target node_id: %s", targetNodeID)
-	logf("  Control edge: %s", aEdge)
+	logf("  Control edge: %s", control.EdgeAddr)
 	logf("  Target edge: %s", bEdge)
 
 	logf("[4/8] Registering target as distnode peer...")
-	if h.DistNode != nil {
+	if control.PushOnly {
+		out.AddStep("register_peer", onboarding.StepWarning, "push-only controller cannot update the public control plane peer list")
+	} else if h.DistNode != nil {
 		h.DistNode.Membership.AddPeer(distnode.PeerConfig{ID: targetNodeID, Addr: bEdge})
 	}
-	if !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetNodeID }) {
+	if !control.PushOnly && !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetNodeID }) {
 		h.Config.DistNode.Peers = append(h.Config.DistNode.Peers, config.DistNodePeer{ID: targetNodeID, Addr: bEdge})
 		cpCfgPath := filepath.Join(h.Config.Runtime.ConfigDir, "config.yaml")
 		if err := h.Config.Save(cpCfgPath); err != nil {
@@ -322,11 +403,13 @@ func (h *Handlers) joinExistingConnected(ctx context.Context, req DeployNodeRequ
 			return out
 		}
 	}
-	out.AddStep("register_peer", onboarding.StepOK, "target registered on control plane")
+	if !control.PushOnly {
+		out.AddStep("register_peer", onboarding.StepOK, "target registered on control plane")
+	}
 
 	logf("[5/8] Writing target distnode peer config...")
 	newBlock := fmt.Sprintf("distnode:\n  enabled: true\n  id: %q\n  name: %q\n  secret: %q\n  peers:\n    - id: %q\n      addr: %q\n",
-		targetNodeID, targetHostname, h.Config.DistNode.Secret, h.Config.DistNode.ID, aEdge)
+		targetNodeID, targetHostname, control.Secret, control.NodeID, control.EdgeAddr)
 	rewrite := "sudo cp /etc/aegis/config.yaml /etc/aegis/config.yaml.join-bak && " +
 		"sudo awk 'BEGIN{s=0} /^distnode:/{s=1;next} s==1 && /^[^[:space:]]/{s=0} s==0{print}' /etc/aegis/config.yaml.join-bak | sudo tee /etc/aegis/config.yaml.new >/dev/null && " +
 		fmt.Sprintf("cat <<'YAMLEOF' | sudo tee -a /etc/aegis/config.yaml.new >/dev/null\n%sYAMLEOF\n", newBlock) +
@@ -364,14 +447,19 @@ func (h *Handlers) joinExistingConnected(ctx context.Context, req DeployNodeRequ
 	out.AddStep("target_apply", onboarding.StepOK, "target apply OK")
 
 	out.Success = true
-	out.Action = "joined"
+	if control.PushOnly {
+		out.Action = "push_only_joined"
+		out.NextStep = "target now points at the public control endpoint; register this target on that public control plane to make the cluster fully bidirectional."
+	} else {
+		out.Action = "joined"
+		out.NextStep = "target restarted and applied; refresh the node list, it should show online soon."
+	}
 	out.Message = "node joined successfully - " + targetNodeID
-	out.NextStep = "target restarted and applied; refresh the node list, it should show online soon."
 	logf("=== Join complete: %s joined as %s ===", req.TargetIP, targetNodeID)
 	return out
 }
 
-func (h *Handlers) installAegisNodeConnected(ctx context.Context, req DeployNodeRequest, cpURL string, conn *deploy.Connection, out *onboarding.EnsureResult, logf func(string, ...interface{})) *onboarding.EnsureResult {
+func (h *Handlers) installAegisNodeConnected(ctx context.Context, req DeployNodeRequest, control controlPeer, conn *deploy.Connection, out *onboarding.EnsureResult, logf func(string, ...interface{})) *onboarding.EnsureResult {
 	logf("[2/8] Reading target identity...")
 	hostResult := conn.Executor.Run(ctx, "hostname")
 	targetName := strings.TrimSpace(hostResult.Stdout)
@@ -382,12 +470,10 @@ func (h *Handlers) installAegisNodeConnected(ctx context.Context, req DeployNode
 		targetName = req.TargetIP
 	}
 	targetNodeID := node.StableNodeID(targetName)
-	cpHost := edgeHost(cpURL, req.TargetIP)
-	controlEdge := net.JoinHostPort(cpHost, "80")
 	targetEdge := net.JoinHostPort(req.TargetIP, "80")
 	logf("  Target name: %s", targetName)
 	logf("  Target node_id: %s", targetNodeID)
-	logf("  Control edge: %s", controlEdge)
+	logf("  Control edge: %s", control.EdgeAddr)
 	logf("  Target edge: %s", targetEdge)
 
 	logf("[3/8] Creating directories...")
@@ -435,7 +521,7 @@ func (h *Handlers) installAegisNodeConnected(ctx context.Context, req DeployNode
 
 	logf("[5/8] Writing /etc/aegis/config.yaml...")
 	targetAdminToken := core.NewID("adm")
-	cfgYAML, err := renderNodeServeConfig(h.Config.Proxy, targetName, targetAdminToken, h.Config.DistNode.Secret, h.Config.DistNode.ID, controlEdge)
+	cfgYAML, err := renderNodeServeConfig(h.Config.Proxy, targetName, targetAdminToken, control.Secret, control.NodeID, control.EdgeAddr)
 	if err != nil {
 		out.AddStep("render_config", onboarding.StepFailed, err.Error())
 		out.Message = "Render node config failed: " + err.Error()
@@ -493,10 +579,12 @@ WantedBy=multi-user.target
 	out.AddStep("local_health", onboarding.StepOK, "local control plane is healthy")
 
 	logf("[8/8] Registering distnode peer and validating edge...")
-	if h.DistNode != nil {
+	if control.PushOnly {
+		out.AddStep("register_peer", onboarding.StepWarning, "push-only controller cannot update the public control plane peer list")
+	} else if h.DistNode != nil {
 		h.DistNode.Membership.AddPeer(distnode.PeerConfig{ID: targetNodeID, Addr: targetEdge})
 	}
-	if !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetNodeID }) {
+	if !control.PushOnly && !slices.ContainsFunc(h.Config.DistNode.Peers, func(p config.DistNodePeer) bool { return p.ID == targetNodeID }) {
 		h.Config.DistNode.Peers = append(h.Config.DistNode.Peers, config.DistNodePeer{ID: targetNodeID, Addr: targetEdge})
 		cpCfgPath := filepath.Join(h.Config.Runtime.ConfigDir, "config.yaml")
 		if err := h.Config.Save(cpCfgPath); err != nil {
@@ -505,7 +593,9 @@ WantedBy=multi-user.target
 			return out
 		}
 	}
-	out.AddStep("register_peer", onboarding.StepOK, "peer registered")
+	if !control.PushOnly {
+		out.AddStep("register_peer", onboarding.StepOK, "peer registered")
+	}
 	if code := applyTarget(ctx, conn, targetAdminToken); code == "200" {
 		logf("  Target apply OK")
 		out.AddStep("target_apply", onboarding.StepOK, "target apply OK")
@@ -523,12 +613,40 @@ WantedBy=multi-user.target
 	logf("=== Deploy complete: %s joined as %s ===", req.TargetIP, targetNodeID)
 
 	out.Success = true
-	out.Action = string(onboarding.ModeDeploy)
+	if control.PushOnly {
+		out.Action = "push_only_deployed"
+		out.NextStep = "target was deployed and points at the public control endpoint; register this target on that public control plane to make the cluster fully bidirectional."
+	} else {
+		out.Action = string(onboarding.ModeDeploy)
+	}
 	out.NodeID = targetNodeID
 	out.PeerAddr = targetEdge
 	out.Message = fmt.Sprintf("Node deployed to %s and configured for distnode.", req.TargetIP)
 	out.AddStep("edge_health", onboarding.StepOK, "target edge /api/healthz reachable")
 	return out
+}
+
+func normalizeEdgeAddr(addr string) (string, error) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return "", fmt.Errorf("control_edge_addr is required for push_only mode")
+	}
+	addr = strings.TrimPrefix(strings.TrimPrefix(addr, "http://"), "https://")
+	addr = strings.TrimRight(addr, "/")
+	host, port, err := net.SplitHostPort(addr)
+	if err == nil {
+		if strings.TrimSpace(host) == "" {
+			return "", fmt.Errorf("control_edge_addr host is required")
+		}
+		if strings.TrimSpace(port) == "" {
+			return "", fmt.Errorf("control_edge_addr port is required")
+		}
+		return net.JoinHostPort(host, port), nil
+	}
+	if strings.Contains(addr, ":") && strings.Count(addr, ":") > 1 {
+		return "", fmt.Errorf("control_edge_addr must include a host and optional port")
+	}
+	return net.JoinHostPort(addr, "80"), nil
 }
 
 func edgeHost(host, fallback string) string {
@@ -543,6 +661,18 @@ func edgeHost(host, fallback string) string {
 		return host[:i]
 	}
 	return host
+}
+
+func isLocalControlHost(host string) bool {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return false
+	}
+	if host == "localhost" || host == "::1" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func renderNodeServeConfig(controlProxy config.ProxyConfig, nodeName, adminToken, distSecret, controlPeerID, controlEdge string) (string, error) {
