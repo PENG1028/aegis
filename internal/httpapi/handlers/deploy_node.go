@@ -83,17 +83,18 @@ type DeployPlanResponse struct {
 }
 
 type DeployPlan struct {
-	Action        string              `json:"action"`
-	CanProceed    bool                `json:"can_proceed"`
-	Target        DeployPlanTarget    `json:"target"`
-	Control       DeployPlanControl   `json:"control"`
-	Artifact      DeployPlanArtifact  `json:"artifact"`
-	Provider      DeployPlanProvider  `json:"provider"`
-	Files         []DeployPlanFile    `json:"files"`
-	Services      []DeployPlanService `json:"services"`
-	Checks        []DeployPlanCheck   `json:"checks"`
-	Warnings      []string            `json:"warnings,omitempty"`
-	ManualActions []string            `json:"manual_actions,omitempty"`
+	Action        string                   `json:"action"`
+	CanProceed    bool                     `json:"can_proceed"`
+	Target        DeployPlanTarget         `json:"target"`
+	Control       DeployPlanControl        `json:"control"`
+	Artifact      DeployPlanArtifact       `json:"artifact"`
+	Provider      DeployPlanProvider       `json:"provider"`
+	RepairActions []DeployPlanRepairAction `json:"repair_actions,omitempty"`
+	Files         []DeployPlanFile         `json:"files"`
+	Services      []DeployPlanService      `json:"services"`
+	Checks        []DeployPlanCheck        `json:"checks"`
+	Warnings      []string                 `json:"warnings,omitempty"`
+	ManualActions []string                 `json:"manual_actions,omitempty"`
 }
 
 type DeployPlanTarget struct {
@@ -132,6 +133,17 @@ type DeployPlanProvider struct {
 	Reason       string                        `json:"reason,omitempty"`
 	Candidates   map[string]*deploy.BinaryInfo `json:"candidates,omitempty"`
 	PortBindings []DeployPlanPortBinding       `json:"port_bindings,omitempty"`
+}
+
+type DeployPlanRepairAction struct {
+	Name                 string   `json:"name"`
+	Scope                string   `json:"scope"`
+	Status               string   `json:"status"`
+	Automatic            bool     `json:"automatic"`
+	RequiresConfirmation bool     `json:"requires_confirmation"`
+	Commands             []string `json:"commands,omitempty"`
+	Changes              []string `json:"changes,omitempty"`
+	Reason               string   `json:"reason,omitempty"`
 }
 
 type DeployPlanPortBinding struct {
@@ -443,11 +455,12 @@ func (h *Handlers) buildDeployPlan(req DeployNodeRequest, control controlPeer, r
 	targetOS, targetArch := targetPlatform(report)
 	artifact := h.planArtifact(targetOS, targetArch)
 	providerPlan := h.planProvider(report)
+	repairs := h.planRepairActions(providerPlan, checksPlatformSupported(report), control)
 	files := h.planFiles(action, report)
 	services := h.planServices(action, report)
 	checks := h.planChecks(report, providerPlan)
-	warnings := h.planWarnings(action, providerPlan, checks, control)
-	manual := h.planManualActions(providerPlan, checks, control)
+	warnings := h.planWarnings(action, providerPlan, checks, control, repairs)
+	manual := h.planManualActions(checks, repairs)
 
 	target := DeployPlanTarget{Host: req.TargetIP, OS: targetOS, Arch: targetArch}
 	if report != nil {
@@ -461,7 +474,7 @@ func (h *Handlers) buildDeployPlan(req DeployNodeRequest, control controlPeer, r
 		}
 	}
 
-	canProceed := artifact.Source != "" && providerPlan.Status != "port_conflict" && providerPlan.Status != "unsupported_provider"
+	canProceed := artifact.Source != "" && !hasBlockingRepair(repairs)
 	return &DeployPlan{
 		Action:     action,
 		CanProceed: canProceed,
@@ -474,12 +487,22 @@ func (h *Handlers) buildDeployPlan(req DeployNodeRequest, control controlPeer, r
 		},
 		Artifact:      artifact,
 		Provider:      providerPlan,
+		RepairActions: repairs,
 		Files:         files,
 		Services:      services,
 		Checks:        checks,
 		Warnings:      warnings,
 		ManualActions: manual,
 	}
+}
+
+func hasBlockingRepair(repairs []DeployPlanRepairAction) bool {
+	for _, repair := range repairs {
+		if repair.Status == "unsupported" || (repair.RequiresConfirmation && repair.Scope != "distnode") {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handlers) planArtifact(targetOS, targetArch string) DeployPlanArtifact {
@@ -554,6 +577,107 @@ func (h *Handlers) planProvider(report *deploy.PreflightReport) DeployPlanProvid
 	return out
 }
 
+func checksPlatformSupported(report *deploy.PreflightReport) bool {
+	return report != nil && report.Host != nil && normalizeOS(report.Host.OS) == "linux"
+}
+
+func (h *Handlers) planRepairActions(provider DeployPlanProvider, linux bool, control controlPeer) []DeployPlanRepairAction {
+	var actions []DeployPlanRepairAction
+	switch provider.Status {
+	case "provider_missing":
+		actions = append(actions, installProviderRepair(provider.ExpectedID, linux))
+	case "provider_stopped":
+		actions = append(actions, startProviderRepair(provider.ExpectedID, linux))
+	case "port_conflict":
+		actions = append(actions, portConflictRepair(provider))
+	case "unsupported_provider":
+		actions = append(actions, DeployPlanRepairAction{
+			Name:      "provider_not_supported",
+			Scope:     "provider",
+			Status:    "unsupported",
+			Reason:    "deployment planning does not know how to install or manage this provider yet",
+			Automatic: false,
+		})
+	}
+	if control.PushOnly {
+		actions = append(actions, DeployPlanRepairAction{
+			Name:                 "register_public_control_peer",
+			Scope:                "distnode",
+			Status:               "manual_required",
+			Automatic:            false,
+			RequiresConfirmation: true,
+			Reason:               "push-only deployment cannot safely mutate the public control plane without an invite/registration API",
+			Changes:              []string{"add target peer to the public control plane membership/config"},
+		})
+	}
+	return actions
+}
+
+func installProviderRepair(providerID string, linux bool) DeployPlanRepairAction {
+	action := DeployPlanRepairAction{
+		Name:                 "install_provider",
+		Scope:                "provider",
+		Status:               "manual_required",
+		Automatic:            false,
+		RequiresConfirmation: true,
+		Reason:               "installing middleware changes the host package set and may bind 80/443",
+		Changes:              []string{"install " + providerID, "enable/start " + providerID},
+	}
+	if !linux {
+		action.Status = "unsupported"
+		action.Reason = "automatic provider installation is currently planned only for Linux targets"
+		return action
+	}
+	switch providerID {
+	case "haproxy":
+		action.Commands = []string{"sudo apt-get update", "sudo apt-get install -y haproxy", "sudo systemctl enable --now haproxy"}
+	case "caddy":
+		action.Commands = []string{"sudo apt-get update", "sudo apt-get install -y caddy", "sudo systemctl enable --now caddy"}
+	default:
+		action.Status = "unsupported"
+		action.Reason = "no install recipe exists for this provider"
+	}
+	return action
+}
+
+func startProviderRepair(providerID string, linux bool) DeployPlanRepairAction {
+	action := DeployPlanRepairAction{
+		Name:                 "start_provider",
+		Scope:                "provider",
+		Status:               "available",
+		Automatic:            true,
+		RequiresConfirmation: false,
+		Reason:               "provider is installed but stopped",
+		Changes:              []string{"start " + providerID + " service"},
+	}
+	if !linux {
+		action.Status = "unsupported"
+		action.Automatic = false
+		action.Reason = "service start is currently planned only for Linux targets"
+		return action
+	}
+	action.Commands = []string{"sudo systemctl enable --now " + providerID}
+	return action
+}
+
+func portConflictRepair(provider DeployPlanProvider) DeployPlanRepairAction {
+	var owners []string
+	for _, b := range provider.PortBindings {
+		if !b.Expected {
+			owners = append(owners, fmt.Sprintf("%s owns :%d", b.Process, b.Port))
+		}
+	}
+	return DeployPlanRepairAction{
+		Name:                 "resolve_port_conflict",
+		Scope:                "ports",
+		Status:               "manual_required",
+		Automatic:            false,
+		RequiresConfirmation: true,
+		Reason:               "another process owns 80/443; stopping or migrating it can break existing traffic",
+		Changes:              owners,
+	}
+}
+
 func providerPortBindings(report *deploy.PreflightReport, expected string) []DeployPlanPortBinding {
 	if report == nil {
 		return nil
@@ -621,16 +745,16 @@ func (h *Handlers) planChecks(report *deploy.PreflightReport, provider DeployPla
 	return checks
 }
 
-func (h *Handlers) planWarnings(action string, provider DeployPlanProvider, checks []DeployPlanCheck, control controlPeer) []string {
+func (h *Handlers) planWarnings(action string, provider DeployPlanProvider, checks []DeployPlanCheck, control controlPeer, repairs []DeployPlanRepairAction) []string {
 	var warnings []string
 	if action == "repair" {
 		warnings = append(warnings, "Aegis is installed but not running; deployment may need service repair instead of a clean install.")
 	}
 	switch provider.Status {
 	case "provider_missing":
-		warnings = append(warnings, "Expected provider is missing; this version reports the issue but does not auto-install middleware.")
+		warnings = append(warnings, "Expected provider is missing; review the install repair action before deploying.")
 	case "provider_stopped":
-		warnings = append(warnings, "Expected provider is installed but stopped; deployment can continue, but edge verification may fail until it is started.")
+		warnings = append(warnings, "Expected provider is installed but stopped; repair can start it before edge verification.")
 	case "port_conflict":
 		warnings = append(warnings, "80/443 appears to be owned by another process; Aegis will not automatically take over it in this plan.")
 	case "unsupported_provider":
@@ -644,19 +768,22 @@ func (h *Handlers) planWarnings(action string, provider DeployPlanProvider, chec
 			warnings = append(warnings, c.Detail)
 		}
 	}
+	for _, repair := range repairs {
+		if repair.Status == "unsupported" && repair.Reason != "" {
+			warnings = append(warnings, repair.Reason)
+		}
+	}
 	return warnings
 }
 
-func (h *Handlers) planManualActions(provider DeployPlanProvider, checks []DeployPlanCheck, control controlPeer) []string {
+func (h *Handlers) planManualActions(checks []DeployPlanCheck, repairs []DeployPlanRepairAction) []string {
 	var actions []string
-	if provider.Status == "provider_missing" {
-		actions = append(actions, "Install the expected provider or switch the cluster provider before deploying.")
-	}
-	if provider.Status == "port_conflict" {
-		actions = append(actions, "Stop or migrate the process currently owning 80/443 before applying gateway config.")
-	}
-	if control.PushOnly {
-		actions = append(actions, "Register the target node on the public control plane after SSH deployment succeeds.")
+	for _, repair := range repairs {
+		if repair.RequiresConfirmation || repair.Status == "manual_required" {
+			if repair.Reason != "" {
+				actions = append(actions, repair.Reason)
+			}
+		}
 	}
 	for _, c := range checks {
 		if c.Status == "unsupported_os" {

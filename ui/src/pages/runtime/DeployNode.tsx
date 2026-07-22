@@ -66,6 +66,16 @@ interface DeployPlan {
     reason?: string;
     port_bindings?: { port: number; process: string; listen: string; expected: boolean }[];
   };
+  repair_actions?: {
+    name: string;
+    scope: string;
+    status: string;
+    automatic: boolean;
+    requires_confirmation: boolean;
+    commands?: string[];
+    changes?: string[];
+    reason?: string;
+  }[];
   files: { path: string; action: string; backup: boolean; reason?: string }[];
   services: { name: string; action: string; reason?: string }[];
   checks: { name: string; status: string; detail?: string }[];
@@ -574,6 +584,40 @@ function DeployPlanPanel({ plan }: { plan: DeployPlan }) {
           </div>
         </div>
 
+        {(plan.repair_actions?.length || 0) > 0 && (
+          <div>
+            <div className="mb-2 text-xs font-medium text-a-muted">修复动作</div>
+            <div className="grid gap-2 lg:grid-cols-2">
+              {plan.repair_actions?.map(action => (
+                <div key={`${action.scope}-${action.name}`} className="rounded-a-sm border border-a-border bg-a-bg px-3 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="font-mono text-xs text-a-fg">{action.name}</div>
+                      <div className="mt-0.5 text-[11px] text-a-muted">{action.scope}</div>
+                    </div>
+                    <StepBadge status={planStatusToStep(action.status)} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                    <span className={cn('rounded-a-sm border px-2 py-1', action.automatic ? 'border-[#4cd964]/30 text-[#4cd964]' : 'border-a-border text-a-muted')}>
+                      {action.automatic ? '可自动执行' : '手动处理'}
+                    </span>
+                    {action.requires_confirmation && <span className="rounded-a-sm border border-[#e8b830]/30 px-2 py-1 text-[#e8b830]">需要确认</span>}
+                  </div>
+                  {action.reason && <div className="mt-2 text-[11px] leading-relaxed text-a-muted">{action.reason}</div>}
+                  {(action.changes?.length || 0) > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {action.changes?.map(change => <div key={change} className="text-[11px] text-a-muted">{change}</div>)}
+                    </div>
+                  )}
+                  {(action.commands?.length || 0) > 0 && (
+                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-a-sm border border-a-border bg-a-surface/50 p-2 font-mono text-[11px] text-a-fg">{action.commands?.join('\n')}</pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div>
           <div className="mb-2 text-xs font-medium text-a-muted">将写入/确认的内容</div>
           <div className="grid gap-2 lg:grid-cols-2">
@@ -683,14 +727,17 @@ function planStatusToStep(status: string): StepStatus {
     case 'ok':
     case 'ready':
     case 'planned':
+    case 'available':
       return 'ok';
     case 'provider_missing':
     case 'provider_stopped':
     case 'unsupported_os':
     case 'unsupported_provider':
+    case 'manual_required':
       return 'warning';
     case 'port_conflict':
     case 'failed':
+    case 'unsupported':
       return 'failed';
     default:
       return 'pending';

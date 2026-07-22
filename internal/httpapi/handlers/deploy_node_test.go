@@ -195,10 +195,10 @@ func TestBuildDeployPlanForCleanTargetShowsArtifactAndFiles(t *testing.T) {
 	if plan.Action != "deploy" {
 		t.Fatalf("Action = %q, want deploy", plan.Action)
 	}
-	if plan.Artifact.URL != "https://raw.githubusercontent.com/PENG1028/aegis/e6c2ec77b35bd9d3ea57a9741f7988e0cef5e7c1/aegis-linux-amd64" {
+	if plan.Artifact.URL != "https://raw.githubusercontent.com/PENG1028/aegis/0bcbf8666ef4724ee990aff3753777ef3c746621/aegis-linux-amd64" {
 		t.Fatalf("Artifact.URL = %q, want default raw binary URL", plan.Artifact.URL)
 	}
-	if plan.Artifact.SHA256 != "976442117b6bd95587f4ffb7538ff7da916116668b59072679eba3b7c7b4c8f2" {
+	if plan.Artifact.SHA256 != "69a3a852014f1e2c7871b9358872e9859043d1e5408d42ee160eb001568efe70" {
 		t.Fatalf("Artifact.SHA256 = %q, want default checksum", plan.Artifact.SHA256)
 	}
 	if plan.Provider.Status != "ready" {
@@ -256,6 +256,22 @@ func TestBuildDeployPlanReportsMissingProvider(t *testing.T) {
 	if len(plan.Warnings) == 0 {
 		t.Fatal("Warnings is empty, want provider warning")
 	}
+	if plan.CanProceed {
+		t.Fatal("CanProceed = true, want false when provider install requires confirmation")
+	}
+	if len(plan.RepairActions) != 1 {
+		t.Fatalf("RepairActions len = %d, want 1", len(plan.RepairActions))
+	}
+	repair := plan.RepairActions[0]
+	if repair.Name != "install_provider" {
+		t.Fatalf("repair.Name = %q, want install_provider", repair.Name)
+	}
+	if !repair.RequiresConfirmation {
+		t.Fatal("repair.RequiresConfirmation = false, want true")
+	}
+	if len(repair.Commands) == 0 || !strings.Contains(strings.Join(repair.Commands, "\n"), "haproxy") {
+		t.Fatalf("repair.Commands = %#v, want haproxy install commands", repair.Commands)
+	}
 }
 
 func TestBuildDeployPlanBlocksUnexpectedPortOwner(t *testing.T) {
@@ -280,5 +296,45 @@ func TestBuildDeployPlanBlocksUnexpectedPortOwner(t *testing.T) {
 	}
 	if plan.CanProceed {
 		t.Fatal("CanProceed = true, want false when 80/443 has an unexpected owner")
+	}
+	if len(plan.RepairActions) != 1 || plan.RepairActions[0].Name != "resolve_port_conflict" {
+		t.Fatalf("RepairActions = %#v, want resolve_port_conflict", plan.RepairActions)
+	}
+}
+
+func TestBuildDeployPlanProviderStoppedHasAutomaticRepair(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.Proxy.Provider = "caddy"
+
+	plan := h.buildDeployPlan(
+		DeployNodeRequest{TargetIP: "43.160.211.232", ControllerMode: controllerModeCurrent},
+		controlPeer{NodeID: "node_control", EdgeAddr: "43.159.34.11:80", Secret: "secret"},
+		&deploy.PreflightReport{
+			Host:  &deploy.HostInfo{OS: "linux", Arch: "x86_64"},
+			Aegis: &deploy.BinaryInfo{Found: false},
+			Providers: map[string]*deploy.BinaryInfo{
+				"caddy": {Found: true, Running: false},
+			},
+		},
+	)
+
+	if plan.Provider.Status != "provider_stopped" {
+		t.Fatalf("Provider.Status = %q, want provider_stopped", plan.Provider.Status)
+	}
+	if !plan.CanProceed {
+		t.Fatal("CanProceed = false, want true for automatic provider start repair")
+	}
+	if len(plan.RepairActions) != 1 {
+		t.Fatalf("RepairActions len = %d, want 1", len(plan.RepairActions))
+	}
+	repair := plan.RepairActions[0]
+	if repair.Name != "start_provider" {
+		t.Fatalf("repair.Name = %q, want start_provider", repair.Name)
+	}
+	if !repair.Automatic || repair.RequiresConfirmation {
+		t.Fatalf("repair automatic/confirmation = %v/%v, want true/false", repair.Automatic, repair.RequiresConfirmation)
+	}
+	if len(repair.Commands) != 1 || !strings.Contains(repair.Commands[0], "systemctl enable --now caddy") {
+		t.Fatalf("repair.Commands = %#v, want caddy start command", repair.Commands)
 	}
 }
