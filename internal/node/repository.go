@@ -245,6 +245,23 @@ func (r *Repository) UpdateHeartbeat(nodeID, status, agentVersion, publicIP, pri
 	return nil
 }
 
+// TouchLiveness updates only the fields that represent observed node liveness.
+// It intentionally preserves catalog fields such as hostname/IP/provider data.
+func (r *Repository) TouchLiveness(nodeID, status, lastError string, now time.Time) error {
+	if nodeID == "" {
+		return nil
+	}
+	nowStr := now.Format(time.RFC3339)
+	_, err := r.DB.Exec(
+		`UPDATE nodes SET status=?, last_heartbeat_at=?, last_error=?, last_seen=?, updated_at=? WHERE node_id=?`,
+		status, nowStr, lastError, nowStr, nowStr, nodeID,
+	)
+	if err != nil {
+		return fmt.Errorf("touch node liveness: %w", err)
+	}
+	return nil
+}
+
 // SetStatus updates the node's status field.
 func (r *Repository) SetStatus(nodeID, status, lastError string) error {
 	now := time.Now().Format(time.RFC3339)

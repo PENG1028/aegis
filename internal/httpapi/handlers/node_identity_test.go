@@ -39,6 +39,9 @@ func TestMergeMembershipNodesCanonicalizesLegacyPeerID(t *testing.T) {
 	if merged[0].Status != node.StatusOnline {
 		t.Fatalf("status = %q, want online", merged[0].Status)
 	}
+	if merged[0].LastHeartbeatAt.IsZero() {
+		t.Fatal("last heartbeat is zero for alive membership peer")
+	}
 }
 
 func TestMergeMembershipNodesCreatesStableVirtualNode(t *testing.T) {

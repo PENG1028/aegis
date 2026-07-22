@@ -166,8 +166,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, "warning: failed to register listeners: %v\n", err)
 	}
 	nodeSvc := node.NewService(nodeRepo)
-	if _, err := nodeSvc.RegisterCurrent(); err != nil {
+	currentNode, err := nodeSvc.RegisterCurrent()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: node registration failed: %v\n", err)
+	}
+	if currentNode != nil {
+		go func(nodeID string) {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				if err := nodeRepo.TouchLiveness(nodeID, node.StatusOnline, "", time.Now()); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: current node heartbeat %s: %v\n", nodeID, err)
+				}
+				<-ticker.C
+			}
+		}(currentNode.NodeID)
 	}
 	leaderSvc := cluster.NewLeaderService(nodeRepo)
 	if leader, err := leaderSvc.GetLeader(); err == nil && leader == nil {
@@ -462,6 +475,9 @@ func main() {
 		dn.Membership.OnEvent(func(evt distnode.PeerEvent) {
 			switch evt.Type {
 			case distnode.EventPeerAlive:
+				if err := nodeRepo.TouchLiveness(evt.Peer.Info.ID, node.StatusOnline, "", time.Now()); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: update peer liveness %s: %v\n", evt.Peer.Info.ID, err)
+				}
 				go func(peerID string) {
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
@@ -473,11 +489,28 @@ func main() {
 					dsHook.syncTransparentRules()
 				}(evt.Peer.Info.ID)
 			case distnode.EventPeerDead:
-				nodeRepo.UpdateHeartbeat(evt.Peer.Info.ID, "offline", "", "", "", "", "", time.Now())
+				if err := nodeRepo.TouchLiveness(evt.Peer.Info.ID, node.StatusOffline, "", time.Now()); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: update peer liveness %s: %v\n", evt.Peer.Info.ID, err)
+				}
 			}
 		})
 
 		go dn.Start(context.Background())
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				for _, peer := range dn.Membership.AlivePeers() {
+					if peer == nil || peer.Info.ID == "" {
+						continue
+					}
+					if err := nodeRepo.TouchLiveness(peer.Info.ID, node.StatusOnline, "", time.Now()); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: peer heartbeat %s: %v\n", peer.Info.ID, err)
+					}
+				}
+				<-ticker.C
+			}
+		}()
 		go syncClusterCatalogFromAlivePeers(context.Background(), dn, nodeRepo, serviceRepo, endpointRepo, dsHook, 5, 3*time.Second)
 	} else {
 		fmt.Fprintf(os.Stderr, "info: distnode disabled\n")

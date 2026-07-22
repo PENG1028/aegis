@@ -59,6 +59,8 @@ func (s *Service) RegisterCurrent() (*NodeRecord, error) {
 		existing.PrivateIP = privateIP
 		existing.PublicIP = publicIP
 		existing.NetworkID = networkID
+		existing.Status = StatusOnline
+		existing.LastHeartbeatAt = now
 		existing.LastSeen = now
 		existing.UpdatedAt = now
 		existing.Capabilities = DetectCapabilities()
@@ -73,20 +75,21 @@ func (s *Service) RegisterCurrent() (*NodeRecord, error) {
 
 	// Create new node record
 	n := &NodeRecord{
-		ID:           core.NewID("node"),
-		NodeID:       nodeID,
-		Name:         hostname,
-		Role:         RoleWorker,
-		Status:       StatusOnline,
-		Hostname:     hostname,
-		LocalIP:      localIP,
-		PrivateIP:    privateIP,
-		PublicIP:     publicIP,
-		IsCurrent:    true,
-		Capabilities: DetectCapabilities(),
-		LastSeen:     now,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:              core.NewID("node"),
+		NodeID:          nodeID,
+		Name:            hostname,
+		Role:            RoleWorker,
+		Status:          StatusOnline,
+		Hostname:        hostname,
+		LocalIP:         localIP,
+		PrivateIP:       privateIP,
+		PublicIP:        publicIP,
+		IsCurrent:       true,
+		Capabilities:    DetectCapabilities(),
+		LastHeartbeatAt: now,
+		LastSeen:        now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if err := s.repo.Create(n); err != nil {
 		return nil, err

@@ -143,6 +143,7 @@ func mergeMembershipNodes(dbNodes []node.NodeRecord, dn *distnode.DistNode) []no
 		if pid == "" {
 			continue
 		}
+		now := time.Now()
 		alive := p.Alive
 		status := "offline"
 		if alive {
@@ -156,6 +157,17 @@ func mergeMembershipNodes(dbNodes []node.NodeRecord, dn *distnode.DistNode) []no
 			}
 			if alive && existing.Status != "online" {
 				existing.Status = status
+			}
+			if alive {
+				observedAt := existing.LastHeartbeatAt
+				if p.AliveAt.After(observedAt) {
+					observedAt = p.AliveAt
+				}
+				if observedAt.IsZero() {
+					observedAt = now
+				}
+				existing.LastHeartbeatAt = observedAt
+				existing.LastSeen = observedAt
 			}
 		} else {
 			// Peer unknown to SQLite — add as virtual node
