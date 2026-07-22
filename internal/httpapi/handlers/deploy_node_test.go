@@ -195,10 +195,10 @@ func TestBuildDeployPlanForCleanTargetShowsArtifactAndFiles(t *testing.T) {
 	if plan.Action != "deploy" {
 		t.Fatalf("Action = %q, want deploy", plan.Action)
 	}
-	if plan.Artifact.URL != "https://raw.githubusercontent.com/PENG1028/aegis/0bcbf8666ef4724ee990aff3753777ef3c746621/aegis-linux-amd64" {
+	if plan.Artifact.URL != "https://raw.githubusercontent.com/PENG1028/aegis/8dc738d91c93d7a577476e26eca5ebc1383461b1/aegis-linux-amd64" {
 		t.Fatalf("Artifact.URL = %q, want default raw binary URL", plan.Artifact.URL)
 	}
-	if plan.Artifact.SHA256 != "69a3a852014f1e2c7871b9358872e9859043d1e5408d42ee160eb001568efe70" {
+	if plan.Artifact.SHA256 != "bfabbb48612da5ebbd12325fd73fe435ab465969f9479055a9cada6acb6756f8" {
 		t.Fatalf("Artifact.SHA256 = %q, want default checksum", plan.Artifact.SHA256)
 	}
 	if plan.Provider.Status != "ready" {
@@ -336,5 +336,39 @@ func TestBuildDeployPlanProviderStoppedHasAutomaticRepair(t *testing.T) {
 	}
 	if len(repair.Commands) != 1 || !strings.Contains(repair.Commands[0], "systemctl enable --now caddy") {
 		t.Fatalf("repair.Commands = %#v, want caddy start command", repair.Commands)
+	}
+}
+
+func TestSelectExecutableRepairAllowsStartProvider(t *testing.T) {
+	repair, err := selectExecutableRepair(&DeployPlan{RepairActions: []DeployPlanRepairAction{
+		{Name: "start_provider", Automatic: true, Status: "available", Commands: []string{"sudo systemctl enable --now caddy"}},
+	}}, "start_provider", false)
+	if err != nil {
+		t.Fatalf("selectExecutableRepair: %v", err)
+	}
+	if repair.Name != "start_provider" {
+		t.Fatalf("repair.Name = %q, want start_provider", repair.Name)
+	}
+}
+
+func TestSelectExecutableRepairRejectsInstallProvider(t *testing.T) {
+	_, err := selectExecutableRepair(&DeployPlan{RepairActions: []DeployPlanRepairAction{
+		{Name: "install_provider", Automatic: false, RequiresConfirmation: true, Status: "manual_required", Commands: []string{"sudo apt-get install -y haproxy"}},
+	}}, "install_provider", true)
+	if err == nil {
+		t.Fatal("selectExecutableRepair succeeded, want rejection")
+	}
+	if !strings.Contains(err.Error(), "only executes start_provider") {
+		t.Fatalf("error = %q, want start_provider whitelist message", err.Error())
+	}
+}
+
+func TestSelectExecutableRepairRejectsMissingAction(t *testing.T) {
+	_, err := selectExecutableRepair(&DeployPlan{}, "start_provider", false)
+	if err == nil {
+		t.Fatal("selectExecutableRepair succeeded, want missing action error")
+	}
+	if !strings.Contains(err.Error(), "not present") {
+		t.Fatalf("error = %q, want not present guidance", err.Error())
 	}
 }

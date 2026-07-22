@@ -54,6 +54,8 @@ type DeployNodeRequest struct {
 	ControlNodeID   string `json:"control_node_id"`   // required for push_only
 	ControlEdgeAddr string `json:"control_edge_addr"` // required for push_only, e.g. "43.159.34.11:80"
 	ControlSecret   string `json:"control_secret"`    // required for push_only
+	RepairAction    string `json:"repair_action"`     // safe whitelist action to execute
+	Confirm         bool   `json:"confirm"`           // reserved for future medium-risk actions
 }
 
 // DeployNodeResponse is returned after a deploy attempt.
@@ -80,6 +82,17 @@ type DeployPlanResponse struct {
 	Error   string                  `json:"error,omitempty"`
 	Plan    *DeployPlan             `json:"plan,omitempty"`
 	Report  *deploy.PreflightReport `json:"report,omitempty"`
+}
+
+type DeployRepairResponse struct {
+	Success  bool                    `json:"success"`
+	Error    string                  `json:"error,omitempty"`
+	Action   string                  `json:"action,omitempty"`
+	Commands []string                `json:"commands,omitempty"`
+	Before   *DeployPlan             `json:"before,omitempty"`
+	After    *DeployPlan             `json:"after,omitempty"`
+	Report   *deploy.PreflightReport `json:"report,omitempty"`
+	Message  string                  `json:"message,omitempty"`
 }
 
 type DeployPlan struct {
@@ -318,8 +331,8 @@ func (h *Handlers) executeDeploy(ctx context.Context, req DeployNodeRequest, cpU
 // isSSHAvailable checks if the local system has SSH tools.
 // @ui: If this returns false, the frontend switches to "manual command" mode.
 func (h *Handlers) executeDeployServe(ctx context.Context, req DeployNodeRequest, cpURL string, logf func(string, ...interface{})) (*DeployNodeResponse, error) {
-	if h.Config == nil || h.Config.DistNode.Secret == "" {
-		return &DeployNodeResponse{Success: false, Message: "distnode secret is not configured on this control plane"}, nil
+	if h.Config == nil {
+		return &DeployNodeResponse{Success: false, Message: "control plane config is not available"}, nil
 	}
 
 	result, err := h.ensureNode(ctx, req, cpURL, ensureNodeDeploy, logf)
@@ -379,6 +392,110 @@ func (h *Handlers) AdminDeployPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	plan := h.buildDeployPlan(req, control, report)
 	writeJSON(w, http.StatusOK, DeployPlanResponse{Success: true, Plan: plan, Report: report})
+}
+
+func (h *Handlers) AdminDeployRepair(w http.ResponseWriter, r *http.Request) {
+	var req DeployNodeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	normalizeDeployRequest(&req)
+	req.RepairAction = strings.TrimSpace(req.RepairAction)
+	if req.TargetIP == "" {
+		writeError(w, http.StatusBadRequest, "target_ip required")
+		return
+	}
+	if req.RepairAction == "" {
+		writeError(w, http.StatusBadRequest, "repair_action required")
+		return
+	}
+	if h.Config == nil {
+		writeJSON(w, http.StatusOK, DeployRepairResponse{Success: false, Error: "control plane config is not available"})
+		return
+	}
+	control, err := h.resolveControlPeer(req, r.Host)
+	if err != nil {
+		writeJSON(w, http.StatusOK, DeployRepairResponse{Success: false, Error: err.Error()})
+		return
+	}
+
+	conn, err := deploy.Connect(r.Context(), deploy.SSHConfig{
+		Host:        req.TargetIP,
+		User:        req.SSHUser,
+		Port:        req.SSHPort,
+		AuthMethod:  deploy.AuthMethod(req.AuthMethod),
+		SSHKey:      req.SSHKey,
+		SSHPassword: req.SSHPassword,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusOK, DeployRepairResponse{Success: false, Error: err.Error()})
+		return
+	}
+	defer conn.Executor.Close()
+	defer conn.Files.Close()
+
+	beforeReport, err := deploy.PreflightConnection(r.Context(), conn)
+	if err != nil {
+		writeJSON(w, http.StatusOK, DeployRepairResponse{Success: false, Error: err.Error()})
+		return
+	}
+	before := h.buildDeployPlan(req, control, beforeReport)
+	repair, err := selectExecutableRepair(before, req.RepairAction, req.Confirm)
+	if err != nil {
+		writeJSON(w, http.StatusOK, DeployRepairResponse{Success: false, Error: err.Error(), Before: before, Report: beforeReport})
+		return
+	}
+
+	for _, cmd := range repair.Commands {
+		res := conn.Executor.Run(r.Context(), cmd)
+		if res.Error != nil || res.ExitCode != 0 {
+			msg := fmt.Sprintf("repair command failed: %s exit=%d err=%v stderr=%s", cmd, res.ExitCode, res.Error, res.Stderr)
+			writeJSON(w, http.StatusOK, DeployRepairResponse{Success: false, Error: msg, Action: repair.Name, Commands: repair.Commands, Before: before, Report: beforeReport})
+			return
+		}
+	}
+
+	afterReport, err := deploy.PreflightConnection(r.Context(), conn)
+	if err != nil {
+		writeJSON(w, http.StatusOK, DeployRepairResponse{Success: false, Error: err.Error(), Action: repair.Name, Commands: repair.Commands, Before: before})
+		return
+	}
+	after := h.buildDeployPlan(req, control, afterReport)
+	writeJSON(w, http.StatusOK, DeployRepairResponse{
+		Success:  true,
+		Action:   repair.Name,
+		Commands: repair.Commands,
+		Before:   before,
+		After:    after,
+		Report:   afterReport,
+		Message:  "repair executed and deployment plan refreshed",
+	})
+}
+
+func selectExecutableRepair(plan *DeployPlan, name string, confirm bool) (DeployPlanRepairAction, error) {
+	if plan == nil {
+		return DeployPlanRepairAction{}, fmt.Errorf("deploy plan is not available")
+	}
+	for _, action := range plan.RepairActions {
+		if action.Name != name {
+			continue
+		}
+		if action.Name != "start_provider" {
+			return DeployPlanRepairAction{}, fmt.Errorf("%s is not executable yet; this version only executes start_provider", action.Name)
+		}
+		if action.RequiresConfirmation && !confirm {
+			return DeployPlanRepairAction{}, fmt.Errorf("%s requires confirmation", action.Name)
+		}
+		if !action.Automatic {
+			return DeployPlanRepairAction{}, fmt.Errorf("%s is not marked automatic", action.Name)
+		}
+		if len(action.Commands) == 0 {
+			return DeployPlanRepairAction{}, fmt.Errorf("%s has no command to execute", action.Name)
+		}
+		return action, nil
+	}
+	return DeployPlanRepairAction{}, fmt.Errorf("repair action %q is not present in the current plan", name)
 }
 
 func normalizeDeployRequest(req *DeployNodeRequest) {

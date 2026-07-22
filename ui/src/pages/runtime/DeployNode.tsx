@@ -50,6 +50,17 @@ interface DeployPlanResponse {
   report?: PreflightReport;
 }
 
+interface DeployRepairResponse {
+  success: boolean;
+  error?: string;
+  action?: string;
+  commands?: string[];
+  before?: DeployPlan;
+  after?: DeployPlan;
+  report?: PreflightReport;
+  message?: string;
+}
+
 interface DeployPlan {
   action: string;
   can_proceed: boolean;
@@ -210,6 +221,7 @@ export default function DeployNode() {
   const [checking, setChecking] = useState(false);
   const [joining, setJoining] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  const [repairingAction, setRepairingAction] = useState<string | null>(null);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -218,7 +230,7 @@ export default function DeployNode() {
   const report = preflight?.report;
   const aegisRunning = Boolean(report?.aegis?.running);
   const targetIsClean = Boolean(report && !report.aegis?.found);
-  const busy = checking || joining || deploying;
+  const busy = checking || joining || deploying || Boolean(repairingAction);
   const primaryAction = useMemo(() => {
     if (!report) return '先检测目标';
     if (aegisRunning) return '接入已有节点';
@@ -297,6 +309,39 @@ export default function DeployNode() {
     } finally {
       setJoining(false);
       setDeploying(false);
+    }
+  };
+
+  const runRepair = async (actionName: string) => {
+    const ve = validationError();
+    if (ve) {
+      toast(ve, 'error');
+      return;
+    }
+    setRepairingAction(actionName);
+    setError(null);
+    try {
+      const data = await postJSON<DeployRepairResponse>('/api/admin/v1/nodes/deploy/repair', {
+        ...makeBody(),
+        repair_action: actionName,
+      });
+      if (!data.success) {
+        setError(data.error || '修复失败');
+        toast(data.error || '修复失败', 'error');
+        return;
+      }
+      if (data.report) {
+        setPreflight({ success: true, report: data.report });
+      }
+      if (data.after) {
+        setPlan(data.after);
+      }
+      setLogs(data.commands || []);
+      toast(data.message || '修复完成');
+    } catch (e: any) {
+      setError(e.message || '修复请求失败');
+    } finally {
+      setRepairingAction(null);
     }
   };
 
@@ -447,7 +492,7 @@ export default function DeployNode() {
       )}
 
       {plan && (
-        <DeployPlanPanel plan={plan} />
+        <DeployPlanPanel plan={plan} onRepair={runRepair} repairingAction={repairingAction} busy={busy} />
       )}
 
       {result && (
@@ -532,7 +577,17 @@ function PreflightPanel({ preflight }: { preflight: PreflightResponse }) {
   );
 }
 
-function DeployPlanPanel({ plan }: { plan: DeployPlan }) {
+function DeployPlanPanel({
+  plan,
+  onRepair,
+  repairingAction,
+  busy,
+}: {
+  plan: DeployPlan;
+  onRepair: (actionName: string) => void;
+  repairingAction: string | null;
+  busy: boolean;
+}) {
   return (
     <Card
       title="部署计划"
@@ -595,7 +650,19 @@ function DeployPlanPanel({ plan }: { plan: DeployPlan }) {
                       <div className="font-mono text-xs text-a-fg">{action.name}</div>
                       <div className="mt-0.5 text-[11px] text-a-muted">{action.scope}</div>
                     </div>
-                    <StepBadge status={planStatusToStep(action.status)} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StepBadge status={planStatusToStep(action.status)} />
+                      {action.automatic && !action.requires_confirmation && (
+                        <Btn
+                          onClick={() => onRepair(action.name)}
+                          disabled={busy}
+                          primary
+                          className="text-[11px]"
+                        >
+                          {repairingAction === action.name ? '执行中...' : '执行修复'}
+                        </Btn>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                     <span className={cn('rounded-a-sm border px-2 py-1', action.automatic ? 'border-[#4cd964]/30 text-[#4cd964]' : 'border-a-border text-a-muted')}>
