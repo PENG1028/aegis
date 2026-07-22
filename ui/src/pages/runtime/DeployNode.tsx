@@ -43,6 +43,36 @@ interface PreflightResponse {
   report?: PreflightReport;
 }
 
+interface DeployPlanResponse {
+  success: boolean;
+  error?: string;
+  plan?: DeployPlan;
+  report?: PreflightReport;
+}
+
+interface DeployPlan {
+  action: string;
+  can_proceed: boolean;
+  target: { host: string; os?: string; arch?: string; aegis_found: boolean; aegis_running: boolean; config_found: boolean; config_path?: string };
+  control: { mode: string; node_id: string; edge_addr: string; push_only: boolean };
+  artifact: { source: string; url?: string; sha256?: string; target_path: string; needs_download: boolean; platform?: string };
+  provider: {
+    expected_id: string;
+    installed: boolean;
+    running: boolean;
+    matched: boolean;
+    config_path?: string;
+    status: string;
+    reason?: string;
+    port_bindings?: { port: number; process: string; listen: string; expected: boolean }[];
+  };
+  files: { path: string; action: string; backup: boolean; reason?: string }[];
+  services: { name: string; action: string; reason?: string }[];
+  checks: { name: string; status: string; detail?: string }[];
+  warnings?: string[];
+  manual_actions?: string[];
+}
+
 interface StepReport {
   name: string;
   status: StepStatus;
@@ -163,6 +193,7 @@ export default function DeployNode() {
   const logEndRef = useRef<HTMLDivElement>(null);
   const [form, setForm] = useState<DeployForm>(initialForm);
   const [preflight, setPreflight] = useState<PreflightResponse | null>(null);
+  const [plan, setPlan] = useState<DeployPlan | null>(null);
   const [result, setResult] = useState<EnsureResponse | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -215,18 +246,20 @@ export default function DeployNode() {
     }
     setChecking(true);
     setPreflight(null);
+    setPlan(null);
     setResult(null);
     setLogs([]);
     setError(null);
     try {
-      const data = await postJSON<PreflightResponse>('/api/admin/v1/nodes/preflight', makeBody());
-      setPreflight(data);
+      const data = await postJSON<DeployPlanResponse>('/api/admin/v1/nodes/deploy/plan', makeBody());
+      setPreflight({ success: data.success, error: data.error, report: data.report });
+      setPlan(data.plan || null);
       if (!data.success) {
-        setError(data.error || '目标检测失败');
-        toast(data.error || '目标检测失败', 'error');
+        setError(data.error || '部署计划生成失败');
+        toast(data.error || '部署计划生成失败', 'error');
       }
     } catch (e: any) {
-      setError(e.message || '目标检测请求失败');
+      setError(e.message || '部署计划请求失败');
     } finally {
       setChecking(false);
     }
@@ -378,7 +411,7 @@ export default function DeployNode() {
 
             <div className="flex flex-wrap gap-2">
               <Btn onClick={runPreflight} disabled={busy}>
-                <SearchIcon /> {checking ? '检测中...' : '检测目标'}
+                <SearchIcon /> {checking ? '生成中...' : '生成部署计划'}
               </Btn>
               <Btn onClick={() => runEnsure('join')} disabled={busy || !aegisRunning} primary={aegisRunning}>
                 <LinkIcon /> {joining ? '接入中...' : '接入已有节点'}
@@ -401,6 +434,10 @@ export default function DeployNode() {
 
       {preflight && (
         <PreflightPanel preflight={preflight} />
+      )}
+
+      {plan && (
+        <DeployPlanPanel plan={plan} />
       )}
 
       {result && (
@@ -485,6 +522,96 @@ function PreflightPanel({ preflight }: { preflight: PreflightResponse }) {
   );
 }
 
+function DeployPlanPanel({ plan }: { plan: DeployPlan }) {
+  return (
+    <Card
+      title="部署计划"
+      subtitle={`${actionLabel[plan.action] || plan.action} · ${plan.can_proceed ? '可以继续' : '需要先处理风险'}`}
+      className={plan.can_proceed ? 'border-[#4cd964]/30' : 'border-[#e8b830]/30'}
+    >
+      <div className="space-y-4">
+        <div className="grid gap-3 lg:grid-cols-3">
+          <MetaTile label="artifact" value={plan.artifact.url || plan.artifact.source || '未解析'} />
+          <MetaTile label="sha256" value={plan.artifact.sha256 || '未指定'} />
+          <MetaTile label="control" value={`${plan.control.node_id} @ ${plan.control.edge_addr}`} />
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-a-sm border border-a-border bg-a-bg px-3 py-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-xs font-medium text-a-muted">Provider</div>
+              <StepBadge status={planStatusToStep(plan.provider.status)} />
+            </div>
+            <div className="font-mono text-xs text-a-fg">{plan.provider.expected_id}</div>
+            <div className="mt-1 text-[11px] leading-relaxed text-a-muted">{plan.provider.reason || '状态正常'}</div>
+            {plan.provider.config_path && <div className="mt-2 break-all font-mono text-[11px] text-a-muted">{plan.provider.config_path}</div>}
+            {(plan.provider.port_bindings?.length || 0) > 0 && (
+              <div className="mt-3 space-y-1">
+                {plan.provider.port_bindings?.map(binding => (
+                  <div key={`${binding.port}-${binding.listen}`} className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className="font-mono text-a-fg">:{binding.port}</span>
+                    <span className={binding.expected ? 'text-[#4cd964]' : 'text-[#ff8a9b]'}>{binding.process}</span>
+                    <span className="font-mono text-a-muted">{binding.listen}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-a-sm border border-a-border bg-a-bg px-3 py-3">
+            <div className="mb-2 text-xs font-medium text-a-muted">执行检查</div>
+            <div className="space-y-2">
+              {plan.checks.map(check => (
+                <div key={check.name} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_80px] sm:items-center">
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-a-fg">{check.name}</div>
+                    {check.detail && <div className="mt-0.5 text-[11px] text-a-muted">{check.detail}</div>}
+                  </div>
+                  <StepBadge status={planStatusToStep(check.status)} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-xs font-medium text-a-muted">将写入/确认的内容</div>
+          <div className="grid gap-2 lg:grid-cols-2">
+            {plan.files.map(file => (
+              <div key={`${file.path}-${file.action}`} className="rounded-a-sm border border-a-border bg-a-bg px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="break-all font-mono text-xs text-a-fg">{file.path}</span>
+                  <span className="rounded-a-sm border border-a-border px-2 py-1 text-[11px] text-a-muted">{file.action}</span>
+                </div>
+                <div className="mt-1 text-[11px] text-a-muted">{file.backup ? '会先备份' : '不需要备份'}{file.reason ? ` · ${file.reason}` : ''}</div>
+              </div>
+            ))}
+            {plan.services.map(service => (
+              <div key={`${service.name}-${service.action}`} className="rounded-a-sm border border-a-border bg-a-bg px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-mono text-xs text-a-fg">{service.name}</span>
+                  <span className="rounded-a-sm border border-a-border px-2 py-1 text-[11px] text-a-muted">{service.action}</span>
+                </div>
+                {service.reason && <div className="mt-1 text-[11px] text-a-muted">{service.reason}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {((plan.warnings?.length || 0) > 0 || (plan.manual_actions?.length || 0) > 0) && (
+          <div className="rounded-a-sm border border-[#e8b830]/30 bg-[#e8b830]/10 px-3 py-3">
+            <div className="mb-2 text-xs font-medium text-[#e8b830]">需要注意</div>
+            <div className="space-y-1 text-xs leading-relaxed text-a-fg">
+              {plan.warnings?.map(item => <div key={item}>{item}</div>)}
+              {plan.manual_actions?.map(item => <div key={item}>{item}</div>)}
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function EnsureResultPanel({ result }: { result: EnsureResponse }) {
   const failed = !result.success;
   return (
@@ -549,6 +676,25 @@ function EnsureResultPanel({ result }: { result: EnsureResponse }) {
       </div>
     </Card>
   );
+}
+
+function planStatusToStep(status: string): StepStatus {
+  switch (status) {
+    case 'ok':
+    case 'ready':
+    case 'planned':
+      return 'ok';
+    case 'provider_missing':
+    case 'provider_stopped':
+    case 'unsupported_os':
+    case 'unsupported_provider':
+      return 'warning';
+    case 'port_conflict':
+    case 'failed':
+      return 'failed';
+    default:
+      return 'pending';
+  }
 }
 
 function StatusTile({ title, status, detail }: { title: string; status: StepStatus; detail: string }) {

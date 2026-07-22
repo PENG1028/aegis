@@ -75,6 +75,91 @@ type DeployNodeResponse struct {
 	ManualCommand string                  `json:"manual_command,omitempty"` // fallback when SSH unavailable
 }
 
+type DeployPlanResponse struct {
+	Success bool                    `json:"success"`
+	Error   string                  `json:"error,omitempty"`
+	Plan    *DeployPlan             `json:"plan,omitempty"`
+	Report  *deploy.PreflightReport `json:"report,omitempty"`
+}
+
+type DeployPlan struct {
+	Action        string              `json:"action"`
+	CanProceed    bool                `json:"can_proceed"`
+	Target        DeployPlanTarget    `json:"target"`
+	Control       DeployPlanControl   `json:"control"`
+	Artifact      DeployPlanArtifact  `json:"artifact"`
+	Provider      DeployPlanProvider  `json:"provider"`
+	Files         []DeployPlanFile    `json:"files"`
+	Services      []DeployPlanService `json:"services"`
+	Checks        []DeployPlanCheck   `json:"checks"`
+	Warnings      []string            `json:"warnings,omitempty"`
+	ManualActions []string            `json:"manual_actions,omitempty"`
+}
+
+type DeployPlanTarget struct {
+	Host         string `json:"host"`
+	OS           string `json:"os,omitempty"`
+	Arch         string `json:"arch,omitempty"`
+	AegisFound   bool   `json:"aegis_found"`
+	AegisRunning bool   `json:"aegis_running"`
+	ConfigFound  bool   `json:"config_found"`
+	ConfigPath   string `json:"config_path,omitempty"`
+}
+
+type DeployPlanControl struct {
+	Mode     string `json:"mode"`
+	NodeID   string `json:"node_id"`
+	EdgeAddr string `json:"edge_addr"`
+	PushOnly bool   `json:"push_only"`
+}
+
+type DeployPlanArtifact struct {
+	Source        string `json:"source"`
+	URL           string `json:"url,omitempty"`
+	SHA256        string `json:"sha256,omitempty"`
+	TargetPath    string `json:"target_path"`
+	NeedsDownload bool   `json:"needs_download"`
+	Platform      string `json:"platform,omitempty"`
+}
+
+type DeployPlanProvider struct {
+	ExpectedID   string                        `json:"expected_id"`
+	Installed    bool                          `json:"installed"`
+	Running      bool                          `json:"running"`
+	Matched      bool                          `json:"matched"`
+	ConfigPath   string                        `json:"config_path,omitempty"`
+	Status       string                        `json:"status"`
+	Reason       string                        `json:"reason,omitempty"`
+	Candidates   map[string]*deploy.BinaryInfo `json:"candidates,omitempty"`
+	PortBindings []DeployPlanPortBinding       `json:"port_bindings,omitempty"`
+}
+
+type DeployPlanPortBinding struct {
+	Port     int    `json:"port"`
+	Process  string `json:"process"`
+	Listen   string `json:"listen"`
+	Expected bool   `json:"expected"`
+}
+
+type DeployPlanFile struct {
+	Path   string `json:"path"`
+	Action string `json:"action"`
+	Backup bool   `json:"backup"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type DeployPlanService struct {
+	Name   string `json:"name"`
+	Action string `json:"action"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type DeployPlanCheck struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
 type ensureNodeMode = onboarding.Mode
 
 const (
@@ -248,6 +333,58 @@ func deployResponseFromEnsure(result *onboarding.EnsureResult) *DeployNodeRespon
 	}
 }
 
+func (h *Handlers) AdminDeployPlan(w http.ResponseWriter, r *http.Request) {
+	var req DeployNodeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	normalizeDeployRequest(&req)
+	if req.TargetIP == "" {
+		writeError(w, http.StatusBadRequest, "target_ip required")
+		return
+	}
+	if h.Config == nil {
+		writeJSON(w, http.StatusOK, DeployPlanResponse{Success: false, Error: "control plane config is not available"})
+		return
+	}
+	control, err := h.resolveControlPeer(req, r.Host)
+	if err != nil {
+		writeJSON(w, http.StatusOK, DeployPlanResponse{Success: false, Error: err.Error()})
+		return
+	}
+	report, err := deploy.Preflight(r.Context(), deploy.SSHConfig{
+		Host:        req.TargetIP,
+		User:        req.SSHUser,
+		Port:        req.SSHPort,
+		AuthMethod:  deploy.AuthMethod(req.AuthMethod),
+		SSHKey:      req.SSHKey,
+		SSHPassword: req.SSHPassword,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusOK, DeployPlanResponse{Success: false, Error: err.Error()})
+		return
+	}
+	plan := h.buildDeployPlan(req, control, report)
+	writeJSON(w, http.StatusOK, DeployPlanResponse{Success: true, Plan: plan, Report: report})
+}
+
+func normalizeDeployRequest(req *DeployNodeRequest) {
+	req.TargetIP = strings.TrimSpace(req.TargetIP)
+	if req.AuthMethod == "" {
+		req.AuthMethod = "key"
+	}
+	if req.SSHUser == "" {
+		req.SSHUser = "root"
+	}
+	if req.SSHPort == 0 {
+		req.SSHPort = 22
+	}
+	if req.ControllerMode == "" {
+		req.ControllerMode = controllerModeCurrent
+	}
+}
+
 func (h *Handlers) resolveControlPeer(req DeployNodeRequest, cpURL string) (controlPeer, error) {
 	mode := strings.TrimSpace(req.ControllerMode)
 	if mode == "" {
@@ -292,6 +429,241 @@ func (h *Handlers) resolveControlPeer(req DeployNodeRequest, cpURL string) (cont
 	}
 	controlAddr := net.JoinHostPort(cpHost, "80")
 	return controlPeer{NodeID: controlID, EdgeAddr: controlAddr, Secret: h.Config.DistNode.Secret, HostLabel: cpHost}, nil
+}
+
+func (h *Handlers) buildDeployPlan(req DeployNodeRequest, control controlPeer, report *deploy.PreflightReport) *DeployPlan {
+	action := "deploy"
+	if report != nil && report.Aegis != nil && report.Aegis.Found {
+		if report.Aegis.Running {
+			action = "join"
+		} else {
+			action = "repair"
+		}
+	}
+	targetOS, targetArch := targetPlatform(report)
+	artifact := h.planArtifact(targetOS, targetArch)
+	providerPlan := h.planProvider(report)
+	files := h.planFiles(action, report)
+	services := h.planServices(action, report)
+	checks := h.planChecks(report, providerPlan)
+	warnings := h.planWarnings(action, providerPlan, checks, control)
+	manual := h.planManualActions(providerPlan, checks, control)
+
+	target := DeployPlanTarget{Host: req.TargetIP, OS: targetOS, Arch: targetArch}
+	if report != nil {
+		if report.Aegis != nil {
+			target.AegisFound = report.Aegis.Found
+			target.AegisRunning = report.Aegis.Running
+		}
+		if report.Config != nil {
+			target.ConfigFound = report.Config.Found
+			target.ConfigPath = report.Config.Path
+		}
+	}
+
+	canProceed := artifact.Source != "" && providerPlan.Status != "port_conflict" && providerPlan.Status != "unsupported_provider"
+	return &DeployPlan{
+		Action:     action,
+		CanProceed: canProceed,
+		Target:     target,
+		Control: DeployPlanControl{
+			Mode:     req.ControllerMode,
+			NodeID:   control.NodeID,
+			EdgeAddr: control.EdgeAddr,
+			PushOnly: control.PushOnly,
+		},
+		Artifact:      artifact,
+		Provider:      providerPlan,
+		Files:         files,
+		Services:      services,
+		Checks:        checks,
+		Warnings:      warnings,
+		ManualActions: manual,
+	}
+}
+
+func (h *Handlers) planArtifact(targetOS, targetArch string) DeployPlanArtifact {
+	provider := newLocalAegisArtifactProvider()
+	url := provider.artifactURL(targetOS, targetArch)
+	sha := provider.expectedSHA256(targetOS, targetArch)
+	platform := ""
+	if targetOS != "" || targetArch != "" {
+		platform = targetOS + "/" + targetArch
+	}
+	if url != "" {
+		return DeployPlanArtifact{
+			Source:        url,
+			URL:           url,
+			SHA256:        sha,
+			TargetPath:    "/usr/local/bin/aegis",
+			NeedsDownload: true,
+			Platform:      platform,
+		}
+	}
+	if targetOS == "" || targetArch == "" {
+		return DeployPlanArtifact{Source: "current_binary", TargetPath: "/usr/local/bin/aegis", Platform: platform}
+	}
+	return DeployPlanArtifact{TargetPath: "/usr/local/bin/aegis", Platform: platform}
+}
+
+func (h *Handlers) planProvider(report *deploy.PreflightReport) DeployPlanProvider {
+	expected := strings.TrimSpace(h.Config.Proxy.Provider)
+	if expected == "" {
+		expected = config.ProductionConfig().Proxy.Provider
+	}
+	out := DeployPlanProvider{
+		ExpectedID: expected,
+		Status:     "unknown",
+		Candidates: map[string]*deploy.BinaryInfo{},
+	}
+	if report != nil {
+		out.Candidates = report.Providers
+	}
+	if expected != "caddy" && expected != "haproxy" {
+		out.Status = "unsupported_provider"
+		out.Reason = "deployment planning currently understands caddy and haproxy only"
+		return out
+	}
+	var info *deploy.BinaryInfo
+	if report != nil && report.Providers != nil {
+		info = report.Providers[expected]
+	}
+	if info == nil || !info.Found {
+		out.Status = "provider_missing"
+		out.Reason = "target does not have the expected provider installed"
+		out.PortBindings = providerPortBindings(report, expected)
+		return out
+	}
+	out.Installed = true
+	out.Running = info.Running
+	out.ConfigPath = info.ConfigPath
+	out.Matched = true
+	out.PortBindings = providerPortBindings(report, expected)
+	if !info.Running {
+		out.Status = "provider_stopped"
+		out.Reason = "expected provider is installed but not running"
+		return out
+	}
+	if hasUnexpectedPortOwner(out.PortBindings) {
+		out.Status = "port_conflict"
+		out.Reason = "80/443 is owned by a different process"
+		return out
+	}
+	out.Status = "ready"
+	out.Reason = "expected provider is installed and running"
+	return out
+}
+
+func providerPortBindings(report *deploy.PreflightReport, expected string) []DeployPlanPortBinding {
+	if report == nil {
+		return nil
+	}
+	var out []DeployPlanPortBinding
+	for _, p := range report.Ports {
+		if p.Port != 80 && p.Port != 443 {
+			continue
+		}
+		out = append(out, DeployPlanPortBinding{
+			Port:     p.Port,
+			Process:  p.Process,
+			Listen:   p.Listen,
+			Expected: strings.EqualFold(p.Process, expected) || strings.EqualFold(p.Process, "aegis"),
+		})
+	}
+	return out
+}
+
+func hasUnexpectedPortOwner(bindings []DeployPlanPortBinding) bool {
+	for _, b := range bindings {
+		if !b.Expected {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handlers) planFiles(action string, report *deploy.PreflightReport) []DeployPlanFile {
+	files := []DeployPlanFile{
+		{Path: "/usr/local/bin/aegis", Action: "install_or_replace", Backup: false, Reason: "node executable"},
+		{Path: "/etc/aegis/config.yaml", Action: "write", Backup: true, Reason: "node runtime and distnode config"},
+		{Path: "/etc/systemd/system/aegis.service", Action: "write", Backup: true, Reason: "service unit"},
+		{Path: "/var/lib/aegis", Action: "ensure_dir", Backup: false, Reason: "data directory"},
+		{Path: "/run/aegis", Action: "ensure_dir", Backup: false, Reason: "runtime directory"},
+	}
+	if action == "join" {
+		files = []DeployPlanFile{{Path: "/etc/aegis/config.yaml", Action: "update_distnode_block", Backup: true, Reason: "join existing node to control plane"}}
+	}
+	if report != nil && report.Config != nil && report.Config.Found && report.Config.Path != "" && action != "join" {
+		files[1].Path = report.Config.Path
+		files[1].Action = "replace"
+	}
+	return files
+}
+
+func (h *Handlers) planServices(action string, report *deploy.PreflightReport) []DeployPlanService {
+	if action == "join" {
+		return []DeployPlanService{{Name: "aegis", Action: "restart", Reason: "reload distnode config"}}
+	}
+	return []DeployPlanService{{Name: "aegis", Action: "install_enable_restart", Reason: "run node after deployment"}}
+}
+
+func (h *Handlers) planChecks(report *deploy.PreflightReport, provider DeployPlanProvider) []DeployPlanCheck {
+	checks := []DeployPlanCheck{
+		{Name: "ssh", Status: "ok", Detail: "SSH preflight completed"},
+		{Name: "artifact", Status: "ok", Detail: "artifact source resolved"},
+		{Name: "provider", Status: provider.Status, Detail: provider.Reason},
+		{Name: "local_health", Status: "planned", Detail: "verify http://127.0.0.1:7380/api/healthz after start"},
+		{Name: "edge_health", Status: "planned", Detail: "verify target edge http://target:80/api/healthz"},
+	}
+	if report == nil || report.Host == nil || normalizeOS(report.Host.OS) != "linux" {
+		checks = append(checks, DeployPlanCheck{Name: "platform", Status: "unsupported_os", Detail: "automatic service deployment currently targets Linux"})
+	}
+	return checks
+}
+
+func (h *Handlers) planWarnings(action string, provider DeployPlanProvider, checks []DeployPlanCheck, control controlPeer) []string {
+	var warnings []string
+	if action == "repair" {
+		warnings = append(warnings, "Aegis is installed but not running; deployment may need service repair instead of a clean install.")
+	}
+	switch provider.Status {
+	case "provider_missing":
+		warnings = append(warnings, "Expected provider is missing; this version reports the issue but does not auto-install middleware.")
+	case "provider_stopped":
+		warnings = append(warnings, "Expected provider is installed but stopped; deployment can continue, but edge verification may fail until it is started.")
+	case "port_conflict":
+		warnings = append(warnings, "80/443 appears to be owned by another process; Aegis will not automatically take over it in this plan.")
+	case "unsupported_provider":
+		warnings = append(warnings, "The configured provider is not supported by deployment planning yet.")
+	}
+	if control.PushOnly {
+		warnings = append(warnings, "Push-only mode writes the target to point at the public control node, but does not yet register the target on that public control plane.")
+	}
+	for _, c := range checks {
+		if c.Status == "unsupported_os" {
+			warnings = append(warnings, c.Detail)
+		}
+	}
+	return warnings
+}
+
+func (h *Handlers) planManualActions(provider DeployPlanProvider, checks []DeployPlanCheck, control controlPeer) []string {
+	var actions []string
+	if provider.Status == "provider_missing" {
+		actions = append(actions, "Install the expected provider or switch the cluster provider before deploying.")
+	}
+	if provider.Status == "port_conflict" {
+		actions = append(actions, "Stop or migrate the process currently owning 80/443 before applying gateway config.")
+	}
+	if control.PushOnly {
+		actions = append(actions, "Register the target node on the public control plane after SSH deployment succeeds.")
+	}
+	for _, c := range checks {
+		if c.Status == "unsupported_os" {
+			actions = append(actions, "Use a Linux target or provide a platform-specific deployment adapter.")
+		}
+	}
+	return actions
 }
 
 func (h *Handlers) ensureNode(ctx context.Context, req DeployNodeRequest, cpURL string, mode ensureNodeMode, logf func(string, ...interface{})) (*onboarding.EnsureResult, error) {

@@ -22,11 +22,12 @@ type HostInfo struct {
 }
 
 type BinaryInfo struct {
-	Found   bool   `json:"found"`
-	Path    string `json:"path,omitempty"`
-	Version string `json:"version,omitempty"`
-	Running bool   `json:"running"`
-	Service string `json:"service,omitempty"`
+	Found      bool   `json:"found"`
+	Path       string `json:"path,omitempty"`
+	Version    string `json:"version,omitempty"`
+	Running    bool   `json:"running"`
+	Service    string `json:"service,omitempty"`
+	ConfigPath string `json:"config_path,omitempty"`
 }
 
 type ConfigInfo struct {
@@ -62,13 +63,15 @@ elif systemctl is-active aegis-node 2>/dev/null | grep -q '^active$'; then ar="t
 # The Go side maps these to provider IDs from the registry.
 provs=""
 for name in caddy haproxy; do
-	pf="false"; pp=""; pv=""; pr="false"; ps=""
+	pf="false"; pp=""; pv=""; pr="false"; ps=""; pc=""
 	if pp=$(which $name 2>/dev/null); then
 		pf="true"; pv=$($name version 2>/dev/null | head -1); [ -z "$pv" ] && pv="unknown"
 		if systemctl is-active $name 2>/dev/null | grep -q '^active$'; then pr="true"; ps="$name"; fi
 	fi
+	if [ "$name" = "caddy" ] && [ -f /etc/caddy/Caddyfile ]; then pc="/etc/caddy/Caddyfile"; fi
+	if [ "$name" = "haproxy" ] && [ -f /etc/haproxy/haproxy.cfg ]; then pc="/etc/haproxy/haproxy.cfg"; fi
 	[ -n "$provs" ] && provs="$provs,"
-	provs="$provs\"$name\":{\"found\":$pf,\"path\":\"$pp\",\"version\":\"$pv\",\"running\":$pr,\"service\":\"$ps\"}"
+	provs="$provs\"$name\":{\"found\":$pf,\"path\":\"$pp\",\"version\":\"$pv\",\"running\":$pr,\"service\":\"$ps\",\"config_path\":\"$pc\"}"
 done
 
 # Config

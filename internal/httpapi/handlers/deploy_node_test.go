@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"aegis/internal/config"
+	"aegis/internal/deploy"
 	"aegis/internal/distnode/onboarding"
 
 	"gopkg.in/yaml.v3"
@@ -170,5 +171,114 @@ func TestResolveControlPeerCurrentUsesRequestHost(t *testing.T) {
 	}
 	if peer.Secret != "current-secret" {
 		t.Fatalf("Secret = %q, want current-secret", peer.Secret)
+	}
+}
+
+func TestBuildDeployPlanForCleanTargetShowsArtifactAndFiles(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.Proxy.Provider = "haproxy"
+	h.Config.DistNode.ID = "node_control"
+	h.Config.DistNode.Secret = "secret"
+
+	plan := h.buildDeployPlan(
+		DeployNodeRequest{TargetIP: "43.160.211.232", ControllerMode: controllerModeCurrent},
+		controlPeer{NodeID: "node_control", EdgeAddr: "43.159.34.11:80", Secret: "secret"},
+		&deploy.PreflightReport{
+			Host:  &deploy.HostInfo{OS: "linux", Arch: "x86_64"},
+			Aegis: &deploy.BinaryInfo{Found: false},
+			Providers: map[string]*deploy.BinaryInfo{
+				"haproxy": {Found: true, Running: true, ConfigPath: "/etc/haproxy/haproxy.cfg"},
+			},
+		},
+	)
+
+	if plan.Action != "deploy" {
+		t.Fatalf("Action = %q, want deploy", plan.Action)
+	}
+	if plan.Artifact.URL != "https://raw.githubusercontent.com/PENG1028/aegis/e6c2ec77b35bd9d3ea57a9741f7988e0cef5e7c1/aegis-linux-amd64" {
+		t.Fatalf("Artifact.URL = %q, want default raw binary URL", plan.Artifact.URL)
+	}
+	if plan.Artifact.SHA256 != "976442117b6bd95587f4ffb7538ff7da916116668b59072679eba3b7c7b4c8f2" {
+		t.Fatalf("Artifact.SHA256 = %q, want default checksum", plan.Artifact.SHA256)
+	}
+	if plan.Provider.Status != "ready" {
+		t.Fatalf("Provider.Status = %q, want ready", plan.Provider.Status)
+	}
+	if len(plan.Files) == 0 || plan.Files[0].Path != "/usr/local/bin/aegis" {
+		t.Fatalf("Files = %#v, want binary install path", plan.Files)
+	}
+}
+
+func TestBuildDeployPlanForExistingRunningAegisUsesJoin(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.Proxy.Provider = "caddy"
+
+	plan := h.buildDeployPlan(
+		DeployNodeRequest{TargetIP: "43.160.211.232", ControllerMode: controllerModeCurrent},
+		controlPeer{NodeID: "node_control", EdgeAddr: "43.159.34.11:80", Secret: "secret"},
+		&deploy.PreflightReport{
+			Host:   &deploy.HostInfo{OS: "linux", Arch: "x86_64"},
+			Aegis:  &deploy.BinaryInfo{Found: true, Running: true},
+			Config: &deploy.ConfigInfo{Found: true, Path: "/etc/aegis/config.yaml"},
+			Providers: map[string]*deploy.BinaryInfo{
+				"caddy": {Found: true, Running: true, ConfigPath: "/etc/caddy/Caddyfile"},
+			},
+		},
+	)
+
+	if plan.Action != "join" {
+		t.Fatalf("Action = %q, want join", plan.Action)
+	}
+	if len(plan.Files) != 1 || plan.Files[0].Action != "update_distnode_block" {
+		t.Fatalf("Files = %#v, want distnode-only config update", plan.Files)
+	}
+}
+
+func TestBuildDeployPlanReportsMissingProvider(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.Proxy.Provider = "haproxy"
+
+	plan := h.buildDeployPlan(
+		DeployNodeRequest{TargetIP: "43.160.211.232", ControllerMode: controllerModeCurrent},
+		controlPeer{NodeID: "node_control", EdgeAddr: "43.159.34.11:80", Secret: "secret"},
+		&deploy.PreflightReport{
+			Host:  &deploy.HostInfo{OS: "linux", Arch: "x86_64"},
+			Aegis: &deploy.BinaryInfo{Found: false},
+			Providers: map[string]*deploy.BinaryInfo{
+				"haproxy": {Found: false},
+			},
+		},
+	)
+
+	if plan.Provider.Status != "provider_missing" {
+		t.Fatalf("Provider.Status = %q, want provider_missing", plan.Provider.Status)
+	}
+	if len(plan.Warnings) == 0 {
+		t.Fatal("Warnings is empty, want provider warning")
+	}
+}
+
+func TestBuildDeployPlanBlocksUnexpectedPortOwner(t *testing.T) {
+	h := &Handlers{Config: &config.Config{}}
+	h.Config.Proxy.Provider = "haproxy"
+
+	plan := h.buildDeployPlan(
+		DeployNodeRequest{TargetIP: "43.160.211.232", ControllerMode: controllerModeCurrent},
+		controlPeer{NodeID: "node_control", EdgeAddr: "43.159.34.11:80", Secret: "secret"},
+		&deploy.PreflightReport{
+			Host:  &deploy.HostInfo{OS: "linux", Arch: "x86_64"},
+			Aegis: &deploy.BinaryInfo{Found: false},
+			Providers: map[string]*deploy.BinaryInfo{
+				"haproxy": {Found: true, Running: true},
+			},
+			Ports: []deploy.PortInfo{{Port: 80, Process: "nginx", Listen: "0.0.0.0:80"}},
+		},
+	)
+
+	if plan.Provider.Status != "port_conflict" {
+		t.Fatalf("Provider.Status = %q, want port_conflict", plan.Provider.Status)
+	}
+	if plan.CanProceed {
+		t.Fatal("CanProceed = true, want false when 80/443 has an unexpected owner")
 	}
 }
