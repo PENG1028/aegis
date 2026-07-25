@@ -492,8 +492,6 @@ v1.9B-2: 后续小修复
 - 节点自更新执行代码未实现（收到 update_available 但不执行下载替换）
 - 部分 slog 迁移未完成（DNS、transparent 还在用 log.Printf）
 - 无 Dockerfile
-- `internal/nodeauth/` 是 distnode 之前的历史遗留，仍在但不应新增引用
-- 部分老旧 doc（README.md）路由前缀可能已过时，以 `internal/httpapi/routes.go` 为准
 
 ---
 

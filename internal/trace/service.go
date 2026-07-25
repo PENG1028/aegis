@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 	"time"
 
 	"aegis/internal/edgemux"
@@ -456,7 +457,7 @@ func (s *Service) checkTargetConnectivity(target *TargetInfo) {
 	if target == nil {
 		return
 	}
-	addr := fmt.Sprintf("%s:%d", target.Host, target.Port)
+	addr := net.JoinHostPort(target.Host, strconv.Itoa(target.Port))
 
 	// DNS resolution check
 	ips, err := net.LookupHost(target.Host)

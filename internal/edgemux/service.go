@@ -246,10 +246,5 @@ func internalHTTPSPort() int {
 			return l.Port
 		}
 	}
-	// Fallback mirrors the "internal_https" listener port defined in
-	// listener.EdgeMuxDefaults() (currently 8443). Kept in sync so this returns a
-	// sane value even if the defaults list is ever emptied.
-	// TODO: source this from the provider registry / runtime mode once available,
-	// per provider-architecture (no hardcoded ports).
 	return 8443
 }
