@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"aegis/internal/endpoint"
+	"aegis/internal/hostdep/provider"
 	"aegis/internal/service"
 )
 
@@ -207,7 +208,13 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if domain != "" {
 			if tlsAvailable {
 				result["panel_url"] = "https://" + domain
-				result["tls"] = "automatic (Let's Encrypt via Caddy)"
+				tlsLabel := "automatic (Let's Encrypt)"
+				if h.ProvReg != nil {
+					if p := h.ProvReg.FindByCapability(provider.CapAutoCert); p != nil {
+						tlsLabel = fmt.Sprintf("automatic (Let's Encrypt via %s)", p.State().Name)
+					}
+				}
+				result["tls"] = tlsLabel
 			} else {
 				result["panel_url"] = "http://" + domain
 				result["tls"] = "disabled (no certificate configured)"

@@ -19,12 +19,13 @@ import (
 
 // Dependencies provides read-only access to all subsystems needed for tracing.
 type Dependencies struct {
-	RouteRepo    *route.Repository
-	EdgeSvc      *edgemux.AppService
-	ListenerSvc  *listener.Service
-	NodeRepo     *node.Repository
-	EndpointRepo *endpoint.Repository
-	GatewayLinkRepo *gateway.LinkRepository // v1.7W: for target address lookup
+	RouteRepo       *route.Repository
+	EdgeSvc         *edgemux.AppService
+	ListenerSvc     *listener.Service
+	NodeRepo        *node.Repository
+	EndpointRepo    *endpoint.Repository
+	GatewayLinkRepo *gateway.LinkRepository
+	ProvReg         *provider.Registry
 }
 
 // Service traces access paths for domains, SNI hosts, and routes.
@@ -210,58 +211,27 @@ func (s *Service) TraceDomain(ctx context.Context, domain string) *AccessPathTra
 		}
 	}
 
-	// v1.7W: Provider diagnostics using Diagnose()
-	nextOrder := len(steps) + 1
-	if rt.TLSEnabled {
-		// HAProxy diagnostic
-		haproxyDiag := provider.DiagnoseHAProxy()
-		diagStep := TraceStep{
-			Order: nextOrder, Component: "provider", Name: "haproxy_diag",
+	// Provider diagnostics via registry (capability-based, not hardcoded names)
+	if s.deps.ProvReg != nil {
+		nextOrder := len(steps) + 1
+		for _, p := range s.deps.ProvReg.ListAll() {
+			diag := p.Diagnose()
+			st := p.State()
+			diagStep := TraceStep{
+				Order: nextOrder, Component: "provider", Name: st.ID + "_diag",
+			}
+			nextOrder++
+			if diag.LastErrorCode != "" {
+				diagStep.Status = "error"
+				diagStep.Detail = fmt.Sprintf("%s: %s — %s", st.Name, diag.LastErrorCode, diag.LastErrorMessage)
+				t.Warnings = append(t.Warnings, fmt.Sprintf("%s diagnostic: %s", st.Name, diag.LastErrorCode))
+			} else {
+				diagStep.Status = "matched"
+				diagStep.Detail = fmt.Sprintf("%s: available (v%s)", st.Name, diag.Version)
+			}
+			diagStep.ProviderDiagnostic = &diag
+			steps = append(steps, diagStep)
 		}
-		nextOrder++
-		if haproxyDiag.LastErrorCode != "" {
-			diagStep.Status = "error"
-			diagStep.Detail = fmt.Sprintf("HAProxy: %s — %s", haproxyDiag.LastErrorCode, haproxyDiag.LastErrorMessage)
-			t.Warnings = append(t.Warnings, fmt.Sprintf("HAProxy diagnostic: %s", haproxyDiag.LastErrorCode))
-		} else {
-			diagStep.Status = "matched"
-			diagStep.Detail = fmt.Sprintf("HAProxy: available (v%s)", haproxyDiag.Version)
-		}
-		diagStep.ProviderDiagnostic = &haproxyDiag
-		steps = append(steps, diagStep)
-
-		// Caddy diagnostic
-		caddyDiag := provider.DiagnoseCaddy()
-		caddyStep := TraceStep{
-			Order: nextOrder, Component: "provider", Name: "caddy_diag",
-		}
-		nextOrder++
-		if caddyDiag.LastErrorCode != "" {
-			caddyStep.Status = "error"
-			caddyStep.Detail = fmt.Sprintf("Caddy: %s — %s", caddyDiag.LastErrorCode, caddyDiag.LastErrorMessage)
-			t.Warnings = append(t.Warnings, fmt.Sprintf("Caddy diagnostic: %s", caddyDiag.LastErrorCode))
-		} else {
-			caddyStep.Status = "matched"
-			caddyStep.Detail = fmt.Sprintf("Caddy: available (v%s)", caddyDiag.Version)
-		}
-		caddyStep.ProviderDiagnostic = &caddyDiag
-		steps = append(steps, caddyStep)
-	} else {
-		// HTTP: Caddy diagnostic only
-		caddyDiag := provider.DiagnoseCaddy()
-		caddyStep := TraceStep{
-			Order: nextOrder, Component: "provider", Name: "caddy_diag",
-		}
-		if caddyDiag.LastErrorCode != "" {
-			caddyStep.Status = "error"
-			caddyStep.Detail = fmt.Sprintf("Caddy: %s — %s", caddyDiag.LastErrorCode, caddyDiag.LastErrorMessage)
-			t.Warnings = append(t.Warnings, fmt.Sprintf("Caddy diagnostic: %s", caddyDiag.LastErrorCode))
-		} else {
-			caddyStep.Status = "matched"
-			caddyStep.Detail = fmt.Sprintf("Caddy: available (v%s)", caddyDiag.Version)
-		}
-		caddyStep.ProviderDiagnostic = &caddyDiag
-		steps = append(steps, caddyStep)
 	}
 
 	if t.TraceStatus == "" {
@@ -360,21 +330,28 @@ func (s *Service) TraceSNI(ctx context.Context, sniHost string) *AccessPathTrace
 		s.checkTargetConnectivity(target)
 	}
 
-	// v1.7W: HAProxy diagnostic
-	haproxyDiag := provider.DiagnoseHAProxy()
-	diagStep := TraceStep{
-		Order: 5, Component: "provider", Name: "haproxy_diag",
+	// Provider diagnostics via registry
+	if s.deps.ProvReg != nil {
+		nextOrder := len(steps) + 1
+		for _, p := range s.deps.ProvReg.ListAll() {
+			diag := p.Diagnose()
+			st := p.State()
+			diagStep := TraceStep{
+				Order: nextOrder, Component: "provider", Name: st.ID + "_diag",
+			}
+			nextOrder++
+			if diag.LastErrorCode != "" {
+				diagStep.Status = "error"
+				diagStep.Detail = fmt.Sprintf("%s: %s — %s", st.Name, diag.LastErrorCode, diag.LastErrorMessage)
+				t.Warnings = append(t.Warnings, fmt.Sprintf("%s diagnostic: %s", st.Name, diag.LastErrorCode))
+			} else {
+				diagStep.Status = "matched"
+				diagStep.Detail = fmt.Sprintf("%s: available (v%s)", st.Name, diag.Version)
+			}
+			diagStep.ProviderDiagnostic = &diag
+			steps = append(steps, diagStep)
+		}
 	}
-	if haproxyDiag.LastErrorCode != "" {
-		diagStep.Status = "error"
-		diagStep.Detail = fmt.Sprintf("HAProxy: %s — %s", haproxyDiag.LastErrorCode, haproxyDiag.LastErrorMessage)
-		t.Warnings = append(t.Warnings, fmt.Sprintf("HAProxy diagnostic: %s", haproxyDiag.LastErrorCode))
-	} else {
-		diagStep.Status = "matched"
-		diagStep.Detail = fmt.Sprintf("HAProxy: available (v%s)", haproxyDiag.Version)
-	}
-	diagStep.ProviderDiagnostic = &haproxyDiag
-	steps = append(steps, diagStep)
 
 	if t.TraceStatus == "" {
 		t.TraceStatus = StatusComplete

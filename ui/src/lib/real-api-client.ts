@@ -1271,7 +1271,7 @@ export const gatewayLinkApi = {
 // ─── Providers (v1.7S) ───
 
 export const providerApi = {
-  list: (): Promise<{ providers: any[]; count: number }> =>
+  list: (): Promise<{ providers: any[]; count: number; capability_universe: any[] }> =>
     get('/api/admin/v1/providers'),
 
   diagnoseAll: (): Promise<any> =>

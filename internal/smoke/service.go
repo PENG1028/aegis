@@ -31,6 +31,7 @@ type Dependencies struct {
 	TraceSvc    *trace.Service
 	PendingSt   *cluster.PendingState
 	StateVer    *cluster.StateVersion
+	ProvReg     *provider.Registry
 }
 
 // Service is the smoke test engine.
@@ -198,37 +199,27 @@ func (s *Service) checkRoutesQueryable() CheckResult {
 	}
 }
 
-// RunProviderSmoke checks provider health and diagnostics.
+// RunProviderSmoke checks provider health via the registry.
 func (s *Service) RunProviderSmoke(ctx context.Context) *SmokeResult {
 	result := &SmokeResult{Name: "provider"}
 	var checks []CheckResult
 
-	// Check HAProxy
-	hpStatus := provider.CheckHAProxyStatus("/tmp/aegis-smoke.conf")
-	if hpStatus.Status == "ready" {
-		checks = append(checks, CheckResult{
-			Name: "haproxy", Status: "pass",
-			Message: fmt.Sprintf("HAProxy %s available", hpStatus.Version),
-		})
-	} else {
-		checks = append(checks, CheckResult{
-			Name: "haproxy", Status: "fail",
-			Message: fmt.Sprintf("HAProxy %s: %s", hpStatus.Status, hpStatus.Message),
-		})
-	}
-
-	// Check Caddy
-	caddyStatus := provider.CheckCaddyStatus("/tmp/aegis-smoke.conf")
-	if caddyStatus.Status == "ready" {
-		checks = append(checks, CheckResult{
-			Name: "caddy", Status: "pass",
-			Message: fmt.Sprintf("Caddy %s available", caddyStatus.Version),
-		})
-	} else {
-		checks = append(checks, CheckResult{
-			Name: "caddy", Status: "fail",
-			Message: fmt.Sprintf("Caddy %s: %s", caddyStatus.Status, caddyStatus.Message),
-		})
+	if s.deps.ProvReg != nil {
+		for _, p := range s.deps.ProvReg.ListAll() {
+			diag := p.Diagnose()
+			st := p.State()
+			if diag.LastErrorCode == "" {
+				checks = append(checks, CheckResult{
+					Name: st.ID, Status: "pass",
+					Message: fmt.Sprintf("%s %s available", st.Name, diag.Version),
+				})
+			} else {
+				checks = append(checks, CheckResult{
+					Name: st.ID, Status: "fail",
+					Message: fmt.Sprintf("%s: %s — %s", st.Name, diag.LastErrorCode, diag.LastErrorMessage),
+				})
+			}
+		}
 	}
 
 	// Check config paths

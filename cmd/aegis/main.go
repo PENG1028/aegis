@@ -415,6 +415,7 @@ func main() {
 		NodeRepo:        nodeRepo,
 		EndpointRepo:    endpointRepo,
 		GatewayLinkRepo: gwLinkRepo,
+		ProvReg:         provRegistry,
 	})
 	authMiddleware := token.NewAuthMiddleware(cfg.Server.AdminToken)
 

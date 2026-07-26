@@ -687,7 +687,9 @@ func TestSmokeServiceRunFailureMatrix(t *testing.T) {
 // =============================================================================
 
 func TestSmokeServiceRunProviderSmoke(t *testing.T) {
-	svc := NewService(Dependencies{})
+	provReg := provider.NewRegistry()
+	provReg.Register(fake.NewFakeProvider("caddy_http", "http"))
+	svc := NewService(Dependencies{ProvReg: provReg})
 	result := svc.RunProviderSmoke(context.Background())
 
 	if result == nil {
