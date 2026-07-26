@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { routeApi, exposureApi, runtimeModeApi } from '@/lib/api-bridge';
 import { Card, Btn, useToast } from '@/components/shared';
+import { useView } from '@/lib/view-context';
 import { cn } from '@/lib/utils';
 
 function HealthBadge({ status }: { status: string }) {
@@ -16,16 +17,17 @@ function HealthBadge({ status }: { status: string }) {
 
 export default function EntryList() {
   const nav = useNavigate(); const toast = useToast(); const qc = useQueryClient();
+  const { activeNodeId } = useView();
   const [scope, setScope] = useState('all');
 
   const { data: rm } = useQuery({
-    queryKey: ['runtime-mode'], queryFn: () => runtimeModeApi.get().catch(() => null), refetchInterval: 60_000,
+    queryKey: ['runtime-mode', activeNodeId], queryFn: () => runtimeModeApi.get().catch(() => null), refetchInterval: 60_000,
   });
   const { data: rd, isLoading: rl } = useQuery({
-    queryKey: ['routes'], queryFn: () => routeApi.list().catch(() => ({ routes: [] })), refetchInterval: 30_000,
+    queryKey: ['routes', activeNodeId], queryFn: () => routeApi.list().catch(() => ({ routes: [] })), refetchInterval: 30_000,
   });
   const { data: ed, isLoading: el } = useQuery({
-    queryKey: ['exposures'], queryFn: () => exposureApi.list().catch(() => ({ exposures: [] })), refetchInterval: 30_000,
+    queryKey: ['exposures', activeNodeId], queryFn: () => exposureApi.list().catch(() => ({ exposures: [] })), refetchInterval: 30_000,
   });
 
   const compositions = rm?.current?.compositions || [];
@@ -72,7 +74,7 @@ export default function EntryList() {
         : 'disabled';
       return {
         key: r.id, _t: 'route' as const, name: r.domain, type: compName, health,
-        target: r.service_id || '—', status: r.status,
+        target: r.service_id || '—', status: r.status, tlsEnabled: r.tls_enabled,
         scope: r.owner_type === 'space' ? (r.space_id || r.owner_id || 'service') : 'admin',
       };
     }),
@@ -130,9 +132,8 @@ export default function EntryList() {
             <table className="w-full text-xs">
               <thead><tr className="border-b border-a-border text-a-muted text-left">
                 <th className="py-2.5 px-3 font-medium">域名 / 端口</th>
+                <th className="py-2.5 px-3 font-medium">TLS</th>
                 <th className="py-2.5 px-3 font-medium">类型</th>
-                <th className="py-2.5 px-3 font-medium">后端</th>
-                <th className="py-2.5 px-3 font-medium">来源</th>
                 <th className="py-2.5 px-3 font-medium">健康</th>
                 <th className="py-2.5 px-3 font-medium"></th>
               </tr></thead>
@@ -141,13 +142,13 @@ export default function EntryList() {
                   <tr key={item.key} className="border-b border-a-border/30 hover:bg-a-border/5 cursor-pointer"
                     onClick={() => nav(`/exposure/entry/${item.key}`)}>
                     <td className="py-2.5 px-3 font-mono text-[11px]">{item.name}</td>
-                    <td className="py-2.5 px-3 text-[10px] text-a-muted">{item.type}</td>
-                    <td className="py-2.5 px-3 font-mono text-[11px] text-a-muted">{item.target}</td>
-                    <td className="py-2.5 px-3 text-[10px]">
-                      {item.scope === 'admin'
-                        ? <span className="text-a-muted">管理员</span>
-                        : <span className="px-1.5 py-0.5 rounded text-[9px] bg-a-accent/5 text-a-accent border border-a-accent/20 font-medium">{item.scope}</span>}
+                    <td className="py-2.5 px-3">
+                      {item._t === 'route' && (item.tlsEnabled
+                        ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-[#4cd964]/10 text-[#4cd964] border border-[#4cd964]/20 font-medium">HTTPS</span>
+                        : <span className="px-1.5 py-0.5 rounded text-[9px] bg-a-border/10 text-a-muted border border-a-border/20">HTTP</span>
+                      )}
                     </td>
+                    <td className="py-2.5 px-3 text-[10px] text-a-muted">{item.type}</td>
                     <td className="py-2.5 px-3"><HealthBadge status={item.health} /></td>
                     <td className="py-2.5 px-3">
                       <div className="flex items-center gap-1">
