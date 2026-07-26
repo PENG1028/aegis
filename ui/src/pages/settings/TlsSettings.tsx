@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchSettings, updateSettings, providerApi, certApi, adminApi, type CertificateItem } from '@/lib/api-bridge';
+import { fetchSettings, updateSettings, providerApi, certApi, system, type CertificateItem } from '@/lib/api-bridge';
 import { useToast, Card, PageHeader, Btn } from '@/components/shared';
 import Input from '@/components/ui/Input';
 
@@ -68,7 +68,7 @@ export default function TlsSettings() {
 
   const bindMut = useMutation({
     mutationFn: async () => {
-      await adminApi.applyConfig();
+      await system.apply();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['settings'] });
