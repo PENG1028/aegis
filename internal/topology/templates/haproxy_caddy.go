@@ -39,7 +39,7 @@ func (t *HAProxyCaddy) BuildPlan(intents []topology.RouteIntent, available []pro
 	caddy := findProvider(available, provider.CapTLSTerminate, provider.CapRouteHost)
 
 	if haproxy == nil || caddy == nil {
-		return nil, fmt.Errorf("haproxy_caddy: need both HAProxy (SNI) and Caddy (HTTP termination)")
+		return nil, fmt.Errorf("haproxy_caddy: need providers with SNI+passthrough (HAProxy) and TLS+HTTP termination (Caddy)")
 	}
 
 	// Split intents: passthrough → HAProxy, terminate → Caddy
@@ -61,9 +61,9 @@ func (t *HAProxyCaddy) BuildPlan(intents []topology.RouteIntent, available []pro
 		}
 	}
 
-	// Listener specs come from RuntimeMode — no hardcoded port numbers
-	haproxyListeners := mode.ListenerSpecsFor("haproxy")
-	caddyListeners := mode.ListenerSpecsFor("caddy")
+	// Listener specs come from RuntimeMode, keyed by discovered provider ID
+	haproxyListeners := mode.ListenerSpecsFor(haproxy.ID)
+	caddyListeners := mode.ListenerSpecsFor(caddy.ID)
 
 	plans := map[string]provider.Plan{
 		haproxy.ID: topology.BuildPlan(haproxyListeners, haproxyRoutes, nil),

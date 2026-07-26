@@ -14,7 +14,7 @@ type SingleHAProxy struct{}
 
 func (t *SingleHAProxy) Name() string { return "single_haproxy" }
 func (t *SingleHAProxy) Description() string {
-	return "Single HAProxy: :443 TLS SNI passthrough + TCP forwarding"
+	return "Single SNI passthrough: :443 TLS SNI + TCP forwarding (no HTTP routing)"
 }
 
 func (t *SingleHAProxy) RequiredCapabilities() []provider.Capability {
@@ -32,7 +32,7 @@ func (t *SingleHAProxy) RequiredCapabilities() []provider.Capability {
 func (t *SingleHAProxy) BuildPlan(intents []topology.RouteIntent, available []provider.ProviderState, mode provider.RuntimeMode) (*topology.TopologyPlan, error) {
 	haproxy := findProvider(available, provider.CapSNIPreread, provider.CapTLSPassthrough)
 	if haproxy == nil {
-		return nil, fmt.Errorf("single_haproxy: no HAProxy provider available")
+		return nil, fmt.Errorf("single_haproxy: no provider with SNI preread + TLS passthrough capability")
 	}
 
 	var routes []provider.RouteSpec
@@ -46,7 +46,7 @@ func (t *SingleHAProxy) BuildPlan(intents []topology.RouteIntent, available []pr
 		routes = append(routes, rs)
 	}
 
-	listeners := mode.ListenerSpecsFor("haproxy")
+	listeners := mode.ListenerSpecsFor(haproxy.ID)
 
 	plan := topology.BuildPlan(listeners, routes, nil)
 	return &topology.TopologyPlan{
