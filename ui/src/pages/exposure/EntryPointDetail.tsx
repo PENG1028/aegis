@@ -5,8 +5,14 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { runtimeModeApi } from '@/lib/api-bridge';
+import { viewStore } from '@/lib/view-store';
 import { Card, StatusBadge, Btn, useToast } from '@/components/shared';
 import { cn } from '@/lib/utils';
+
+function authHeaders(): Record<string, string> {
+  const viewAs = viewStore.headerValue;
+  return viewAs ? { 'Content-Type': 'application/json', 'X-Aegis-View-As': viewAs } : { 'Content-Type': 'application/json' };
+}
 
 function parseDomains(domains: string): string {
   try { const arr = JSON.parse(domains); return Array.isArray(arr) ? arr.join(', ') : domains; }
@@ -21,7 +27,7 @@ export default function EntryPointDetail() {
   const { data: route, isLoading: rl } = useQuery({
     queryKey: ['route-detail', entryId],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/v1/routes/${entryId}`, { credentials: 'include' });
+      const res = await fetch(`/api/admin/v1/routes/${entryId}`, { credentials: 'include', headers: authHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
@@ -32,7 +38,7 @@ export default function EntryPointDetail() {
   const { data: svc } = useQuery({
     queryKey: ['service', route?.service_id],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/v1/services/${route.service_id}`, { credentials: 'include' });
+      const res = await fetch(`/api/admin/v1/services/${route.service_id}`, { credentials: 'include', headers: authHeaders() });
       if (!res.ok) return null;
       return res.json();
     },
@@ -43,7 +49,7 @@ export default function EntryPointDetail() {
   const { data: eps } = useQuery({
     queryKey: ['endpoints', route?.service_id],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/v1/services/${route.service_id}/endpoints`, { credentials: 'include' });
+      const res = await fetch(`/api/admin/v1/services/${route.service_id}/endpoints`, { credentials: 'include', headers: authHeaders() });
       if (!res.ok) return [];
       const data = await res.json();
       return data.endpoints || data || [];
@@ -55,7 +61,7 @@ export default function EntryPointDetail() {
   const { data: certData } = useQuery({
     queryKey: ['certificates'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/v1/certificates', { credentials: 'include' });
+      const res = await fetch('/api/admin/v1/certificates', { credentials: 'include', headers: authHeaders() });
       if (!res.ok) return [];
       return res.json();
     },
@@ -71,7 +77,7 @@ export default function EntryPointDetail() {
   // ── Mutations ──
   const disableMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/admin/v1/routes/${entryId}/disable`, { method: 'POST', credentials: 'include' });
+      const res = await fetch(`/api/admin/v1/routes/${entryId}/disable`, { method: 'POST', credentials: 'include', headers: authHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['route-detail', entryId] }); toast('已禁用'); },
@@ -79,7 +85,7 @@ export default function EntryPointDetail() {
   });
   const enableMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/admin/v1/routes/${entryId}/enable`, { method: 'POST', credentials: 'include' });
+      const res = await fetch(`/api/admin/v1/routes/${entryId}/enable`, { method: 'POST', credentials: 'include', headers: authHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['route-detail', entryId] }); toast('已启用'); },
