@@ -176,16 +176,24 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// then create a system route via the Apply pipeline.
 	// Panel domain now goes through: service+endpoint → route → Apply → planner → render → reload
 	if domainChanged {
-		if domain := h.Config.ManagedDomain.GatewayDomain; domain != "" {
-			// Ensure the __panel service exists for the planner to resolve
+		domain := h.Config.ManagedDomain.GatewayDomain
+		tlsAvailable := h.Config.Proxy.Email != "" ||
+			(h.Config.Proxy.TlsCertFile != "" && h.Config.Proxy.TlsKeyFile != "")
+
+		if domain != "" {
+			if !tlsAvailable {
+				result["tls_warning"] = "TLS not available: configure an email (Let's Encrypt) or upload a custom certificate to enable HTTPS"
+			}
 			if err := h.ensurePanelService(r.Context()); err != nil {
 				result["panel_service_warning"] = err.Error()
 			}
-			// Ensure the panel endpoint (127.0.0.1:7380) exists
 			if err := h.ensurePanelEndpoint(r.Context()); err != nil {
 				result["panel_endpoint_warning"] = err.Error()
 			}
-			h.Route.UpsertSystemRoute(r.Context(), domain)
+			h.Route.UpsertSystemRoute(r.Context(), domain, tlsAvailable)
+		} else {
+			// Domain cleared: remove any panel routes for the __panel service
+			_ = h.Route.DeleteAllSystemRoutes(r.Context())
 		}
 
 		// Run Apply pipeline — handles rendering, validation, Caddy reload
@@ -196,9 +204,14 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Tell the user the new access URL
-		if domain := h.Config.ManagedDomain.GatewayDomain; domain != "" {
-			result["panel_url"] = "https://" + domain
-			result["tls"] = "automatic (Let's Encrypt via Caddy)"
+		if domain != "" {
+			if tlsAvailable {
+				result["panel_url"] = "https://" + domain
+				result["tls"] = "automatic (Let's Encrypt via Caddy)"
+			} else {
+				result["panel_url"] = "http://" + domain
+				result["tls"] = "disabled (no certificate configured)"
+			}
 		} else {
 			result["panel_url"] = "http://<server-ip>"
 			result["tls"] = "disabled (no domain configured)"

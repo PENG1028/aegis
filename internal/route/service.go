@@ -109,12 +109,17 @@ func (s *AppService) CreateRouteDirect(rt *Route) error {
 
 
 // UpsertSystemRoute ensures a route exists for the panel's own domain.
-// This replaces the old bypass path (direct Caddyfile write) with the standard
-// Apply pipeline, so mode switching, TLS, and certificate management all work
-// consistently for the panel domain just like any other route.
-func (s *AppService) UpsertSystemRoute(ctx context.Context, domain string) error {
+// If tlsAvailable is false (no email, no custom cert), the route is created
+// as plain HTTP so Caddy does not attempt auto-TLS and block IP access.
+func (s *AppService) UpsertSystemRoute(ctx context.Context, domain string, tlsAvailable bool) error {
 	existing, err := s.repo.FindByDomain(domain)
 	if err == nil && existing != nil {
+		if existing.TLSEnabled != tlsAvailable || existing.Composition != compositionForTLS(tlsAvailable) {
+			existing.TLSEnabled = tlsAvailable
+			existing.Composition = compositionForTLS(tlsAvailable)
+			existing.UpdatedAt = time.Now()
+			return s.repo.Update(existing)
+		}
 		return nil
 	}
 	now := time.Now()
@@ -122,14 +127,21 @@ func (s *AppService) UpsertSystemRoute(ctx context.Context, domain string) error
 		ID:          core.NewID("rt"),
 		Domain:      domain,
 		ServiceID:   "__panel",
-		Composition: "https_route",
-		TLSEnabled:  true,
+		Composition: compositionForTLS(tlsAvailable),
+		TLSEnabled:  tlsAvailable,
 		Status:      "active",
 		OwnerType:   "system",
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 	return s.repo.Create(rt)
+}
+
+func compositionForTLS(tlsAvailable bool) string {
+	if tlsAvailable {
+		return "https_route"
+	}
+	return "http_route"
 }
 
 // ListRoutesBySpaceID returns all routes for a specific space.
@@ -268,6 +280,22 @@ func (s *AppService) DeleteRoute(ctx context.Context, idOrDomain string) error {
 
 	s.logSvc.Log(ctx, "route.delete", "route", rt.ID, "success",
 		fmt.Sprintf("deleted route for domain %q", rt.Domain), "cli")
+	return nil
+}
+
+// DeleteAllSystemRoutes removes all routes belonging to the __panel service.
+// Used when the panel domain is cleared to prevent stale TLS routes from being re-applied.
+func (s *AppService) DeleteAllSystemRoutes(ctx context.Context) error {
+	routes, err := s.repo.FindByServiceID("__panel")
+	if err != nil {
+		return fmt.Errorf("find panel routes: %w", err)
+	}
+	for _, rt := range routes {
+		if err := s.DeleteRoute(ctx, rt.ID); err != nil {
+			s.logSvc.Log(ctx, "route.delete.system", "route", rt.ID, "warning",
+				fmt.Sprintf("failed to delete panel route: %v", err), "system")
+		}
+	}
 	return nil
 }
 
