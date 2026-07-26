@@ -29,6 +29,8 @@ func (h *Handlers) AdminListCertificates(w http.ResponseWriter, r *http.Request)
 				"issuer":     c.Issuer,
 				"not_before": c.NotBefore,
 				"not_after":  c.NotAfter,
+				"cert_path":  c.CertPath,
+				"key_path":   c.KeyPath,
 				"source":     c.Source,
 				"note":       c.Note,
 				"managed":    true,
