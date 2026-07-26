@@ -21,21 +21,22 @@ const (
 // ProviderDiagnostic is a unified diagnostic result for a provider.
 // Each field represents a specific diagnostic check that can be independently queried.
 type ProviderDiagnostic struct {
-	Provider         string `json:"provider"`
-	Installed        bool   `json:"installed"`
-	BinaryPath       string `json:"binary_path"`
-	Version          string `json:"version"`
-	VersionSupported bool   `json:"version_supported"`
-	ConfigPath       string `json:"config_path"`
-	ConfigExists     bool   `json:"config_exists"`
-	ConfigValid      *bool  `json:"config_valid,omitempty"`
-	ServiceRunning   *bool  `json:"service_running,omitempty"`
-	ListenerOK       bool   `json:"listener_ok"`
-	RuntimeVerifyOK  *bool  `json:"runtime_verify_ok,omitempty"`
-	LastErrorCode    string `json:"last_error_code"`
-	LastErrorMessage string `json:"last_error_message"`
-	Stderr           string `json:"stderr"`
-	CheckedAt        string `json:"checked_at"`
+	Provider         string   `json:"provider"`
+	Installed        bool     `json:"installed"`
+	BinaryPath       string   `json:"binary_path"`
+	Version          string   `json:"version"`
+	VersionSupported bool     `json:"version_supported"`
+	ConfigPath       string   `json:"config_path"`
+	ConfigExists     bool     `json:"config_exists"`
+	ConfigValid      *bool    `json:"config_valid,omitempty"`
+	ServiceRunning   *bool    `json:"service_running,omitempty"`
+	ListenerOK       bool     `json:"listener_ok"`
+	RuntimeVerifyOK  *bool    `json:"runtime_verify_ok,omitempty"`
+	LastErrorCode    string   `json:"last_error_code"`
+	LastErrorMessage string   `json:"last_error_message"`
+	Stderr           string   `json:"stderr"`
+	CheckedAt        string   `json:"checked_at"`
+	Warnings         []string `json:"warnings,omitempty"` // non-fatal capability warnings (ACME_NO_EMAIL, etc.)
 }
 
 // Diagnoser is an optional interface for providers that support diagnostics.

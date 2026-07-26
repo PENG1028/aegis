@@ -104,6 +104,11 @@ func (p *CaddyProvider) Diagnose() ProviderDiagnostic {
 		}
 	}
 
+	// Non-fatal capability warning: auto_cert without email disables expiry notifications
+	if p.email == "" {
+		diag.Warnings = append(diag.Warnings, "ACME_NO_EMAIL: Let's Encrypt 注册邮箱未配置，证书到期时将无法收到通知")
+	}
+
 	return diag
 }
 

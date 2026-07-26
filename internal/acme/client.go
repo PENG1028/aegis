@@ -36,7 +36,7 @@ type Client struct {
 }
 
 // NewClient creates an ACME client. The account key is loaded or generated
-// from dataDir/acme/account.key. email is required for LE registration.
+// from dataDir/acme/account.key. email is optional for LE registration.
 // acmeServer can be empty (production) or a staging URL for testing.
 func NewClient(certStore *certstore.Service, email, acmeServer, dataDir string) (*Client, error) {
 	key, err := LoadOrCreateAccountKey(dataDir)
@@ -53,18 +53,22 @@ func NewClient(certStore *certstore.Service, email, acmeServer, dataDir string) 
 		mu:         make(chan struct{}, 1),
 	}
 
-	if email != "" {
-		if err := c.initLego(); err != nil {
-			return nil, err
-		}
+	if err := c.initLego(); err != nil {
+		return nil, err
 	}
 
 	return c, nil
 }
 
-// Available returns true if the client can obtain certificates (email configured).
+// Available returns true if the client can obtain certificates.
 func (c *Client) Available() bool {
 	return c.legoClient != nil
+}
+
+// HasEmail returns true if a registration email was configured.
+// Used by diagnostics to warn about missing expiry notifications.
+func (c *Client) HasEmail() bool {
+	return c.email != ""
 }
 
 func (c *Client) initLego() error {

@@ -131,9 +131,9 @@ export default function Certificates() {
           <div className="flex items-center gap-2">
             <span className={cn('flex items-center gap-1 text-[10px]', acmeAvailable ? 'text-[#4cd964]' : 'text-a-muted')}>
               <span className={cn('w-1.5 h-1.5 rounded-full', acmeAvailable ? 'bg-[#4cd964]' : 'bg-a-border')} />
-              {acmeAvailable ? 'ACME 就绪' : acmeMsg || 'certbot 未安装'}
+              {acmeAvailable ? 'ACME 就绪' : acmeMsg || 'ACME 不可用'}
             </span>
-            {acmeAvailable && <Btn onClick={() => setShowACME(true)} className="text-xs">🔑 申请证书</Btn>}
+            <Btn onClick={() => setShowACME(true)} className="text-xs">申请证书</Btn>
             <Btn primary onClick={() => setShowUpload(true)}>上传证书</Btn>
           </div>
         }
@@ -324,8 +324,8 @@ export default function Certificates() {
                 className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1.5 text-a-fg text-xs" />
             </div>
             <p className="text-[10px] text-a-muted">
-              通过 Let's Encrypt 自动签发。需要域名已解析到本机且 80 端口临时可用。
-              {!acmeAvailable && <span className="text-[#ff5c72] block mt-1">{acmeMsg}</span>}
+              通过 Let's Encrypt 自动签发。需要域名已解析到本机且 80 端口可用。
+              {acmeMsg && acmeMsg.includes('未配置') && <span className="text-[#e8b830] block mt-1">⚠ {acmeMsg}</span>}
             </p>
           </div>
         </Modal>

@@ -8,14 +8,14 @@ func DetectACME(email string) Status {
 		Label:    "ACME 证书 (lego)",
 		Category: "acme",
 	}
-	if email == "" {
-		s.Message = "未配置 email — 在设置中配置 proxy.email"
-		return s
-	}
 	s.Installed = true
 	s.Available = true
 	s.Version = "lego (embedded)"
-	s.Message = "已配置"
+	if email != "" {
+		s.Message = "已配置"
+	} else {
+		s.Message = "已就绪（未配置邮箱，到期不会收到通知）"
+	}
 	return s
 }
 
