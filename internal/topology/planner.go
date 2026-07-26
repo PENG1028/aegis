@@ -396,6 +396,20 @@ func (p *Planner) injectControlPlaneRoute(plan *TopologyPlan, healthy []provider
 		},
 		Priority: provider.RoutePriorityControlPlane,
 	})
+	// Also inject a catch-all /* → Aegis SPA for the control plane UI
+	pl.Routes = append(pl.Routes, provider.RouteSpec{
+		Transport:   "tcp",
+		AppProtocol: "http",
+		Match: provider.MatchSpec{
+			Host: "http://", // same HTTP catch-all site
+			Path: "",        // empty = catch-all fallback
+		},
+		Upstream: provider.UpstreamSpec{
+			Type:   "http",
+			Target: fmt.Sprintf("http://127.0.0.1:%d", p.deps.ControlPort),
+		},
+		Priority: provider.RoutePriorityControlPlane + 1,
+	})
 	plan.Plans[targetID] = pl
 }
 
