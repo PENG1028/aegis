@@ -64,6 +64,12 @@ export default function TlsSettings() {
     return parseDomains(c).includes(domainConfigured);
   });
   const [selectedCertId, setSelectedCertId] = useState('');
+  // Auto-select first matching cert when domain or certs change
+  useEffect(() => {
+    if (matchingCerts.length > 0 && !selectedCertId) {
+      setSelectedCertId(matchingCerts[0].id);
+    }
+  }, [domainConfigured, certData]);
   const selectedCert = matchingCerts.find((c) => c.id === selectedCertId);
 
   const bindMut = useMutation({
@@ -121,7 +127,7 @@ export default function TlsSettings() {
 
       {/* Section 2: Bind certificate (domain comes from Panel page) */}
       {loadCertProv && (
-        <Card title="绑定已有证书" subtitle="域名在「面板」标签设置。证书按域名自动匹配。">
+        <Card title="绑定已有证书" subtitle={boundCert ? `已绑定: ${parseDomains(boundCert).join(', ')} · ${expiryLabel(boundCert)}` : "域名在「面板」标签设置。证书按域名自动匹配。"}>
           {!domainConfigured ? (
             <div className="py-4 text-center text-a-muted">
               <p className="text-sm">未配置面板域名</p>
