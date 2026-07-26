@@ -68,14 +68,14 @@ export default function PanelSettings() {
             </p>
           </div>
           <div>
-            <label className="text-xs text-a-muted block mb-1">通知邮箱</label>
+            <label className="text-xs text-a-muted block mb-1">Let's Encrypt 注册邮箱（选填）</label>
             <Input
               value={email}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
+              placeholder="选填，用于 ACME 证书注册"
             />
             <p className="text-[11px] text-a-muted mt-1">
-              Let's Encrypt 证书到期提醒和紧急通知将发送至该邮箱。
+              仅用于 ACME 证书注册和到期通知。可随时补充，不影响面板正常运行。
             </p>
           </div>
 

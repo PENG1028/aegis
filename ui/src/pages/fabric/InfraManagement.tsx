@@ -5,6 +5,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { providerApi, infraApi } from '@/lib/api-bridge';
 import { Card, PageHeader, Btn, useToast, Modal } from '@/components/shared';
+import { CapabilityBadge } from '@/components/shared/CapabilityLabel';
 import ProviderConfigModal from '@/components/settings/ProviderConfigModal';
 import { cn } from '@/lib/utils';
 
@@ -18,7 +19,6 @@ interface MiddlewareItem {
   path: string;
   status: string;
   message: string;
-  // provider-specific
   hasConfig: boolean;
   hasReload: boolean;
   hasService: boolean;
@@ -26,6 +26,7 @@ interface MiddlewareItem {
   canUninstall: boolean;
   ready: boolean;
   issues: Array<{ code: string; message: string; detail: string }>;
+  capabilities: string[];
 }
 
 export default function InfraManagement() {
@@ -55,7 +56,6 @@ export default function InfraManagement() {
     // Providers
     const provList = (providers as any)?.providers || [];
     for (const p of provList) {
-      if (p.id === 'caddy' && p.installed && !p.running) continue; // caddy: show only if issue
       list.push({
         id: p.id,
         name: p.name || p.id,
@@ -67,12 +67,13 @@ export default function InfraManagement() {
         status: p.status || 'unknown',
         message: p.message || '',
         hasConfig: true,
-        hasReload: p.capabilities?.includes('hot_reload'),
+        hasReload: (p.capabilities || []).includes('hot_reload'),
         hasService: true,
-        canInstall: !p.installed && p.id !== 'caddy',
-        canUninstall: p.installed && p.id !== 'caddy',
+        canInstall: !p.installed,
+        canUninstall: p.installed,
         ready: p.ready || false,
         issues: p.issues || [],
+        capabilities: p.capabilities || [],
       });
     }
 
@@ -96,6 +97,7 @@ export default function InfraManagement() {
         canUninstall: inf.installed && inf.category !== 'acme',
         ready: inf.available || false,
         issues: [],
+        capabilities: [],
       });
     }
 
@@ -159,6 +161,7 @@ export default function InfraManagement() {
                 <th className="py-2 px-3">类型</th>
                 <th className="py-2 px-3">状态</th>
                 <th className="py-2 px-3">版本</th>
+                <th className="py-2 px-3">核心能力</th>
                 <th className="py-2 px-3">路径</th>
                 <th className="py-2 px-3">操作</th>
               </tr>
@@ -195,6 +198,21 @@ export default function InfraManagement() {
                     ))}
                   </td>
                   <td className="py-2 px-3 font-mono text-[10px] text-a-muted max-w-[140px] truncate">{item.version}</td>
+                  <td className="py-2 px-3">
+                    <div className="flex gap-1 flex-wrap">
+                      {item.capabilities?.slice(0, 6).map(cap => (
+                        <CapabilityBadge key={cap} cap={cap} />
+                      ))}
+                      {(item.capabilities?.length || 0) > 6 && (
+                        <span className="text-[9px] text-a-muted" title={item.capabilities.join(', ')}>
+                          +{item.capabilities!.length - 6}
+                        </span>
+                      )}
+                      {(!item.capabilities || item.capabilities.length === 0) && (
+                        <span className="text-[9px] text-a-muted/50">—</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="py-2 px-3 font-mono text-[10px] text-a-muted max-w-[160px] truncate">{item.path}</td>
                   <td className="py-2 px-3">
                     <div className="flex gap-1 flex-wrap">

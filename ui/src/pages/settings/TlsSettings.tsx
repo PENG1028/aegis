@@ -1,14 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchSettings, updateSettings, providerApi } from '@/lib/api-bridge';
+import { fetchSettings, updateSettings, providerApi, certApi, type CertificateItem } from '@/lib/api-bridge';
 import { useToast, Card, PageHeader, Btn } from '@/components/shared';
-
-interface CapMeta {
-  key: string;
-  layer: string;
-  label: string;
-  description: string;
-}
 
 interface ProviderInfo {
   id: string;
@@ -19,6 +12,13 @@ interface ProviderInfo {
 interface ProviderListResponse {
   providers: ProviderInfo[];
   capability_universe: CapMeta[];
+}
+
+interface CapMeta {
+  key: string;
+  layer: string;
+  label: string;
+  description: string;
 }
 
 export default function TlsSettings() {
@@ -33,18 +33,18 @@ export default function TlsSettings() {
     queryKey: ['providers'],
     queryFn: () => providerApi.list() as Promise<ProviderListResponse>,
   });
+  const { data: certData } = useQuery({
+    queryKey: ['certificates'],
+    queryFn: () => certApi.list(),
+  });
 
   const s = settings as any;
   const providers: ProviderInfo[] = provData?.providers || [];
   const capUniverse: CapMeta[] = provData?.capability_universe || [];
+  const certs: CertificateItem[] = certData?.certificates || [];
 
   function capMeta(key: string): CapMeta | undefined {
     return capUniverse.find((c) => c.key === key);
-  }
-
-  function providerName(capKey: string): string {
-    const p = providers.find((p) => p.capabilities?.includes(capKey));
-    return p?.name || '当前网关';
   }
 
   const autoCertProv = providers.find((p) => p.capabilities?.includes('auto_cert'));
@@ -52,34 +52,36 @@ export default function TlsSettings() {
   const autoCap = capMeta('auto_cert');
   const loadCap = capMeta('load_cert');
 
-  const [certContent, setCertContent] = useState('');
-  const [keyContent, setKeyContent] = useState('');
-  const [certFile, setCertFile] = useState('');
-  const [keyFile, setKeyFile] = useState('');
+  const [selectedCertId, setSelectedCertId] = useState('');
+  const currentCertFile = s?.proxy?.tls_cert_file || '';
+  const currentCertId = certs.find((c) => c.cert_path === currentCertFile)?.id || '';
 
   useEffect(() => {
-    if (s) {
-      setCertFile(s.proxy?.tls_cert_file || '');
-      setKeyFile(s.proxy?.tls_key_file || '');
-    }
-  }, [s]);
+    if (currentCertId) setSelectedCertId(currentCertId);
+  }, [currentCertId]);
 
-  const saveMut = useMutation({
-    mutationFn: (updates: Record<string, any>) => updateSettings(updates),
+  const selectedCert = certs.find((c) => c.id === selectedCertId);
+
+  const bindMut = useMutation({
+    mutationFn: async () => {
+      if (!selectedCert) return;
+      const proxy: Record<string, any> = {};
+      if (selectedCert.cert_path) proxy.tls_cert_file = selectedCert.cert_path;
+      if (selectedCert.key_path) proxy.tls_key_file = selectedCert.key_path;
+      return updateSettings({ proxy });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['settings'] });
-      toast('证书配置已保存');
+      toast('证书已绑定到面板');
     },
-    onError: (e: any) => toast(e.message || '保存失败', 'error'),
+    onError: (e: any) => toast(e.message || '绑定失败', 'error'),
   });
 
-  const handleSaveCert = () => {
-    const proxy: Record<string, any> = {};
-    if (certContent.trim()) proxy.tls_cert_content = certContent.trim();
-    if (keyContent.trim()) proxy.tls_key_content = keyContent.trim();
-    if (!certContent.trim() && certFile) proxy.tls_cert_file = certFile;
-    if (!keyContent.trim() && keyFile) proxy.tls_key_file = keyFile;
-    saveMut.mutate({ proxy });
+  const handleUnbind = async () => {
+    await updateSettings({ proxy: { tls_cert_file: '', tls_key_file: '' } });
+    setSelectedCertId('');
+    qc.invalidateQueries({ queryKey: ['settings'] });
+    toast('已取消证书绑定');
   };
 
   const certConfigured = s?.proxy?.tls_cert_file || s?.proxy?.tls_key_file;
@@ -93,6 +95,24 @@ export default function TlsSettings() {
   const certFileName = certConfigured
     ? String(certConfigured).split('/').pop() || certConfigured
     : '未配置';
+
+  function parseDomains(item: CertificateItem): string {
+    try {
+      const arr = JSON.parse(item.domains);
+      return Array.isArray(arr) ? arr.join(', ') : item.domains;
+    } catch {
+      return item.domains;
+    }
+  }
+
+  function expiryLabel(item: CertificateItem): string {
+    const d = new Date(item.not_after);
+    const days = Math.floor((d.getTime() - Date.now()) / 86400000);
+    if (days < 0) return '已过期';
+    if (days <= 30) return `${days} 天后到期`;
+    if (days <= 90) return `${days} 天后到期`;
+    return '有效';
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -116,7 +136,7 @@ export default function TlsSettings() {
               </div>
             </div>
             <div>
-              <label className="text-xs text-a-muted block mb-1">通知邮箱</label>
+              <label className="text-xs text-a-muted block mb-1">Let's Encrypt 注册邮箱</label>
               <div className="text-sm font-mono text-a-fg bg-a-bg border border-a-border rounded-a-sm px-3 py-2">
                 {emailConfigured || '（未配置 — 前往「面板」标签设置）'}
               </div>
@@ -128,69 +148,75 @@ export default function TlsSettings() {
         </Card>
       )}
 
-      {/* Section 2: Manual cert */}
+      {/* Section 2: Bind existing certificate */}
       {loadCertProv && (
         <Card
-          title={loadCap?.label || '自定义证书'}
-          subtitle={loadCap?.description || '加载 PEM 格式的证书文件'}
+          title="绑定已有证书"
+          subtitle="从证书库中选择已导入的证书绑定到面板"
         >
           <p className="text-sm text-a-muted mb-4">
-            粘贴 PEM 证书内容，或指定服务器上已有的证书文件路径。
-            <span className="text-a-fg font-medium"> {loadCertProv.name}</span> 将加载该证书用于 TLS 终结。
+            <span className="text-a-fg font-medium">{loadCertProv.name}</span>{' '}
+            支持加载 PEM 证书文件。如需导入新证书，请前往「访问控制 → TLS 证书」页面操作。
           </p>
 
-          <div className="space-y-3 mb-4">
-            <div>
-              <label className="text-xs text-a-muted block mb-1">证书内容 (PEM)</label>
-              <textarea
-                className="w-full font-mono text-xs px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent resize-y"
-                rows={5}
-                value={certContent}
-                onChange={(e) => setCertContent(e.target.value)}
-                placeholder={'-----BEGIN CERTIFICATE-----\nMIID...\n-----END CERTIFICATE-----'}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-a-muted block mb-1">私钥内容 (PEM)</label>
-              <textarea
-                className="w-full font-mono text-xs px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent resize-y"
-                rows={5}
-                value={keyContent}
-                onChange={(e) => setKeyContent(e.target.value)}
-                placeholder={'-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----'}
-              />
-            </div>
-          </div>
-
-          <div className="border-t border-a-border pt-4 mb-4">
-            <p className="text-[11px] text-a-muted mb-3">或指定服务器上已有的证书文件路径</p>
-            <div className="space-y-3">
+          {certs.length > 0 ? (
+            <div className="space-y-4">
               <div>
-                <label className="text-xs text-a-muted block mb-1">证书文件路径</label>
-                <input
-                  type="text"
+                <label className="text-xs text-a-muted block mb-1">选择证书</label>
+                <select
                   className="w-full font-mono text-xs px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
-                  value={certFile}
-                  onChange={(e) => setCertFile(e.target.value)}
-                  placeholder="/etc/aegis/certs/panel.crt"
-                />
+                  value={selectedCertId}
+                  onChange={(e) => setSelectedCertId(e.target.value)}
+                >
+                  <option value="">— 不绑定 —</option>
+                  {certs.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {parseDomains(c)} ({expiryLabel(c)})
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div>
-                <label className="text-xs text-a-muted block mb-1">私钥文件路径</label>
-                <input
-                  type="text"
-                  className="w-full font-mono text-xs px-3 py-2 rounded-a-sm border border-a-border bg-a-bg text-a-fg outline-none focus:border-a-accent"
-                  value={keyFile}
-                  onChange={(e) => setKeyFile(e.target.value)}
-                  placeholder="/etc/aegis/certs/panel.key"
-                />
+
+              {selectedCert && (
+                <div className="bg-a-bg border border-a-border rounded-a-sm p-3 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-a-muted">域名</span>
+                    <span className="font-mono text-a-fg">{parseDomains(selectedCert)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-a-muted">签发者</span>
+                    <span className="font-mono text-a-fg">
+                      {selectedCert.issuer?.split(',')[0]?.replace('CN=', '') || '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-a-muted">到期</span>
+                    <span className="font-mono text-a-fg">
+                      {new Date(selectedCert.not_after).toLocaleDateString('zh-CN')} ({expiryLabel(selectedCert)})
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Btn primary onClick={() => bindMut.mutate()} disabled={!selectedCert || bindMut.isPending}>
+                  {bindMut.isPending ? '绑定中...' : '绑定证书'}
+                </Btn>
+                {currentCertId && (
+                  <Btn onClick={handleUnbind} className="text-xs">
+                    取消绑定
+                  </Btn>
+                )}
               </div>
             </div>
-          </div>
-
-          <Btn primary onClick={handleSaveCert} disabled={saveMut.isPending}>
-            {saveMut.isPending ? '保存中...' : '保存证书配置'}
-          </Btn>
+          ) : (
+            <div className="py-6 text-center text-a-muted">
+              <p className="text-sm">暂无已导入的证书</p>
+              <p className="text-xs mt-1 opacity-60">
+                前往「访问控制 → TLS 证书」上传 PEM 证书或通过 ACME 申请
+              </p>
+            </div>
+          )}
         </Card>
       )}
 
@@ -210,15 +236,15 @@ export default function TlsSettings() {
             <span className="font-mono text-a-fg">{domainConfigured || '未配置'}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-a-muted">通知邮箱</span>
+            <span className="text-a-muted">Let's Encrypt 注册邮箱</span>
             <span className="font-mono text-a-fg">{emailConfigured || '未配置'}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-a-muted">自定义证书文件</span>
+            <span className="text-a-muted">绑定的证书</span>
             <span className="font-mono text-a-fg text-xs">{certFileName}</span>
           </div>
           <div className="flex justify-between border-t border-a-border pt-2 mt-2">
-            <span className="text-a-muted">生效方式</span>
+            <span className="text-a-muted">TLS 状态</span>
             <span className="font-medium text-a-accent">{tlsStatus}</span>
           </div>
         </div>
