@@ -56,14 +56,24 @@ export default function TlsSettings() {
   useEffect(() => { setAcmeDomain(domainConfigured); }, [domainConfigured]);
 
   const acmeMut = useMutation({
-    mutationFn: (domain: string) => acmeApi.obtain([domain]),
+    mutationFn: async (domain: string) => {
+      // 1. Obtain cert via ACME
+      await acmeApi.obtain([domain]);
+      // 2. Set domain in settings to create route (if panel domain not set)
+      if (!domainConfigured) {
+        await updateSettings({ managed_domain: { gateway_domain: domain } });
+      }
+      // 3. Apply — BindAutoCerts matches cert to route
+      await system.apply();
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['certificates'] });
       qc.invalidateQueries({ queryKey: ['acme-status'] });
-      toast(`ACME 证书申请成功！域名: ${acmeDomain}`);
-      setAcmeDomain(domainConfigured);
+      qc.invalidateQueries({ queryKey: ['settings'] });
+      qc.invalidateQueries({ queryKey: ['routes'] });
+      toast(`证书已签发并绑定到域名 ${acmeDomain}。路由和 TLS 均已就绪。`);
     },
-    onError: (e: any) => toast(e.message || 'ACME 申请失败', 'error'),
+    onError: (e: any) => toast(e.message || '申请失败', 'error'),
   });
 
   // ── Cert binding ──
@@ -130,13 +140,11 @@ export default function TlsSettings() {
               <div className="flex gap-2">
                 <Input value={acmeDomain} onChange={(e) => setAcmeDomain(e.target.value)} placeholder="example.com" />
                 <Btn primary onClick={() => acmeMut.mutate(acmeDomain)} disabled={!acmeDomain || acmeMut.isPending}>
-                  {acmeMut.isPending ? '申请中...' : '一键申请'}
+                  {acmeMut.isPending ? '申请中...' : '一键申请并绑定'}
                 </Btn>
               </div>
               <p className="text-[11px] text-a-muted mt-1">
-                {acmeAvailable
-                  ? '通过 Let\'s Encrypt 自动验证并签发。需域名已解析到本机。'
-                  : 'ACME 不可用。请检查网关中间件状态。'}
+                自动签发 Let's Encrypt 证书，同时创建域名路由并绑定。需域名 DNS 已解析到本机。
               </p>
             </div>
 
