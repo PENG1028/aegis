@@ -111,6 +111,7 @@ export default function EntryList() {
         isHTTP: rd.isHTTP,
         certSource: r.cert_id ? (certMap[r.cert_id] || '') : '',
         domainHasCert: domainCertMap.has(r.domain),
+        sourceProvider: r.source_provider || 'caddy',
       };
     }),
     ...exposures.map((e: any) => ({
@@ -170,6 +171,7 @@ export default function EntryList() {
                 <th className="py-2.5 px-3 font-medium">TLS</th>
                 <th className="py-2.5 px-3 font-medium">证书</th>
                 <th className="py-2.5 px-3 font-medium">类型</th>
+                <th className="py-2.5 px-3 font-medium">管理方</th>
                 <th className="py-2.5 px-3 font-medium">健康</th>
                 <th className="py-2.5 px-3 font-medium"></th>
               </tr></thead>
@@ -202,6 +204,11 @@ export default function EntryList() {
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-[10px] text-a-muted">{item.type}</td>
+                    <td className="py-2.5 px-3">
+                      {item._t === 'route'
+                        ? <span className="text-[10px] text-a-muted">{(item as any).sourceProvider === 'haproxy' ? 'HAProxy' : 'Caddy'}</span>
+                        : <span className="text-[10px] text-a-muted/50">—</span>}
+                    </td>
                     <td className="py-2.5 px-3"><HealthBadge status={item.health} /></td>
                     <td className="py-2.5 px-3">
                       <div className="flex items-center gap-1">

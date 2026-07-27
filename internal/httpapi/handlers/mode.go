@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 
 	"aegis/internal/hostdep/provider"
 )
@@ -59,7 +61,41 @@ func (h *Handlers) ModePreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	preview := provider.AnalyseModeSwitch(routes, currentMode, *targetMode)
-	writeJSON(w, http.StatusOK, preview)
+
+	// RPCB: check each route's source_capabilities against target mode providers
+	type routeConflict struct {
+		RouteID         string   `json:"route_id"`
+		Domain          string   `json:"domain"`
+		Capabilities    []string `json:"capabilities"`
+		Compatible      bool     `json:"compatible"`
+		Reason          string   `json:"reason,omitempty"`
+	}
+	var rpcbConflicts []routeConflict
+	for _, rt := range dbRoutes {
+		if rt.SourceCapabilities == "" {
+			continue
+		}
+		var caps []string
+		if err := json.Unmarshal([]byte(rt.SourceCapabilities), &caps); err != nil || len(caps) == 0 {
+			continue
+		}
+		compat := targetModeHasAllCaps(targetMode, caps)
+		rc := routeConflict{
+			RouteID:      rt.ID,
+			Domain:       rt.Domain,
+			Capabilities: caps,
+			Compatible:   compat,
+		}
+		if !compat {
+			rc.Reason = "缺少必需能力: " + missingCapsDesc(targetMode, caps)
+		}
+		rpcbConflicts = append(rpcbConflicts, rc)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"preview":         preview,
+		"rpcb_conflicts":  rpcbConflicts,
+	})
 }
 
 // ModeSwitch triggers a safe mode switch by running the Apply pipeline.
@@ -108,6 +144,38 @@ func (h *Handlers) ModeSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RPCB hard check: any route with incompatible capabilities → refuse
+	dbRoutes, err := h.Route.ListRoutes(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list routes: "+err.Error())
+		return
+	}
+	var blocked []map[string]interface{}
+	for _, rt := range dbRoutes {
+		if rt.SourceCapabilities == "" {
+			continue
+		}
+		var caps []string
+		json.Unmarshal([]byte(rt.SourceCapabilities), &caps)
+		if len(caps) > 0 && !targetModeHasAllCaps(targetMode, caps) {
+			blocked = append(blocked, map[string]interface{}{
+				"route_id":     rt.ID,
+				"domain":       rt.Domain,
+				"capabilities": caps,
+				"reason":       "缺少能力：" + missingCapsDesc(targetMode, caps),
+			})
+		}
+	}
+	if len(blocked) > 0 {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":    "RPCB_MODE_SWITCH_BLOCKED",
+			"reason":   "存在路由所需能力在切换目标模式下无 Provider 支持",
+			"blocked":  blocked,
+			"hint":     "请先修改或删除冲突路由再重试",
+		})
+		return
+	}
+
 	// Execute standalone mode switch with snapshot/rollback.
 	if err := h.Apply.SwitchMode(r.Context(), req.TargetMode); err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -122,4 +190,44 @@ func (h *Handlers) ModeSwitch(w http.ResponseWriter, r *http.Request) {
 		"status":  "success",
 		"message": "已从 " + currentMode.Label + " 切换到 " + targetMode.Label,
 	})
+}
+
+// targetModeHasAllCaps checks whether any provider in the target mode supports
+// ALL of the given capabilities.
+func targetModeHasAllCaps(mode *provider.RuntimeMode, caps []string) bool {
+	if len(caps) == 0 {
+		return true
+	}
+	for _, p := range mode.Providers {
+		if provHasAllCaps(&p, caps) {
+			return true
+		}
+	}
+	return false
+}
+
+func provHasAllCaps(p *provider.ProviderAtoms, caps []string) bool {
+	for _, cap := range caps {
+		if _, ok := p.Bindings[cap]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func missingCapsDesc(mode *provider.RuntimeMode, caps []string) string {
+	var missing []string
+	for _, cap := range caps {
+		found := false
+		for _, p := range mode.Providers {
+			if _, ok := p.Bindings[cap]; ok {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, cap)
+		}
+	}
+	return strings.Join(missing, ", ")
 }

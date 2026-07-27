@@ -2,6 +2,7 @@ package route
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -63,6 +64,9 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		comp = "https_route" // default: HTTPS with TLS termination
 	}
 
+	caps := (&Route{Composition: comp}).CapabilityKeys()
+	capsJSON, _ := json.Marshal(caps)
+
 	now := time.Now()
 	rt := &Route{
 		ID:                 core.NewID("rt"),
@@ -72,6 +76,8 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		ServiceID:          input.ServiceID,
 		TLSEnabled:          true,
 		Composition:         comp,
+		SourceProvider:      "caddy",
+		SourceCapabilities:  string(capsJSON),
 		Status:              "active",
 		MaintenanceEnabled:  false,
 		MaintenanceMessage:  "",
@@ -181,6 +187,11 @@ func (s *AppService) ListRoutes(ctx context.Context) ([]Route, error) {
 		routes = []Route{}
 	}
 	return routes, nil
+}
+
+// FindRoutesByCertID returns all routes that reference a given certificate.
+func (s *AppService) FindRoutesByCertID(ctx context.Context, certID string) ([]Route, error) {
+	return s.repo.FindByCertID(certID)
 }
 
 // GetRoute finds a route by ID or domain.

@@ -203,6 +203,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	// v1.8A Route Safety & Egress Trace
 	mux.HandleFunc("GET /api/admin/v1/routes/{id}/safety", h.CheckRouteSafety)
 	mux.HandleFunc("GET /api/admin/v1/routes/safety", h.CheckAllRoutesSafety)
+	mux.HandleFunc("GET /api/admin/v1/routes/{id}/capability-status", h.AdminRouteCapabilityStatus)
+	mux.HandleFunc("GET /api/admin/v1/certificates/{id}/capability-status", h.AdminCertCapabilityStatus)
 	mux.HandleFunc("GET /api/admin/v1/trace/egress", h.TraceEgress)
 	// v1.7AB Gateway Links
 	mux.HandleFunc("POST /api/admin/v1/gateway-links", h.CreateGatewayLink)

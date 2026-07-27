@@ -131,6 +131,38 @@ func (h *Handlers) AdminDeleteCertificate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	id := r.PathValue("id")
+
+	cert, err := h.CertStore.Get(id)
+	if err != nil || cert == nil {
+		writeError(w, http.StatusNotFound, "certificate not found")
+		return
+	}
+
+	// RPCB: gateway_auto certs are managed by Caddy — refuse Aegis-side deletion
+	if cert.Source == certstore.SourceGatewayAuto {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{
+			"error":  "CERT_MANAGED_BY_PROVIDER",
+			"reason": "by Caddy，删除后 Caddy 重载将自动重新签发。如需取消请删路由。",
+		})
+		return
+	}
+
+	// RPCB: check if any routes reference this cert
+	refs, _ := h.Route.FindRoutesByCertID(r.Context(), id)
+	if len(refs) > 0 {
+		refIDs := make([]string, 0, len(refs))
+		for _, ref := range refs {
+			refIDs = append(refIDs, ref.ID)
+		}
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":    "CERT_HAS_REFERENCES",
+			"reason":   "被路由引用，请先解除绑定",
+			"ref_count": len(refs),
+			"route_ids": refIDs,
+		})
+		return
+	}
+
 	if err := h.CertStore.Delete(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

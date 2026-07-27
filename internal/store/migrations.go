@@ -237,6 +237,11 @@ func AllMigrations() []Migration {
 			Name:    "backfill_route_composition",
 			UpSQL:   migration044,
 		},
+		{
+			Version: "045",
+			Name:    "add_route_source_provider",
+			UpSQL:   migration045,
+		},
 	}
 }
 
@@ -1320,4 +1325,18 @@ WHERE composition = ''
 UPDATE routes SET composition = 'http_route'
 WHERE composition = ''
   AND tls_enabled = 0;
+`
+
+// migration045 adds source_provider and source_capabilities columns.
+// These are provenance fields that record which Provider created/serves each route
+// and which Capabilities were used at creation time. The RPCB model uses them to
+// enforce Provider-consistent operations and safe mode-switching.
+const migration045 = `
+ALTER TABLE routes ADD COLUMN source_provider TEXT NOT NULL DEFAULT '';
+ALTER TABLE routes ADD COLUMN source_capabilities TEXT NOT NULL DEFAULT '';
+
+UPDATE routes SET
+  source_provider = 'caddy',
+  source_capabilities = '["route_host","auto_cert","load_cert"]'
+WHERE source_provider = '';
 `

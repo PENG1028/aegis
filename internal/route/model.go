@@ -17,6 +17,8 @@ type Route struct {
 	ServiceID          string    `json:"service_id"`
 	TLSEnabled          bool      `json:"tls_enabled"`           // deprecated — derived from Composition
 	Composition        string    `json:"composition,omitempty"`  // v1.8L-22 → CompKey string, e.g. "https_route"
+	SourceProvider     string    `json:"source_provider,omitempty"`     // v2.0-RPCB — which Provider manages this route
+	SourceCapabilities string    `json:"source_capabilities,omitempty"` // v2.0-RPCB — JSON array of Capability keys
 	Status             string    `json:"status"` // active | disabled
 	MaintenanceEnabled bool      `json:"maintenance_enabled"`
 	MaintenanceMessage string    `json:"maintenance_message"`
@@ -35,11 +37,29 @@ func (r *Route) CompDef() *provider.CompDef {
 	if r.Composition != "" {
 		return provider.LookupComp(provider.CompKey(r.Composition))
 	}
-	// Backward-compat: derive from TLSEnabled for routes created before v1.8L-22
 	if r.TLSEnabled {
 		return provider.LookupComp(provider.CompHTTPSRoute)
 	}
 	return provider.LookupComp(provider.CompHTTPRoute)
+}
+
+// CapabilityKeys returns the capability key chain for this route's composition.
+// Used to populate source_capabilities at creation time.
+func (r *Route) CapabilityKeys() []string {
+	switch r.Composition {
+	case "http_route":
+		return []string{"route_host", "load_cert", "auto_cert"}
+	case "https_route", "http3":
+		return []string{"route_host", "tls_terminate", "load_cert", "auto_cert"}
+	case "tls_passthrough":
+		return []string{"sni_preread", "tls_passthrough"}
+	case "raw_tcp":
+		return []string{"listen_tcp", "upstream_tcp"}
+	case "raw_udp":
+		return []string{"listen_udp", "upstream_udp"}
+	default:
+		return nil
+	}
 }
 
 // CreateRouteInput is the input for creating a route.

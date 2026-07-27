@@ -233,11 +233,10 @@ export default function Certificates() {
                         )}
                       </td>
                       <td className="py-1.5 pl-2 text-right">
-                        {c.managed && !c.auto_renew && (
+                        {c.source === 'gateway_auto' ? (
+                          <span className="text-[9px] text-a-muted/50" title="由 Caddy 自动管理，无法手动删除">网关管理</span>
+                        ) : (
                           <Btn onClick={() => setDeleteId(c.id)} className="text-[9px]" danger>删除</Btn>
-                        )}
-                        {c.auto_renew && (
-                          <span className="text-[9px] text-a-muted/50" title="网关自动管理的证书，由 Provider 控制">网关管理</span>
                         )}
                       </td>
                     </tr>
