@@ -17,10 +17,11 @@ type MutationHook interface {
 
 // AppService defines the route application service interface.
 type AppService struct {
-	repo    *Repository
-	logSvc  logs.Logger
-	edgeSvc *edgemux.AppService
-	hook    MutationHook
+	repo        *Repository
+	logSvc      logs.Logger
+	edgeSvc     *edgemux.AppService
+	hook        MutationHook
+	afterCreate func(rt *Route)
 }
 
 // NewAppService creates a new route application service.
@@ -31,6 +32,11 @@ func NewAppService(repo *Repository, logSvc logs.Logger, edgeSvc *edgemux.AppSer
 // SetMutationHook sets the mutation hook for desired state regeneration.
 func (s *AppService) SetMutationHook(hook MutationHook) {
 	s.hook = hook
+}
+
+// SetAfterCreate sets a callback invoked after successful route creation.
+func (s *AppService) SetAfterCreate(fn func(rt *Route)) {
+	s.afterCreate = fn
 }
 
 // CreateRoute creates a new route.
@@ -52,6 +58,11 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		return nil, err
 	}
 
+	comp := input.Composition
+	if comp == "" {
+		comp = "https_route" // default: HTTPS with TLS termination
+	}
+
 	now := time.Now()
 	rt := &Route{
 		ID:                 core.NewID("rt"),
@@ -60,6 +71,7 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		StripPrefix:        input.StripPrefix,
 		ServiceID:          input.ServiceID,
 		TLSEnabled:          true,
+		Composition:         comp,
 		Status:              "active",
 		MaintenanceEnabled:  false,
 		MaintenanceMessage:  "",
@@ -78,7 +90,6 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 	// Auto-sync edge rule in EdgeMux mode
 	if s.edgeSvc != nil {
 		if _, err := s.edgeSvc.EnsureRuleForHTTPRoute(ctx, rt.Domain, rt.ID); err != nil {
-			// Log but don't fail — edge sync is best-effort on create
 			s.logSvc.Log(ctx, "route.edge-sync", "route", rt.ID, "failed",
 				fmt.Sprintf("edge rule sync failed: %v", err), "system")
 		}
@@ -88,6 +99,10 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		if err := s.hook.OnRouteChanged(ctx, rt.ID); err != nil {
 			s.logSvc.Log(ctx, "desired-state.regen", "route", rt.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
 		}
+	}
+
+	if s.afterCreate != nil {
+		s.afterCreate(rt)
 	}
 
 	return rt, nil

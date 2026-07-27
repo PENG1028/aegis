@@ -87,7 +87,14 @@ export default function EntryList() {
     refetchInterval: 60_000,
   });
   const certMap: Record<string, string> = {};
-  (cd?.certificates || []).forEach((c: any) => { if (c.id) certMap[c.id] = c.source; });
+  const domainCertMap: Set<string> = new Set();
+  (cd?.certificates || []).forEach((c: any) => {
+    if (c.id) certMap[c.id] = c.source;
+    try {
+      const domains: string[] = JSON.parse(c.domains);
+      domains.forEach((d: string) => domainCertMap.add(d));
+    } catch {}
+  });
 
   const allItems = useMemo(() => [
     ...routes.map((r: any) => {
@@ -101,7 +108,9 @@ export default function EntryList() {
         key: r.id, _t: 'route' as const, name: r.domain, type: rd.typeLabel, health,
         target: r.service_id || '—', status: r.status, tlsEnabled: rd.tlsActive,
         scope: r.owner_type === 'space' ? (r.space_id || r.owner_id || 'service') : 'admin',
-        isHTTP: rd.isHTTP, certSource: r.cert_id ? (certMap[r.cert_id] || '') : '',
+        isHTTP: rd.isHTTP,
+        certSource: r.cert_id ? (certMap[r.cert_id] || '') : '',
+        domainHasCert: domainCertMap.has(r.domain),
       };
     }),
     ...exposures.map((e: any) => ({
@@ -180,10 +189,16 @@ export default function EntryList() {
                       )}
                     </td>
                     <td className="py-2.5 px-3">
-                      {item._t === 'route' && item.tlsEnabled && item.certSource && (
-                        <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border', certSourceMeta(item.certSource).color)}>
-                          {certSourceLabel(item.certSource)}
-                        </span>
+                      {item._t === 'route' && item.tlsEnabled && (
+                        item.certSource
+                          ? <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border', certSourceMeta(item.certSource).color)}>
+                              {certSourceLabel(item.certSource)}
+                            </span>
+                          : (item as any).domainHasCert
+                            ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-500/10 text-purple-400/60 border border-purple-500/20">
+                                由网关管理（待绑定）
+                              </span>
+                            : null
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-[10px] text-a-muted">{item.type}</td>

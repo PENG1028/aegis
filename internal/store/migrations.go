@@ -232,6 +232,11 @@ func AllMigrations() []Migration {
 			Name:    "canonical_node_ids",
 			UpSQL:   migration043,
 		},
+		{
+			Version: "044",
+			Name:    "backfill_route_composition",
+			UpSQL:   migration044,
+		},
 	}
 }
 
@@ -1301,4 +1306,18 @@ WHERE node_id <> '' AND node_id NOT LIKE 'node_%'
     SELECT 1 FROM nodes AS stable
     WHERE stable.node_id = 'node_' || nodes.node_id
   );
+`
+
+// migration044 adds and backfills the composition column on routes.
+// The column was tracked in the Go model but never added via migration.
+const migration044 = `
+ALTER TABLE routes ADD COLUMN composition TEXT NOT NULL DEFAULT '';
+
+UPDATE routes SET composition = 'https_route'
+WHERE composition = ''
+  AND tls_enabled = 1;
+
+UPDATE routes SET composition = 'http_route'
+WHERE composition = ''
+  AND tls_enabled = 0;
 `

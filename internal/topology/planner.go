@@ -88,6 +88,41 @@ func (p *Planner) BindAutoCerts() (bound int, _ error) {
 	return bound, nil
 }
 
+// BindAutoCertForDomain looks up a cert by domain in CertStore and binds it
+// to the route if no cert is already bound. Returns true if bound.
+func (p *Planner) BindAutoCertForDomain(domain string) bool {
+	if p.deps.CertStore == nil || p.deps.RouteRepo == nil || domain == "" {
+		return false
+	}
+
+	rt, err := p.deps.RouteRepo.FindByDomain(domain)
+	if err != nil || rt == nil {
+		return false
+	}
+	if rt.CertID != nil && *rt.CertID != "" {
+		return false // already has a cert
+	}
+
+	certs, err := p.deps.CertStore.List()
+	if err != nil {
+		return false
+	}
+
+	for _, cert := range certs {
+		var domains []string
+		json.Unmarshal([]byte(cert.Domains), &domains)
+		for _, d := range domains {
+			if d == domain {
+				certID := cert.ID
+				rt.CertID = &certID
+				_ = p.deps.RouteRepo.Update(rt)
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ============================================================================
 // Planner — dimension 2: the single source of truth for traffic routing decisions
 // ============================================================================

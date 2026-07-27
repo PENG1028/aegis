@@ -261,6 +261,24 @@ func main() {
 	})
 	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc, certStoreSvc)
 
+	// Auto-bind certs immediately after route creation — eliminates the need to click Apply first.
+	routeSvc.SetAfterCreate(func(rt *route.Route) {
+		topoPlanner.BindAutoCertForDomain(rt.Domain)
+	})
+
+	// Periodic cert binding: every 5 minutes, bind any unbound routes to matching certs
+	// in CertStore. Covers cases where certs were imported/issued after route creation.
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			if bound, err := topoPlanner.BindAutoCerts(); err == nil && bound > 0 {
+				fmt.Fprintf(os.Stderr, "cert-auto-bind: bound %d routes\n", bound)
+			}
+			<-ticker.C
+		}
+	}()
+
 	applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 
 	adminUserRepo := adminauth.NewAdminUserRepository(db)

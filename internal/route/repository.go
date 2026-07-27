@@ -16,18 +16,19 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{DB: db}
 }
 
-const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at`
+const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at`
 
 // scanRoute scans a single row into a Route. Handles nullable columns.
 func scanRoute(scanner interface{ Scan(...interface{}) error }) (*Route, error) {
 	var rt Route
 	var createdAt, updatedAt string
-	var pathPrefix, certID, gatewayLinkID sql.NullString
+	var pathPrefix, composition, certID, gatewayLinkID sql.NullString
 	var tlsVal, maintVal, stripVal int
 	var maintMsg sql.NullString
 
 	err := scanner.Scan(
 		&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal,
+		&composition,
 		&rt.Status, &maintVal, &maintMsg,
 		&rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID,
 		&gatewayLinkID, &certID, &createdAt, &updatedAt,
@@ -36,6 +37,7 @@ func scanRoute(scanner interface{ Scan(...interface{}) error }) (*Route, error) 
 		return nil, err
 	}
 	rt.PathPrefix = pathPrefix.String
+	rt.Composition = composition.String
 	rt.GatewayLinkID = gatewayLinkID.String
 	if certID.Valid {
 		id := certID.String
@@ -75,9 +77,10 @@ func (r *Repository) Create(rt *Route) error {
 	if rt.CertID != nil { certID = *rt.CertID }
 
 	_, err := r.DB.Exec(
-		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rt.ID, rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal,
+		rt.Composition,
 		rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
 		rt.GatewayLinkID, certID,
@@ -209,8 +212,9 @@ func (r *Repository) Update(rt *Route) error {
 	if rt.CertID != nil { certID = *rt.CertID }
 
 	_, err := r.DB.Exec(
-		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, gateway_link_id=?, cert_id=?, updated_at=? WHERE id=?`,
+		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, composition=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, gateway_link_id=?, cert_id=?, updated_at=? WHERE id=?`,
 		rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal,
+		rt.Composition,
 		rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
 		rt.GatewayLinkID, certID,
