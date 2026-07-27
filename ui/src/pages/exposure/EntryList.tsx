@@ -2,20 +2,11 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { routeApi, exposureApi, runtimeModeApi } from '@/lib/api-bridge';
+import { routeApi, exposureApi, runtimeModeApi, certApi } from '@/lib/api-bridge';
 import { Card, Btn, useToast } from '@/components/shared';
 import { useView } from '@/lib/view-context';
+import { routeDisplay } from '@/lib/route-display';
 import { cn } from '@/lib/utils';
-
-const KIND_LABELS: Record<string, string> = {
-  http: 'HTTP Route', https: 'HTTPS Route', udp: 'UDP 隧道', tcp: 'TCP 转发',
-  grpc: 'gRPC', ws: 'WebSocket', tunnel: '加密隧道',
-};
-
-function routeType(r: any): string {
-  if (r.kind && KIND_LABELS[r.kind]) return KIND_LABELS[r.kind];
-  return r.tls_enabled ? 'HTTPS Route' : 'HTTP Route';
-}
 
 function HealthBadge({ status }: { status: string }) {
   const st = status === 'active' ? 'bg-[#4cd964]/10 text-[#4cd964] border-[#4cd964]/20'
@@ -90,21 +81,27 @@ export default function EntryList() {
   const svcKindMap: Record<string, string> = {};
   services.forEach((svc: any) => { if (svc.id && svc.kind) svcKindMap[svc.id] = svc.kind; });
 
+  const { data: cd } = useQuery({
+    queryKey: ['certificates', activeNodeId],
+    queryFn: () => certApi.list().catch(() => ({ certificates: [] })),
+    refetchInterval: 60_000,
+  });
+  const certMap: Record<string, string> = {};
+  (cd?.certificates || []).forEach((c: any) => { if (c.id) certMap[c.id] = c.source; });
+
   const allItems = useMemo(() => [
     ...routes.map((r: any) => {
       const kind = svcKindMap[r.service_id] || '';
-      const typeLabel = routeType({ ...r, kind });
-      const comp = compositions.find((c: any) => c.name === typeLabel);
-      // Non-HTTP routes (udp/tcp tunnel, etc.) have no composition — use route status directly
-      const isNonHTTP = kind === 'udp' || kind === 'tcp' || kind === 'tunnel';
+      const rd = routeDisplay({ ...r, kind });
+      const comp = compositions.find((c: any) => c.name === rd.typeLabel);
       const health = r.status === 'active'
-        ? (isNonHTTP ? 'active' : (comp?.status === 'available' ? 'active' : 'unhealthy'))
+        ? (rd.isHTTP ? (comp?.status === 'available' ? 'active' : 'unhealthy') : 'active')
         : 'disabled';
       return {
-        key: r.id, _t: 'route' as const, name: r.domain, type: typeLabel, health,
-        target: r.service_id || '—', status: r.status, tlsEnabled: r.tls_enabled,
+        key: r.id, _t: 'route' as const, name: r.domain, type: rd.typeLabel, health,
+        target: r.service_id || '—', status: r.status, tlsEnabled: rd.tlsActive,
         scope: r.owner_type === 'space' ? (r.space_id || r.owner_id || 'service') : 'admin',
-        kind,
+        isHTTP: rd.isHTTP, certSource: r.cert_id ? (certMap[r.cert_id] || '') : '',
       };
     }),
     ...exposures.map((e: any) => ({
@@ -162,6 +159,7 @@ export default function EntryList() {
               <thead><tr className="border-b border-a-border text-a-muted text-left">
                 <th className="py-2.5 px-3 font-medium">域名 / 端口</th>
                 <th className="py-2.5 px-3 font-medium">TLS</th>
+                <th className="py-2.5 px-3 font-medium">证书</th>
                 <th className="py-2.5 px-3 font-medium">类型</th>
                 <th className="py-2.5 px-3 font-medium">健康</th>
                 <th className="py-2.5 px-3 font-medium"></th>
@@ -172,9 +170,21 @@ export default function EntryList() {
                     onClick={() => nav(`/exposure/entry/${item.key}`)}>
                     <td className="py-2.5 px-3 font-mono text-[11px]">{item.name}</td>
                     <td className="py-2.5 px-3">
-                      {item._t === 'route' && (item.tlsEnabled
-                        ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-[#4cd964]/10 text-[#4cd964] border border-[#4cd964]/20 font-medium">HTTPS</span>
-                        : <span className="px-1.5 py-0.5 rounded text-[9px] bg-a-border/10 text-a-muted border border-a-border/20">HTTP</span>
+                      {item._t === 'route' && (
+                        item.tlsEnabled
+                          ? <span className={item.isHTTP ? 'px-1.5 py-0.5 rounded text-[9px] bg-[#4cd964]/10 text-[#4cd964] border border-[#4cd964]/20 font-medium' : 'px-1.5 py-0.5 rounded text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium'}>
+                              {item.isHTTP ? 'HTTPS' : 'TLS'}
+                            </span>
+                          : <span className="px-1.5 py-0.5 rounded text-[9px] bg-a-border/10 text-a-muted border border-a-border/20">HTTP</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {item._t === 'route' && item.tlsEnabled && (
+                        item.certSource === 'gateway_auto'
+                          ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-500/10 text-purple-400 border border-purple-500/20">网关自动</span>
+                          : item.certSource
+                            ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20">手动管理</span>
+                            : <span className="text-[9px] text-a-muted/50">Caddy ACME</span>
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-[10px] text-a-muted">{item.type}</td>

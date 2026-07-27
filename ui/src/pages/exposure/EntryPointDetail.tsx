@@ -6,6 +6,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { runtimeModeApi } from '@/lib/api-bridge';
 import { viewStore } from '@/lib/view-store';
+import { routeDisplay } from '@/lib/route-display';
 import { Card, StatusBadge, Btn, useToast } from '@/components/shared';
 import { cn } from '@/lib/utils';
 
@@ -96,19 +97,10 @@ export default function EntryPointDetail() {
   if (!route) return <div className="p-6 text-a-muted text-sm">未找到入口 {entryId}</div>;
 
   const active = route.status === 'active';
-  const tls = route.tls_enabled;
-  const compName = route.composition
-    ? (route.composition === 'https_route' ? 'HTTPS Route' :
-       route.composition === 'http_route' ? 'HTTP Route' :
-       route.composition === 'tls_passthrough' ? 'TLS Passthrough' :
-       route.composition === 'http3' ? 'HTTP/3' :
-       route.composition === 'raw_tcp' ? 'Raw TCP Forward' :
-       route.composition === 'raw_udp' ? 'Raw UDP Forward' : route.composition)
-    : (tls ? 'HTTPS Route' : 'HTTP Route');
-
-  const compositions = rm?.current?.compositions || [];
-  const comp = compositions.find((c: any) => c.name === compName);
-  const entryHealthy = comp?.status === 'available';
+  const kind = svc?.kind || '';
+  const rd = routeDisplay({ ...route, kind });
+  const comp = (rm?.current?.compositions || []).find((c: any) => c.name === rd.typeLabel);
+  const entryHealthy = rd.isHTTP ? comp?.status === 'available' : true;
   const mode = rm?.current?.label || 'Legacy';
 
   const serviceName = svc?.name || route.service_id;
@@ -141,7 +133,7 @@ export default function EntryPointDetail() {
         <div>
           <h2 className="text-lg font-bold text-a-fg">{route.domain}</h2>
           <p className="text-xs text-a-muted mt-1">
-            {compName} · <StatusBadge status={active ? 'active' : 'disabled'} /> · {mode} 模式
+            {rd.typeLabel} · <StatusBadge status={active ? 'active' : 'disabled'} /> · {mode} 模式
           </p>
         </div>
         <div className="flex gap-2">
@@ -204,7 +196,7 @@ export default function EntryPointDetail() {
           <div className="space-y-2 text-xs">
             <Row label="域名" value={route.domain} mono />
             <Row label="路径" value={route.path_prefix || '/'} mono />
-            <Row label="类型" value={compName} />
+            <Row label="类型" value={rd.typeLabel} />
             <Row label="状态" badge={<StatusBadge status={active ? 'active' : 'disabled'} />} />
             <Row label="来源" value={route.owner_type === 'system' ? '系统（面板）' : route.owner_type === 'space' ? '服务' : '管理员'} />
           </div>
@@ -255,7 +247,7 @@ export default function EntryPointDetail() {
               <>
                 <div className="text-a-muted">
                   {route.cert_id === '' || !route.cert_id
-                    ? (tls ? '由 Provider 自动签发 Let\'s Encrypt 证书' : 'HTTP 路由，不使用证书')
+                    ? (rd.isHTTP ? '由 Provider 自动签发 Let\'s Encrypt 证书' : '独立 TLS 加密，不由 Aegis 管理')
                     : '证书信息加载中...'}
                 </div>
                 <div className="pt-1">
@@ -271,9 +263,9 @@ export default function EntryPointDetail() {
         <Card title="模式信息">
           <div className="space-y-2 text-xs">
             <Row label="当前模式" value={mode} />
-            <Row label="组合能力" value={compName} />
-            <Row label="Provider" value={entryHealthy ? 'Caddy 已就绪' : 'Caddy 未就绪'} />
-            <Row label="TLS" value={tls ? '开启（:443）' : '关闭（:80）'} />
+            <Row label="组合能力" value={rd.typeLabel} />
+            <Row label="Provider" value={entryHealthy ? '已就绪' : '未就绪'} />
+            <Row label="TLS" value={rd.tlsActive ? `${rd.tlsLabel}${rd.port > 0 ? ` (:${rd.port})` : ''}` : '关闭'} />
             <Row label="创建时间" value={route.created_at || '—'} mono />
             <div className="pt-1">
               <Link to="/fabric/mode" className="text-[10px] text-a-accent hover:underline">

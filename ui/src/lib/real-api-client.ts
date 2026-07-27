@@ -14,6 +14,7 @@
 
 import { API_CONFIG, apiUrl } from './api-config';
 import { viewStore } from './view-store';
+import { tlsMode } from './route-display';
 import type {
   Node, NodeDetail, Gateway, GatewayDetail,
   TopologyEdge, TopologyPathResult, TopologyPathHop,
@@ -698,7 +699,7 @@ function mapRoute(raw: any): Route {
     service_id: raw.service_id || '',
     service_name: raw.service_name || '',
     scope_id: raw.space_id || raw.scope_id || null,
-    tls_mode: raw.tls_enabled ? 'terminate_local' : 'http_only',
+    tls_mode: tlsMode(raw),
     preserve_host: !raw.strip_prefix,
     public_allowed: raw.public_allowed ?? true,
     status: raw.status || 'unknown',

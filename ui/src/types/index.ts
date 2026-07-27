@@ -167,7 +167,7 @@ export interface Route {
   service_id: string;
   service_name?: string;
   scope_id: string | null;
-  tls_mode: 'http_only' | 'terminate_local' | 'passthrough_deferred';
+  tls_mode: string;
   preserve_host: boolean;
   public_allowed: boolean;
   status: 'active' | 'disabled' | 'error';
@@ -217,7 +217,7 @@ export interface GatewayPolicy {
   require_gateway_link: boolean;
   require_relay: boolean;
   preserve_host: boolean;
-  tls_mode: 'http_only' | 'terminate_local' | 'passthrough_deferred';
+  tls_mode: string;
   enabled: boolean;
   priority: number;
   created_at: string;
