@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"aegis/internal/certstore"
 	"aegis/internal/route"
 	"net/http"
 )
@@ -76,18 +77,21 @@ func (h *Handlers) AdminDeleteRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cascade: delete orphaned certificate
+	// Cascade: delete orphaned certificate (skip gateway_auto — Caddy manages those)
 	if rt.CertID != nil && *rt.CertID != "" && h.CertStore != nil {
-		routes, _ := h.Route.ListRoutes(r.Context())
-		stillUsed := false
-		for _, other := range routes {
-			if other.CertID != nil && *other.CertID == *rt.CertID {
-				stillUsed = true
-				break
+		if cert, err := h.CertStore.Get(*rt.CertID); err == nil &&
+			cert.Source != certstore.SourceGatewayAuto {
+			routes, _ := h.Route.ListRoutes(r.Context())
+			stillUsed := false
+			for _, other := range routes {
+				if other.CertID != nil && *other.CertID == *rt.CertID {
+					stillUsed = true
+					break
+				}
 			}
-		}
-		if !stillUsed {
-			h.CertStore.Delete(*rt.CertID)
+			if !stillUsed {
+				h.CertStore.Delete(*rt.CertID)
+			}
 		}
 	}
 

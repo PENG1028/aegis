@@ -94,10 +94,11 @@ export default function EntryList() {
     ...routes.map((r: any) => {
       const kind = svcKindMap[r.service_id] || '';
       const typeLabel = routeType({ ...r, kind });
-      const compName = typeLabel;
-      const comp = compositions.find((c: any) => c.name === compName);
+      const comp = compositions.find((c: any) => c.name === typeLabel);
+      // Non-HTTP routes (udp/tcp tunnel, etc.) have no composition — use route status directly
+      const isNonHTTP = kind === 'udp' || kind === 'tcp' || kind === 'tunnel';
       const health = r.status === 'active'
-        ? (comp?.status === 'available' ? 'active' : 'unhealthy')
+        ? (isNonHTTP ? 'active' : (comp?.status === 'available' ? 'active' : 'unhealthy'))
         : 'disabled';
       return {
         key: r.id, _t: 'route' as const, name: r.domain, type: typeLabel, health,
