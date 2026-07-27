@@ -7,6 +7,7 @@ import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Drawer, Btn, StatusBadge, HealthDot, useToast } from '@/components/shared';
 import { adminApi } from '@/lib/api-bridge';
+import { tlsBadgeLabel } from '@/lib/route-display';
 import { cn } from '@/lib/utils';
 
 interface ImportedRoute {
@@ -196,7 +197,7 @@ export default function ImportDrawer({ open, onClose }: ImportDrawerProps) {
                 <svg className="w-3 h-3 text-a-border shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
                 <span className="font-mono text-a-fg2 flex-1 truncate">{r.upstream_url}</span>
                 <span className="flex items-center gap-1 shrink-0">
-                  {r.tls_enabled && <span className="text-[10px] bg-[#4cd964]/10 text-[#4cd964] px-1.5 py-0.5 rounded">TLS</span>}
+                  {r.tls_enabled && <span className="text-[10px] bg-[#4cd964]/10 text-[#4cd964] px-1.5 py-0.5 rounded">{tlsBadgeLabel(true, true)}</span>}
                   <span className="text-[10px] text-a-muted">L{r.source_line}</span>
                 </span>
               </div>

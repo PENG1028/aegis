@@ -6,6 +6,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { tlsModeLabel } from '@/lib/route-display';
 import { Card } from '@/components/shared/Card';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { HealthDot } from '@/components/shared/HealthDot';
@@ -101,7 +102,7 @@ export function RelationshipMap({ chain, focusType, focusId, className }: Relati
               <div className="text-xs text-a-muted">域名</div>
               <div className="text-xs font-mono text-a-fg">{chain.entryPoint.domain}</div>
               <div className="text-xs text-a-muted">TLS 模式</div>
-              <div className="text-xs text-a-fg">{chain.entryPoint.tls_mode}</div>
+              <div className="text-xs text-a-fg">{tlsModeLabel(chain.entryPoint.tls_mode)}</div>
               <div className="text-xs text-a-muted">公开访问</div>
               <div className="text-xs text-a-fg">{chain.entryPoint.public_allowed ? '是' : '否'}</div>
             </>

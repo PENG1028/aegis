@@ -80,3 +80,46 @@ export function tlsMode(route: {
   if (comp === 'raw_tcp' || comp === 'raw_udp') return 'terminate_local';
   return route.tls_enabled ? 'terminate_local' : 'http_only';
 }
+
+// Certificate source metadata — single source of truth for all cert source display
+export interface CertSourceMeta {
+  label: string;
+  color: string;
+  desc: string;
+}
+
+export function certSourceMeta(source: string): CertSourceMeta {
+  switch (source) {
+    case 'gateway_auto':
+      return { label: '网关自动', color: 'bg-purple-500/10 text-purple-400 border-purple-500/20', desc: 'Caddy 自动向 Let\'s Encrypt 签发，到期自动续期' };
+    case 'local_acme':
+      return { label: '本地 ACME', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20', desc: '通过 Aegis ACME 申请，需手动续期' };
+    case 'manual_upload':
+      return { label: '手动导入', color: 'bg-a-border/10 text-a-muted border-a-border/20', desc: '用户上传 PEM，需手动续期' };
+    case 'external':
+      return { label: '外部渠道', color: 'bg-[#e8b830]/10 text-[#e8b830] border-[#e8b830]/20', desc: '外部渠道获取（Cloudflare/DigiCert 等）' };
+    default:
+      return { label: source, color: 'bg-a-border/10 text-a-muted border-a-border/20', desc: '' };
+  }
+}
+
+export function certSourceLabel(source: string): string {
+  return certSourceMeta(source).label;
+}
+
+// TLS badge label for table/list display
+export function tlsBadgeLabel(tlsEnabled: boolean, isHTTP: boolean): string {
+  if (!tlsEnabled) return 'HTTP';
+  return isHTTP ? 'HTTPS' : 'TLS';
+}
+
+// Human-readable label for tls_mode backend value
+export function tlsModeLabel(mode: string): string {
+  switch (mode) {
+    case 'terminate_local': return '本地终止';
+    case 'passthrough_deferred': return 'TLS 直通';
+    case 'http_only': return 'HTTP 明文';
+    case 'none': return '无 TLS';
+    default: return mode;
+  }
+}

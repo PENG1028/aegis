@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { routeApi, exposureApi, runtimeModeApi, certApi } from '@/lib/api-bridge';
 import { Card, Btn, useToast } from '@/components/shared';
 import { useView } from '@/lib/view-context';
-import { routeDisplay } from '@/lib/route-display';
+import { routeDisplay, certSourceLabel, certSourceMeta, tlsBadgeLabel } from '@/lib/route-display';
 import { cn } from '@/lib/utils';
 
 function HealthBadge({ status }: { status: string }) {
@@ -171,20 +171,19 @@ export default function EntryList() {
                     <td className="py-2.5 px-3 font-mono text-[11px]">{item.name}</td>
                     <td className="py-2.5 px-3">
                       {item._t === 'route' && (
-                        item.tlsEnabled
-                          ? <span className={item.isHTTP ? 'px-1.5 py-0.5 rounded text-[9px] bg-[#4cd964]/10 text-[#4cd964] border border-[#4cd964]/20 font-medium' : 'px-1.5 py-0.5 rounded text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium'}>
-                              {item.isHTTP ? 'HTTPS' : 'TLS'}
-                            </span>
-                          : <span className="px-1.5 py-0.5 rounded text-[9px] bg-a-border/10 text-a-muted border border-a-border/20">HTTP</span>
+                        <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border',
+                          item.tlsEnabled
+                            ? (item.isHTTP ? 'bg-[#4cd964]/10 text-[#4cd964] border-[#4cd964]/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20')
+                            : 'bg-a-border/10 text-a-muted border-a-border/20')}>
+                          {tlsBadgeLabel(item.tlsEnabled, item.isHTTP)}
+                        </span>
                       )}
                     </td>
                     <td className="py-2.5 px-3">
-                      {item._t === 'route' && item.tlsEnabled && (
-                        item.certSource === 'gateway_auto'
-                          ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-500/10 text-purple-400 border border-purple-500/20">网关自动</span>
-                          : item.certSource
-                            ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20">手动管理</span>
-                            : <span className="text-[9px] text-a-muted/50">Caddy ACME</span>
+                      {item._t === 'route' && item.tlsEnabled && item.certSource && (
+                        <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border', certSourceMeta(item.certSource).color)}>
+                          {certSourceLabel(item.certSource)}
+                        </span>
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-[10px] text-a-muted">{item.type}</td>

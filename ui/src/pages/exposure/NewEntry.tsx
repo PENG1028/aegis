@@ -5,9 +5,14 @@ import { useNavigate, Link } from 'react-router-dom';
 import { runtimeModeApi, exposureApi, nodeApi, certApi } from '@/lib/api-bridge';
 import type { Composition, CertificateItem } from '@/lib/api-bridge';
 import { Btn, useToast } from '@/components/shared';
+import { routeDisplay } from '@/lib/route-display';
 import { cn } from '@/lib/utils';
 
-function entryType(c: Composition) { return c.name.includes('UDP') ? 'udp' : c.name.includes('HTTP') ? 'http' : 'tcp'; }
+function entryType(c: Composition) {
+  if (c.atoms?.includes('udp')) return 'udp';
+  if (c.atoms?.includes('http')) return 'http';
+  return 'tcp';
+}
 
 interface NodeInfo { id: string; name: string; privateIP: string; publicIP: string; networkID: string; region: string; }
 
@@ -149,7 +154,7 @@ export default function NewEntry() {
         )}
 
         {/* TLS Certificate selection */}
-        {isHTTP && selectedComp?.name?.includes('HTTPS') && (
+        {isHTTP && selectedComp?.atoms?.includes('tls') && (
           <div>
             <label className="text-[10px] text-a-muted block mb-1.5 font-medium">TLS 证书</label>
             <div className="flex gap-2">

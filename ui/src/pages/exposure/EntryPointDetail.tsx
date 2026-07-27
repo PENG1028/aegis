@@ -6,7 +6,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { runtimeModeApi } from '@/lib/api-bridge';
 import { viewStore } from '@/lib/view-store';
-import { routeDisplay } from '@/lib/route-display';
+import { routeDisplay, certSourceLabel } from '@/lib/route-display';
 import { Card, StatusBadge, Btn, useToast } from '@/components/shared';
 import { cn } from '@/lib/utils';
 
@@ -114,16 +114,6 @@ export default function EntryPointDetail() {
     if (days < 0) return { label: '已过期', cls: 'text-[#ff5c72]' };
     if (days <= 30) return { label: `${days} 天后过期`, cls: 'text-[#e8b830]' };
     return { label: `${days} 天后`, cls: 'text-[#4cd964]' };
-  };
-
-  const certSourceLabel = (s: string) => {
-    switch (s) {
-      case 'gateway_auto': return '网关自动签发';
-      case 'local_acme': return '本地 ACME 申请';
-      case 'manual_upload': return '手动导入';
-      case 'external': return '外部渠道';
-      default: return s;
-    }
   };
 
   return (

@@ -6,19 +6,11 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { certApi, acmeApi, type CertificateItem } from '@/lib/api-bridge';
 import { PageHeader, Card, Btn, useToast, LoadingState, ErrorBanner, Modal } from '@/components/shared';
+import { certSourceMeta } from '@/lib/route-display';
 import { cn } from '@/lib/utils';
 
-// ─── Source labels & colors ───
-
-const SOURCE_META: Record<string, { label: string; color: string; desc: string }> = {
-  gateway_auto:   { label: '网关自动',  color: 'bg-purple-500/10 text-purple-400 border-purple-500/20', desc: 'Caddy 自动向 Let\'s Encrypt 签发，到期自动续期' },
-  local_acme:     { label: '本地 ACME', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20',   desc: '通过 Aegis certbot 申请，需手动续期' },
-  manual_upload:  { label: '手动导入',  color: 'bg-a-border/10 text-a-muted border-a-border/20',    desc: '用户上传 PEM，需手动续期' },
-  external:       { label: '外部渠道',  color: 'bg-[#e8b830]/10 text-[#e8b830] border-[#e8b830]/20', desc: '外部渠道获取（Cloudflare/DigiCert 等）' },
-};
-
 function sourceBadge(source: string) {
-  const m = SOURCE_META[source] || { label: source, color: 'bg-a-border/10 text-a-muted border-a-border/20' };
+  const m = certSourceMeta(source);
   return (
     <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border whitespace-nowrap', m.color)}
       title={m.desc}>
@@ -143,7 +135,7 @@ export default function Certificates() {
       <div className="flex gap-1 bg-a-surface border border-a-border/30 rounded-a-sm p-0.5 w-fit">
         {([
           { key: 'all' as Tab, label: '全部', count: certs.length },
-          { key: 'auto' as Tab, label: '网关自动', count: autoCount },
+          { key: 'auto' as Tab, label: certSourceMeta('gateway_auto').label, count: autoCount },
           { key: 'manual' as Tab, label: '手动管理', count: manualCount },
         ]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}

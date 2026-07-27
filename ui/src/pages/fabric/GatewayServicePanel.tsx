@@ -7,6 +7,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api-bridge';
+import { tlsBadgeLabel } from '@/lib/route-display';
 import { PageHeader, Card, HealthDot, LoadingState, EmptyState } from '@/components/shared';
 import { cn } from '@/lib/utils';
 
@@ -208,7 +209,7 @@ export default function GatewayServicePanel() {
                       <tr key={i} className="border-b border-a-border/20 hover:bg-a-border/10">
                         <td className="py-2 px-3 font-mono text-a-fg font-medium">{d.domain}</td>
                         <td className="py-2 px-3"><span className={cn('px-1.5 py-0.5 rounded text-[10px]', d.status === 'active' ? 'bg-[#4cd964]/10 text-[#4cd964]' : 'bg-a-border/20 text-a-muted')}>{d.status}</span></td>
-                        <td className="py-2 px-3 text-a-muted">{d.tls ? 'TLS ✓' : '—'}</td>
+                        <td className="py-2 px-3 text-a-muted">{d.tls ? tlsBadgeLabel(true, true) : '—'}</td>
                         <td className="py-2 px-3 text-right font-mono text-a-muted text-[10px]">{d.target?.slice(0, 16) || '—'}…</td>
                       </tr>
                     ))}

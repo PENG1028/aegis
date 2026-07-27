@@ -230,7 +230,7 @@ function ProviderCard({ provider, universe, toast }: {
                             s === 'native' ? 'bg-[#4cd964]/10 text-[#4cd964] border border-[#4cd964]/20' :
                             s === 'theoretical' ? 'bg-[#e8b830]/10 text-[#e8b830] border border-[#e8b830]/20' :
                             'bg-a-border/10 text-a-muted/50 border border-a-border/10')}>
-                          {s === 'native' ? '✓' : s === 'theoretical' ? '△' : '—'} {cap.key}
+                          {s === 'native' ? '✓' : s === 'theoretical' ? '△' : '—'} {cap.label}
                         </span>
                       );
                     })}
