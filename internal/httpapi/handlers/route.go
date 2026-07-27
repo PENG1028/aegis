@@ -60,12 +60,42 @@ func (h *Handlers) AdminGetRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminDeleteRoute handles DELETE /api/admin/v1/routes/{id}
+// Cascades: removes orphaned certs no longer referenced by any route.
 func (h *Handlers) AdminDeleteRoute(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	// Fetch route before deletion to get cert_id
+	rt, getErr := h.Route.GetRoute(r.Context(), id)
+	if getErr != nil {
+		writeError(w, http.StatusNotFound, getErr.Error())
+		return
+	}
+
 	if err := h.Route.DeleteRoute(r.Context(), id); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+
+	// Cascade: delete orphaned certificate
+	if rt.CertID != nil && *rt.CertID != "" && h.CertStore != nil {
+		routes, _ := h.Route.ListRoutes(r.Context())
+		stillUsed := false
+		for _, other := range routes {
+			if other.CertID != nil && *other.CertID == *rt.CertID {
+				stillUsed = true
+				break
+			}
+		}
+		if !stillUsed {
+			h.CertStore.Delete(*rt.CertID)
+		}
+	}
+
+	// Trigger Apply to regenerate configs (HAProxy SNI, Caddyfile) without deleted route
+	if h.Apply != nil {
+		h.Apply.Apply(r.Context())
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "route_id": id})
 }
 

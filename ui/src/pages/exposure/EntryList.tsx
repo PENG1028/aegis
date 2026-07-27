@@ -7,6 +7,16 @@ import { Card, Btn, useToast } from '@/components/shared';
 import { useView } from '@/lib/view-context';
 import { cn } from '@/lib/utils';
 
+const KIND_LABELS: Record<string, string> = {
+  http: 'HTTP Route', https: 'HTTPS Route', udp: 'UDP 隧道', tcp: 'TCP 转发',
+  grpc: 'gRPC', ws: 'WebSocket', tunnel: '加密隧道',
+};
+
+function routeType(r: any): string {
+  if (r.kind && KIND_LABELS[r.kind]) return KIND_LABELS[r.kind];
+  return r.tls_enabled ? 'HTTPS Route' : 'HTTP Route';
+}
+
 function HealthBadge({ status }: { status: string }) {
   const st = status === 'active' ? 'bg-[#4cd964]/10 text-[#4cd964] border-[#4cd964]/20'
     : status === 'unhealthy' ? 'bg-[#e8b830]/10 text-[#e8b830] border-[#e8b830]/20'
@@ -65,17 +75,35 @@ export default function EntryList() {
   const routes = (rd as any)?.data || (rd as any)?.routes || [];
   const exposures = (ed as any)?.data || (ed as any)?.exposures || [];
 
+  // Fetch services for kind information
+  const { data: sd } = useQuery({
+    queryKey: ['services', activeNodeId],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/v1/services', { credentials: 'include' });
+      if (!res.ok) return [];
+      const d = await res.json();
+      return d.data || d.services || d || [];
+    },
+    refetchInterval: 60_000,
+  });
+  const services: any[] = Array.isArray(sd) ? sd : [];
+  const svcKindMap: Record<string, string> = {};
+  services.forEach((svc: any) => { if (svc.id && svc.kind) svcKindMap[svc.id] = svc.kind; });
+
   const allItems = useMemo(() => [
     ...routes.map((r: any) => {
-      const compName = r.tls_enabled ? 'HTTPS Route' : 'HTTP Route';
+      const kind = svcKindMap[r.service_id] || '';
+      const typeLabel = routeType({ ...r, kind });
+      const compName = typeLabel;
       const comp = compositions.find((c: any) => c.name === compName);
       const health = r.status === 'active'
         ? (comp?.status === 'available' ? 'active' : 'unhealthy')
         : 'disabled';
       return {
-        key: r.id, _t: 'route' as const, name: r.domain, type: compName, health,
+        key: r.id, _t: 'route' as const, name: r.domain, type: typeLabel, health,
         target: r.service_id || '—', status: r.status, tlsEnabled: r.tls_enabled,
         scope: r.owner_type === 'space' ? (r.space_id || r.owner_id || 'service') : 'admin',
+        kind,
       };
     }),
     ...exposures.map((e: any) => ({
