@@ -1,0 +1,72 @@
+# Aegis Node Daemon — Systemd Service
+#
+# Run the Aegis node runtime with local gateway on a managed node.
+#
+# Installation:
+#   sudo cp aegis-node.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable aegis-node
+#   sudo systemctl start aegis-node
+#
+# Status:
+#   sudo systemctl status aegis-node
+#   journalctl -u aegis-node -f
+#
+# Prerequisites:
+#   - Aegis binary at /usr/local/bin/aegis
+#   - Node token at /etc/aegis/node.token
+#   - Cache directory at /var/lib/aegis
+#   - Runtime directory at /run/aegis
+#
+# CONFIGURATION NOTE:
+#   This service file assumes the aegis CLI supports a "node run" or
+#   "serve --node-mode" subcommand. If the binary does not support
+#   running as a daemon node yet, this file serves as the blueprint
+#   for when the CLI entrypoint is available.
+#
+#   See docs/v1.8/developer-entry-local-gateway.md for current status.
+
+[Unit]
+Description=Aegis Node Daemon
+Documentation=https://github.com/aegis/docs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aegis
+Group=aegis
+WorkingDirectory=/var/lib/aegis
+
+# Environment
+EnvironmentFile=-/etc/aegis/aegis-node.conf
+Environment=AEGIS_CACHE_DIR=/var/lib/aegis
+Environment=AEGIS_RUNTIME_DIR=/run/aegis
+Environment=AEGIS_NODE_TOKEN_FILE=/etc/aegis/node.token
+
+# ExecStart — adjust flags to match your node runtime CLI
+ExecStart=/usr/local/bin/aegis node run \
+  --config /etc/aegis/node.yaml
+
+# Restart behavior
+Restart=always
+RestartSec=5
+
+# Startup timing
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

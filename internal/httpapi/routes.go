@@ -1,0 +1,388 @@
+package httpapi
+
+import (
+	"aegis/internal/httpapi/handlers"
+	"aegis/internal/uiassets"
+	"net/http"
+)
+
+// RegisterRoutes sets up all API routes on the given mux.
+func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
+	h := &handlers.Handlers{
+		DB:              svcs.DB,
+		Config:          svcs.Config,
+		Project:         svcs.Project,
+		Service:         svcs.Service,
+		EndpointRepo:    svcs.EndpointRepo,
+		EndpointSvc:     svcs.EndpointSvc,
+		Route:           svcs.Route,
+		ManagedDomain:   svcs.ManagedDomain,
+		Exposure:        svcs.Exposure,
+		Apply:           svcs.Apply,
+		Workflow:        svcs.Workflow, // v1.8L
+		Health:          svcs.Health,
+		Logs:            svcs.Logs,
+		Action:          svcs.Action,
+		Space:           svcs.Space,
+		AdminAuth:       svcs.AdminAuth,
+		EdgeSvc:         svcs.EdgeSvc,
+		ListenerSvc:     svcs.ListenerSvc,
+		NodeRepo:        svcs.NodeRepo,
+		NodeSvc:         svcs.NodeSvc,
+		GatewayInvRepo:  svcs.GatewayInvRepo,
+		GatewayInvSvc:   svcs.GatewayInvSvc,
+		TopologySvc:     svcs.TopologySvc,
+		PendingState:    svcs.PendingState,
+		TraceSvc:        svcs.TraceSvc,
+		SafetySvc:       svcs.SafetySvc,
+		GatewayLinkSvc:  svcs.GatewayLinkSvc,
+		ServiceAuthSvc:  svcs.ServiceAuthSvc,
+		PolicySvc:       svcs.PolicySvc,
+		RoutingTableSvc: svcs.RoutingTableSvc,
+		TransparentMgr:  svcs.TransparentMgr,
+		ProvReg:         svcs.ProvReg,    // v1.8L-19 — provider registry for install/uninstall/config handlers
+		EgressSvc:       svcs.EgressSvc,  // v1.9A-5 — egress rule engine
+		CertStore:       svcs.CertStore,  // v1.9C — TLS certificate store
+		ACMEClient:      svcs.ACMEClient, // v1.9C — ACME auto-cert manager
+		DistNode:        svcs.DistNode,   // v1.9B — distributed node runtime (was never wired → admin/call endpoints saw nil)
+		DNSMgmt:         svcs.DNSMgmt,    // was never wired → egress toggle-off silently failed to stop the DNS resolver
+		Version:         svcs.Version,
+		BuildTime:       svcs.BuildTime,
+	}
+
+	// DNS handler
+	dnsH := &handlers.DNSHandler{
+		DNSMgmt: svcs.DNSMgmt,
+	}
+	if svcs.DNSMgmt != nil {
+		dnsH.Server = svcs.DNSMgmt.Server
+		dnsH.Resolver = svcs.DNSMgmt.Resolver
+		dnsH.Config = svcs.Config
+	}
+
+	// System
+	mux.HandleFunc("GET /api/system/status", h.SystemStatus)
+	mux.HandleFunc("GET /api/system/runtime-mode", h.RuntimeMode)  // v1.8L-20
+	mux.HandleFunc("GET /api/system/compositions", h.Compositions) // v1.8L-22 — canonical composition registry
+
+	mux.HandleFunc("POST /api/admin/v1/mode/preview", h.ModePreview)
+	mux.HandleFunc("POST /api/admin/v1/mode/switch", h.ModeSwitch)
+	// v1.8F Cluster health aggregation
+	mux.HandleFunc("GET /api/admin/v1/cluster/health", h.ClusterHealth)
+
+	// Projects
+	mux.HandleFunc("GET /api/projects", h.ListProjects)
+	mux.HandleFunc("POST /api/projects", h.CreateProject)
+	mux.HandleFunc("GET /api/projects/{id}", h.GetProject)
+	mux.HandleFunc("PATCH /api/projects/{id}", h.UpdateProject)
+	mux.HandleFunc("POST /api/projects/{id}/archive", h.ArchiveProject)
+
+	// Services
+	mux.HandleFunc("GET /api/services", h.ListServices)
+	mux.HandleFunc("POST /api/services", h.CreateService)
+	mux.HandleFunc("GET /api/services/{id}", h.GetService)
+	mux.HandleFunc("PATCH /api/services/{id}", h.UpdateService)
+	mux.HandleFunc("POST /api/services/{id}/enable", h.EnableService)
+	mux.HandleFunc("POST /api/services/{id}/disable", h.DisableService)
+
+	// Endpoints
+	mux.HandleFunc("GET /api/services/{id}/endpoints", h.ListEndpoints)
+	mux.HandleFunc("POST /api/services/{id}/endpoints", h.CreateEndpoint)
+	mux.HandleFunc("PATCH /api/endpoints/{id}", h.UpdateEndpoint)
+	mux.HandleFunc("POST /api/endpoints/{id}/enable", h.EnableEndpoint)
+	mux.HandleFunc("POST /api/endpoints/{id}/disable", h.DisableEndpoint)
+	mux.HandleFunc("DELETE /api/endpoints/{id}", h.DeleteEndpoint)
+
+	// Routes
+	mux.HandleFunc("GET /api/routes", h.ListRoutes)
+	mux.HandleFunc("POST /api/routes", h.CreateRoute)
+	mux.HandleFunc("GET /api/routes/{id}", h.GetRoute)
+	mux.HandleFunc("GET /api/admin/v1/routes/{id}", h.AdminGetRoute)
+	mux.HandleFunc("PATCH /api/routes/{id}", h.UpdateRoute)
+	mux.HandleFunc("POST /api/routes/{id}/enable", h.EnableRoute)
+	mux.HandleFunc("POST /api/routes/{id}/disable", h.DisableRoute)
+	mux.HandleFunc("POST /api/admin/v1/routes/{id}/enable", h.EnableRoute)
+	mux.HandleFunc("POST /api/admin/v1/routes/{id}/disable", h.DisableRoute)
+	mux.HandleFunc("DELETE /api/admin/v1/routes/{id}", h.AdminDeleteRoute)
+	mux.HandleFunc("POST /api/routes/{id}/switch-service", h.SwitchRouteService)
+	mux.HandleFunc("POST /api/routes/{id}/maintenance-on", h.RouteMaintenanceOn)
+	mux.HandleFunc("POST /api/routes/{id}/maintenance-off", h.RouteMaintenanceOff)
+
+	// Managed Domains
+	mux.HandleFunc("GET /api/managed-domains", h.ListManagedDomains)
+	mux.HandleFunc("POST /api/managed-domains", h.CreateManagedDomain)
+	mux.HandleFunc("GET /api/managed-domains/{id}", h.GetManagedDomain)
+	mux.HandleFunc("POST /api/managed-domains/{id}/verify", h.VerifyManagedDomain)
+	mux.HandleFunc("POST /api/managed-domains/{id}/enable", h.EnableManagedDomain)
+	mux.HandleFunc("POST /api/managed-domains/{id}/disable", h.DisableManagedDomain)
+	mux.HandleFunc("DELETE /api/managed-domains/{id}", h.DeleteManagedDomain)
+
+	// Config / Apply
+	mux.HandleFunc("GET /api/config/current", h.ConfigCurrent)
+	mux.HandleFunc("GET /api/config/preview", h.ConfigPreview)
+	mux.HandleFunc("GET /api/config/diff", h.ConfigDiff)
+	mux.HandleFunc("POST /api/apply", h.ApplyConfig)
+	mux.HandleFunc("POST /api/apply/dry-run", h.ApplyDryRun)
+	mux.HandleFunc("POST /api/rollback", h.Rollback)
+	mux.HandleFunc("GET /api/apply/history", h.ApplyHistory)
+	mux.HandleFunc("POST /api/admin/v1/quick-publish", h.AdminQuickPublish)
+
+	// Exposures
+	mux.HandleFunc("GET /api/exposures", h.ListExposures)
+	mux.HandleFunc("POST /api/exposures", h.CreateExposure)
+	mux.HandleFunc("GET /api/exposures/{id}", h.GetExposure)
+	mux.HandleFunc("PATCH /api/exposures/{id}", h.UpdateExposure)
+	mux.HandleFunc("POST /api/exposures/{id}/activate", h.ActivateExposure)
+	mux.HandleFunc("POST /api/exposures/{id}/disable", h.DisableExposure)
+
+	// Diagnostics (admin only — contains server internals)
+	mux.HandleFunc("GET /api/admin/v1/diagnostics/export", h.DiagnosticsExport)
+
+	// Health
+	mux.HandleFunc("GET /api/healthz", h.Liveness)
+	mux.HandleFunc("GET /api/readyz", h.Readiness)
+	mux.HandleFunc("GET /api/health", h.GetHealth)
+	mux.HandleFunc("POST /api/health/check-all", h.CheckAllHealth)
+	mux.HandleFunc("GET /api/health/services/{id}", h.GetServiceHealth)
+
+	// Logs
+	mux.HandleFunc("GET /api/logs", h.GetLogs)
+
+	// Settings (read is public with redacted token; write is admin-only)
+	mux.HandleFunc("GET /api/settings", h.GetSettings)
+	mux.HandleFunc("GET /api/admin/v1/settings", h.GetSettings)
+	mux.HandleFunc("PATCH /api/admin/v1/settings", h.UpdateSettings)
+
+	// v1.6 Action API
+	mux.HandleFunc("POST /api/v1/actions/bind-http-domain", h.BindHTTPDomain)
+	mux.HandleFunc("POST /api/v1/actions/bind-tls-backend", h.BindTLSBackend)
+	mux.HandleFunc("PATCH /api/v1/actions/update-target", h.UpdateTarget)
+	mux.HandleFunc("POST /api/v1/actions/disable-domain", h.DisableDomain)
+	mux.HandleFunc("DELETE /api/v1/actions/domain", h.DeleteDomain)
+
+	// v1.6 My resources
+	mux.HandleFunc("GET /api/v1/my/routes", h.ListMyRoutes)
+	mux.HandleFunc("GET /api/v1/my/services", h.ListMyServices)
+	mux.HandleFunc("GET /api/v1/my/edge-rules", h.ListMyEdgeRules)
+	mux.HandleFunc("GET /api/v1/my/operations", h.ListMyOperations)
+
+	// v1.6B Admin API
+	mux.HandleFunc("POST /api/admin/v1/auth/login", h.AdminLogin)
+	mux.HandleFunc("POST /api/admin/v1/auth/logout", h.AdminLogout)
+	mux.HandleFunc("GET /api/admin/v1/auth/me", h.AdminMe)
+	mux.HandleFunc("POST /api/admin/v1/auth/change-password", h.AdminChangePassword)
+	mux.HandleFunc("GET /api/admin/v1/system/overview", h.SystemOverview)
+	mux.HandleFunc("GET /api/admin/v1/nodes", h.AdminListNodes)
+	mux.HandleFunc("GET /api/admin/v1/routes", h.AdminListRoutes)
+	mux.HandleFunc("GET /api/admin/v1/edge-rules", h.AdminListEdgeRules)
+	mux.HandleFunc("GET /api/admin/v1/services", h.AdminListServices)
+	mux.HandleFunc("GET /api/admin/v1/services/{id}/endpoints", h.ListEndpoints)
+	mux.HandleFunc("GET /api/admin/v1/services/{id}", h.AdminGetService)
+	mux.HandleFunc("GET /api/admin/v1/scopes", h.AdminListScopes)
+	mux.HandleFunc("POST /api/admin/v1/scopes", h.AdminCreateSpace)
+	mux.HandleFunc("GET /api/admin/v1/operations", h.AdminListOperations)
+	mux.HandleFunc("GET /api/admin/v1/apply-logs", h.AdminListApplyLogs)
+	mux.HandleFunc("GET /api/admin/v1/audit-logs", h.AdminListAuditLogs)
+	mux.HandleFunc("GET /api/admin/v1/node-events", h.AdminListNodeEvents)
+	mux.HandleFunc("POST /api/admin/v1/system/doctor", h.AdminSystemDoctor)
+	mux.HandleFunc("POST /api/admin/v1/system/verify", h.AdminSystemVerify)
+	mux.HandleFunc("POST /api/admin/v1/system/apply", h.AdminSystemApply)
+
+	// v1.8D Import — Caddyfile config migration
+	// v1.7 Node Capabilities
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/capabilities", h.GetNodeCapabilities)
+	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/refresh-capabilities", h.RefreshNodeCapabilities)
+
+	// v1.7 Gateway Abstraction (read-only consolidated views)
+
+	// v1.7S Provider Diagnostics
+	mux.HandleFunc("GET /api/admin/v1/providers", h.ListProviders)
+	mux.HandleFunc("POST /api/admin/v1/providers/diagnose", h.DiagnoseAllProviders)
+
+	// v1.7T Access Path Trace (admin only, read-only)
+	// v1.8A Route Safety & Egress Trace
+	mux.HandleFunc("GET /api/admin/v1/routes/{id}/safety", h.CheckRouteSafety)
+	mux.HandleFunc("GET /api/admin/v1/routes/safety", h.CheckAllRoutesSafety)
+	mux.HandleFunc("GET /api/admin/v1/trace/egress", h.TraceEgress)
+	// v1.7AB Gateway Links
+	mux.HandleFunc("POST /api/admin/v1/gateway-links", h.CreateGatewayLink)
+	mux.HandleFunc("GET /api/admin/v1/gateway-links", h.ListGatewayLinks)
+	mux.HandleFunc("GET /api/admin/v1/gateway-links/{id}", h.GetGatewayLink)
+	mux.HandleFunc("DELETE /api/admin/v1/gateway-links/{id}", h.DeleteGatewayLink)
+	mux.HandleFunc("POST /api/admin/v1/gateway-links/{id}/rotate", h.RotateGatewayLinkSecret)
+	mux.HandleFunc("GET /api/admin/v1/trace/domain/{domain}", h.TraceDomain)
+	mux.HandleFunc("GET /api/admin/v1/trace/sni/{sni_host}", h.TraceSNI)
+	mux.HandleFunc("GET /api/admin/v1/trace/route/{route_id}", h.TraceRoute)
+
+	// ============================================================================
+	// v1.8C Node Bootstrap + Registry
+	// ============================================================================
+
+	// Node API (no admin auth — uses node credential auth)
+
+	// Admin Node Deploy (one-click remote setup)
+	mux.HandleFunc("POST /api/admin/v1/nodes/preflight", h.AdminDeployPreflight)
+	mux.HandleFunc("POST /api/admin/v1/nodes/deploy/plan", h.AdminDeployPlan)
+	mux.HandleFunc("POST /api/admin/v1/nodes/deploy/repair", h.AdminDeployRepair)
+	mux.HandleFunc("POST /api/admin/v1/nodes/join", h.AdminJoinNode)
+	mux.HandleFunc("POST /api/admin/v1/nodes/deploy", h.AdminDeployNode)
+
+	// Admin Node Join Tokens
+
+	// Admin Node Detail
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}", h.GetNode)
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/health", h.GetNodeHealth)
+
+	// ============================================================================
+	// v1.8C-2 Control Plane Sync Foundation
+	// ============================================================================
+
+	// Node API (node credential auth)
+
+	// Admin Desired/Actual State
+
+	// v1.9B: Distributed Node Runtime
+	mux.HandleFunc("GET /api/admin/v1/distnode/status", h.AdminDistNodeStatus)
+	mux.HandleFunc("POST /api/admin/v1/distnode/check", h.AdminDistNodeCheck)
+	mux.HandleFunc("POST /api/admin/v1/distnode/ping/{id}", h.AdminDistNodePingPeer)
+	mux.HandleFunc("POST /api/admin/v1/distnode/peer/{id}/revoke", h.AdminDistNodeRevokePeer)
+	mux.HandleFunc("GET /api/admin/v1/distnode/aggregate", h.AdminDistNodeAggregate)
+	mux.HandleFunc("GET /api/admin/v1/nodes/{id}/distnode-overview", h.AdminDistNodeOverview)
+
+	// distnode transport call (used by peers to reach this node's registered
+	// methods). Self-authenticated via HMAC shared secret inside the handler,
+	// so it is a public path in the auth middleware. Exposed cross-node through
+	// the ingress edge by the control-plane route (see planner injection).
+	if h.DistNode != nil {
+		mux.Handle("POST /api/distnode/v1/call", h.DistNode.Transport.Handler())
+		// Register the Aegis.* transport methods (ProxyRequest, ListRoutes, …) so
+		// cross-node RPC actually has handlers. Was defined but never called →
+		// aggregate/RPC failed with "unknown method". Sets h.proxyMux = mux.
+		handlers.RegisterAegisTransportHandlers(h.DistNode, h, mux)
+	}
+	mux.HandleFunc("POST /api/transparent/v1/tunnel", h.TransparentTunnel)
+
+	// Admin Gateway Inventory
+
+	// Admin Topology
+	mux.HandleFunc("GET /api/admin/v1/topology/matrix", h.AdminGetTopologyMatrix)
+	mux.HandleFunc("GET /api/admin/v1/topology/path", h.AdminGetTopologyPath)
+	mux.HandleFunc("POST /api/admin/v1/topology/edges", h.AdminCreateTopologyEdge)
+	mux.HandleFunc("PATCH /api/admin/v1/topology/edges/{id}", h.AdminUpdateTopologyEdge)
+
+	// ============================================================================
+	// v1.8C-3 Gateway Policy + Routing Table
+	// ============================================================================
+
+	// Gateway Policy APIs
+	mux.HandleFunc("GET /api/admin/v1/services/{id}/gateway-policy", h.AdminGetServicePolicy)
+	mux.HandleFunc("PUT /api/admin/v1/services/{id}/gateway-policy", h.AdminSetServicePolicy)
+	mux.HandleFunc("GET /api/admin/v1/routes/{id}/gateway-policy", h.AdminGetRoutePolicy)
+	mux.HandleFunc("PUT /api/admin/v1/routes/{id}/gateway-policy", h.AdminSetRoutePolicy)
+
+	// Routing Table APIs
+	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/routing-table/generate", h.AdminGenerateNodeRoutingTable)
+	mux.HandleFunc("GET /api/admin/v1/routing/preview", h.AdminPreviewRoute)
+	mux.HandleFunc("GET /api/admin/v1/routing/validate", h.AdminValidateNodeRouting)
+	// ============================================================================
+	// v1.8E DNS Resolver
+	// ============================================================================
+	mux.HandleFunc("GET /api/admin/v1/dns/status", dnsH.DNSStatus)
+	mux.HandleFunc("POST /api/admin/v1/dns/enable", dnsH.DNSEnable)
+	mux.HandleFunc("POST /api/admin/v1/dns/disable", dnsH.DNSDisable)
+	mux.HandleFunc("POST /api/admin/v1/dns/refresh", dnsH.DNSRefresh)
+
+	// v1.8H Transparent Proxy (IP:port interception rules)
+	mux.HandleFunc("GET /api/admin/v1/transparent/rules", h.AdminListTransparentRules)
+	mux.HandleFunc("DELETE /api/admin/v1/transparent/rules/{id}", h.AdminDeleteTransparentRule)
+	mux.HandleFunc("GET /api/admin/v1/transparent/status", h.TransparentProxyStatus) // v1.8L-22
+
+	// v1.8L Node binary update
+	mux.HandleFunc("POST /api/admin/v1/system/upload-binary", h.UploadBinary)
+	mux.HandleFunc("GET /api/admin/v1/system/binary-info", h.BinaryInfo)
+	mux.HandleFunc("GET /api/admin/v1/system/pending-updates", h.PendingUpdatesList)
+	mux.HandleFunc("POST /api/admin/v1/nodes/{id}/update", h.TriggerNodeUpdate)
+
+	// v1.8G System Health & Diagnostics
+	mux.HandleFunc("GET /api/admin/v1/ports/scan", h.PortScan)
+	mux.HandleFunc("GET /api/admin/v1/system/health", h.SystemHealth)
+
+	// v1.8H Middleware Management
+	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/install", h.ProviderInstall)
+	mux.HandleFunc("GET /api/admin/v1/providers/{provider}/config", h.ProviderConfigPreview)
+	mux.HandleFunc("PUT /api/admin/v1/providers/{provider}/config", h.ProviderSaveConfig)
+	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/reload", h.ProviderReload)
+	mux.HandleFunc("POST /api/admin/v1/providers/{provider}/service", h.ProviderServiceControl)
+	mux.HandleFunc("GET /api/admin/v1/providers/{provider}/drift", h.ProviderDrift)
+	mux.HandleFunc("DELETE /api/admin/v1/providers/{provider}", h.ProviderUninstall)
+
+	// v1.8K Credential management (encrypted connection strings)
+	if svcs.CredentialSvc != nil {
+		credH := &handlers.CredentialHandlers{Svc: svcs.CredentialSvc}
+		mux.HandleFunc("GET /api/admin/v1/credentials", credH.ListCredentials)
+		mux.HandleFunc("GET /api/admin/v1/credentials/resolve", credH.ResolveByAlias)
+		mux.HandleFunc("POST /api/admin/v1/credentials", credH.CreateCredential)
+		mux.HandleFunc("GET /api/admin/v1/credentials/{id}", credH.GetCredential)
+		mux.HandleFunc("DELETE /api/admin/v1/credentials/{id}", credH.DeleteCredential)
+		mux.HandleFunc("POST /api/admin/v1/credentials/{id}/rotate", credH.RotateCredential)
+		mux.HandleFunc("POST /api/admin/v1/credentials/{id}/reveal", credH.RevealCredential)
+	}
+
+	// v1.9A Service Auth — cluster-wide inter-service call authentication
+	if svcs.ServiceAuthSvc != nil {
+		mux.HandleFunc("POST /api/service-auth/v1/register", h.ServiceAuthRegister)
+		mux.HandleFunc("GET /api/service-auth/v1/sync", h.ServiceAuthSync)
+		mux.HandleFunc("POST /api/service-auth/v1/report", h.ServiceAuthReport)
+		mux.HandleFunc("POST /api/service-auth/v1/heartbeat", h.ServiceAuthHeartbeat)
+		mux.HandleFunc("POST /api/service-auth/v1/call", h.ServiceAuthCall)
+		mux.HandleFunc("GET /api/service-auth/v1/services", h.ServiceAuthScopedServices)
+		mux.HandleFunc("GET /api/service-auth/v1/capabilities", h.ServiceCapabilities)
+		mux.HandleFunc("POST /api/service-auth/v1/capabilities/{name}/call", h.ServiceCapabilityCall)
+
+		mux.HandleFunc("GET /api/admin/v1/service-auth/services", h.AdminListServiceAuthServices)
+		mux.HandleFunc("GET /api/admin/v1/service-auth/services/{id}", h.AdminGetServiceAuthService)
+		mux.HandleFunc("POST /api/admin/v1/service-auth/services/{id}/block", h.AdminBlockServiceAuthService)
+		mux.HandleFunc("POST /api/admin/v1/service-auth/services/{id}/delete", h.AdminDeleteServiceAuthService)
+		mux.HandleFunc("POST /api/admin/v1/service-auth/blocklist/{id}/unblock", h.AdminUnblockServiceAuth)
+		mux.HandleFunc("GET /api/admin/v1/service-auth/topology", h.AdminServiceAuthTopology)
+		mux.HandleFunc("GET /api/admin/v1/service-auth/call-logs", h.AdminServiceAuthCallLogs) // was defined but never routed — UI (real-api-client.ts) calls it
+
+		// v1.9D groups + policies
+	}
+
+	// v1.9A-5 Egress Gateway — allow/block rules + global toggle
+	if svcs.EgressSvc != nil {
+		mux.HandleFunc("GET /api/admin/v1/egress/rules", h.AdminListEgressRules)
+		mux.HandleFunc("POST /api/admin/v1/egress/rules", h.AdminCreateEgressRule)
+		mux.HandleFunc("PUT /api/admin/v1/egress/rules/{id}", h.AdminUpdateEgressRule)
+		mux.HandleFunc("DELETE /api/admin/v1/egress/rules/{id}", h.AdminDeleteEgressRule)
+		mux.HandleFunc("GET /api/admin/v1/egress/check", h.AdminEgressCheck)
+		mux.HandleFunc("POST /api/admin/v1/egress/toggle", h.AdminEgressToggle)
+		mux.HandleFunc("GET /api/admin/v1/egress/status", h.AdminEgressStatus)
+	}
+
+	// v1.9C Certificate store — user-uploaded TLS certificates
+	if svcs.CertStore != nil {
+		mux.HandleFunc("GET /api/admin/v1/certificates", h.AdminListCertificates)
+		mux.HandleFunc("GET /api/admin/v1/certificates/auto", h.AdminListAutoCertificates)
+		mux.HandleFunc("GET /api/admin/v1/certificates/expiry", h.AdminCheckCertExpiry)
+		mux.HandleFunc("POST /api/admin/v1/certificates/{id}/renew", h.AdminRenewCert)
+		mux.HandleFunc("POST /api/admin/v1/certificates", h.AdminUploadCertificate)
+		mux.HandleFunc("DELETE /api/admin/v1/certificates/{id}", h.AdminDeleteCertificate)
+		// ACME endpoints
+		mux.HandleFunc("POST /api/admin/v1/acme/obtain", h.AdminACMEObtain)
+		mux.HandleFunc("GET /api/admin/v1/acme/status", h.AdminACMEStatus)
+		mux.HandleFunc("GET /api/admin/v1/infra/status", h.AdminInfraStatus)
+		mux.HandleFunc("POST /api/admin/v1/infra/{name}/install", h.InfraInstall)
+		mux.HandleFunc("DELETE /api/admin/v1/infra/{name}", h.InfraUninstall)
+	}
+
+	// v1.8J Embedded UI — catch-all for SPA routes not matching any API path.
+	// Uses /{path...} wildcard to match all paths (Go 1.22+ mux syntax).
+	// The Go 1.22 mux treats "/" as root-only, so we need an explicit wildcard.
+	uiHandler, err := uiassets.Handler()
+	if err != nil {
+		panic("uiassets: failed to initialize embedded UI handler: " + err.Error())
+	}
+	mux.HandleFunc("/{path...}", uiHandler.ServeHTTP)
+}
