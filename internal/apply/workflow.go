@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
-	"aegis/internal/certstore"
 	"aegis/internal/config"
 	"aegis/internal/core"
 	"aegis/internal/hostdep/provider"
@@ -35,7 +35,6 @@ type Workflow struct {
 	applyRepo   *Repository
 	cfg         *config.Config
 	logSvc      logs.Logger
-	certStore   *certstore.Service
 	smokeTest   SmokeTest // optional: inject real HTTP probe for E2E mode-switch validation
 	planApplied PlanAppliedHook
 	mu          sync.Mutex
@@ -72,8 +71,34 @@ type modeSnapshot struct {
 type providerSnapshot struct {
 	ID           string
 	ConfigPath   string
-	ConfigBackup []byte // raw config file content before the switch
-	WasRunning   bool   // was the service running before we stopped it?
+	ConfigBackup []byte // retained for compatibility with focused snapshot tests
+	ConfigFiles  []provider.ConfigFile
+	MissingPaths []string
+	WasRunning   bool
+}
+
+type RollbackStatus string
+
+const (
+	RollbackNotRequired RollbackStatus = "not_required"
+	RollbackComplete    RollbackStatus = "complete"
+	RollbackIncomplete  RollbackStatus = "incomplete"
+)
+
+// ModeSwitchError carries recovery state across the workflow/HTTP boundary.
+// WHY: operators must know whether recovery already happened before taking
+// another action; parsing human-readable error strings is not reliable.
+type ModeSwitchError struct {
+	Reason           string
+	RollbackStatus   RollbackStatus
+	RollbackFailures []string
+}
+
+func (e *ModeSwitchError) Error() string {
+	if e.RollbackStatus == RollbackIncomplete {
+		return fmt.Sprintf("switch failed: %s; rollback incomplete: %s", e.Reason, strings.Join(e.RollbackFailures, "; "))
+	}
+	return fmt.Sprintf("switch_mode rolled back: %s", e.Reason)
 }
 
 // NewWorkflow creates an apply workflow orchestrator.
@@ -83,13 +108,11 @@ func NewWorkflow(
 	applyRepo *Repository,
 	cfg *config.Config,
 	logSvc logs.Logger,
-	certStore *certstore.Service,
 ) *Workflow {
 	return &Workflow{
 		planner:   planner,
 		registry:  registry,
 		applyRepo: applyRepo,
-		certStore: certStore,
 		cfg:       cfg,
 		logSvc:    logSvc,
 	}
@@ -161,7 +184,7 @@ func (w *Workflow) TryApply(ctx context.Context, email string) (*ApplyResult, er
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	return w.Apply(ctx, email)
+	return w.apply(ctx, email)
 }
 
 // SwitchMode atomically switches the gateway runtime mode between Legacy and
@@ -194,115 +217,145 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 		return fmt.Errorf("unknown target mode: %s", targetModeID)
 	}
 
-	// ── 1. Snapshot current state ──
-	snap := modeSnapshot{FromMode: currentMode.ID}
-	for _, provID := range currentMode.ProviderIDs() {
+	// Plan and render before any process or file mutation.
+	plan, err := w.planner.PlanForMode("", states, targetMode)
+	if err != nil {
+		return fmt.Errorf("target mode plan failed: %w", err)
+	}
+	targetProviderIDs := planProviderIDs(plan)
+	rendered := make(map[string][]provider.ConfigFile, len(plan.Plans))
+	for provID, pPlan := range plan.Plans {
 		p := w.registry.Get(provID)
+		if p == nil {
+			return fmt.Errorf("target provider %s is unavailable", provID)
+		}
+		if _, ok := p.(provider.ConfigStager); !ok {
+			return fmt.Errorf("target provider %s cannot stage configuration safely", provID)
+		}
+		if _, ok := p.(provider.ServiceController); !ok {
+			return fmt.Errorf("target provider %s cannot control its service", provID)
+		}
+		configs, err := p.Render(pPlan)
+		if err != nil {
+			return fmt.Errorf("%s render: %w", provID, err)
+		}
+		rendered[provID] = configs
+	}
+
+	// Snapshot every provider touched by either side, including target-only
+	// config paths, so rollback can restore files before restarting services.
+	allIDs := append([]string(nil), currentMode.ProviderIDs()...)
+	for _, id := range targetProviderIDs {
+		if !slices.Contains(allIDs, id) {
+			allIDs = append(allIDs, id)
+		}
+	}
+	snap := modeSnapshot{FromMode: currentMode.ID}
+	for _, id := range allIDs {
+		p := w.registry.Get(id)
 		if p == nil {
 			continue
 		}
-		ps := providerSnapshot{ID: provID}
-		if cr, ok := p.(provider.ConfigReader); ok {
-			if cfg, err := cr.GetCurrentConfig(); err == nil {
-				ps.ConfigBackup = []byte(cfg)
+		state := p.State()
+		ps := providerSnapshot{ID: id, ConfigPath: state.ConfigPath, WasRunning: state.Running}
+		paths := []string{state.ConfigPath}
+		for _, cf := range rendered[id] {
+			if cf.Path != "" && !slices.Contains(paths, cf.Path) {
+				paths = append(paths, cf.Path)
 			}
 		}
-		// Check if the provider's service is currently running (best-effort).
-		if sc, ok := p.(provider.ServiceController); ok {
-			ps.WasRunning = isServiceActive(sc)
+		for _, path := range paths {
+			if path == "" {
+				continue
+			}
+			content, err := os.ReadFile(path)
+			if os.IsNotExist(err) {
+				ps.MissingPaths = append(ps.MissingPaths, path)
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("snapshot %s config %s: %w", id, path, err)
+			}
+			ps.ConfigFiles = append(ps.ConfigFiles, provider.ConfigFile{Path: path, Content: content})
+			if path == state.ConfigPath {
+				ps.ConfigBackup = content
+			}
 		}
 		snap.Providers = append(snap.Providers, ps)
 	}
 
 	rollback := func(reason string) error {
-		w.logSwitchAudit("failed", fmt.Sprintf("rolled back: %s", reason))
-		w.logApply(ctx, "switch_mode", "rollback", reason)
-		for _, ps := range snap.Providers {
-			if len(ps.ConfigBackup) == 0 || ps.ConfigPath == "" {
-				continue
-			}
-			p := w.registry.Get(ps.ID)
-			if p == nil {
-				continue
-			}
-			_ = p.Apply([]provider.ConfigFile{
-				{Path: ps.ConfigPath, Content: ps.ConfigBackup},
-			})
-			// Restart if it was running before.
-			if ps.WasRunning {
-				if sc, ok := p.(provider.ServiceController); ok {
-					_ = sc.Start()
+		var rollbackFailures []string
+		for _, id := range targetProviderIDs {
+			if sc, ok := w.registry.Get(id).(provider.ServiceController); ok {
+				if err := sc.Stop(); err != nil {
+					rollbackFailures = append(rollbackFailures, id+" stop: "+err.Error())
 				}
 			}
 		}
-		return fmt.Errorf("switch_mode rolled back: %s", reason)
-	}
-
-	// ── 2. Plan + render for target mode ──
-	plan, err := w.planner.PlanWithProviders("", states)
-	if err != nil {
-		return rollback(fmt.Sprintf("plan failed: %v", err))
-	}
-
-	targetProviderIDs := planProviderIDs(plan)
-
-	// ── 3. Handoff: stop providers that hold ports the target plan needs ──
-	// Without this, a provider in both current AND target (e.g. Caddy:
-	// Legacy binds :443 directly, EdgeMux binds :8443 with HAProxy on :443)
-	// keeps its old listener, blocking the new provider. Each will be
-	// restarted by the Apply in step 4 using the target-mode config.
-	for _, provID := range currentMode.ProviderIDs() {
-		p := w.registry.Get(provID)
-		if p == nil {
-			continue
-		}
-		if !slices.Contains(targetProviderIDs, provID) {
-			// Not in the target plan — stop and clean.
+		for _, ps := range snap.Providers {
+			p := w.registry.Get(ps.ID)
+			if stager, ok := p.(provider.ConfigStager); ok && len(ps.ConfigFiles) > 0 {
+				if err := stager.StageConfig(ps.ConfigFiles); err != nil {
+					rollbackFailures = append(rollbackFailures, ps.ID+" config restore: "+err.Error())
+				}
+			}
+			for _, path := range ps.MissingPaths {
+				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+					rollbackFailures = append(rollbackFailures, ps.ID+" remove staged config: "+err.Error())
+				}
+			}
 			if sc, ok := p.(provider.ServiceController); ok {
-				_ = sc.Stop()
+				if ps.WasRunning {
+					if err := sc.Start(); err != nil {
+						rollbackFailures = append(rollbackFailures, ps.ID+" restart: "+err.Error())
+					}
+				} else {
+					if err := sc.Stop(); err != nil {
+						rollbackFailures = append(rollbackFailures, ps.ID+" stop: "+err.Error())
+					}
+				}
 			}
-			if cc, ok := p.(provider.ConfigCleaner); ok {
-				_ = cc.CleanConfig()
+		}
+		if len(rollbackFailures) > 0 {
+			switchErr := &ModeSwitchError{
+				Reason:           reason,
+				RollbackStatus:   RollbackIncomplete,
+				RollbackFailures: rollbackFailures,
 			}
-		} else {
-			// Shared: still in target, but needs to release its current port
-			// so the new provider(s) can bind it. Apply (step 4) will
-			// restart with the target-mode configuration.
-			if sc, ok := p.(provider.ServiceController); ok {
-				_ = sc.Stop()
-			}
+			detail := switchErr.Error()
+			w.logSwitchAudit("failed", detail)
+			w.logApply(ctx, "switch_mode", "rollback_failed", detail)
+			return switchErr
+		}
+		w.logSwitchAudit("failed", fmt.Sprintf("rolled back: %s", reason))
+		w.logApply(ctx, "switch_mode", "rollback", reason)
+		return &ModeSwitchError{Reason: reason, RollbackStatus: RollbackComplete}
+	}
+
+	// Phase 1: validate and write every target config while current services
+	// still serve traffic. StageConfig never reloads or changes listeners.
+	for _, id := range targetProviderIDs {
+		stager := w.registry.Get(id).(provider.ConfigStager)
+		if err := stager.StageConfig(rendered[id]); err != nil {
+			return rollback(fmt.Sprintf("%s stage: %v", id, err))
 		}
 	}
 
-	// ── 4. Render + Apply each target provider ──
-	for provID, pPlan := range plan.Plans {
-		p := w.registry.Get(provID)
-		if p == nil {
-			continue
+	// Phase 2: release old listeners, then start target services from staged files.
+	for _, id := range allIDs {
+		if sc, ok := w.registry.Get(id).(provider.ServiceController); ok {
+			if err := sc.Stop(); err != nil {
+				return rollback(fmt.Sprintf("%s stop: %v", id, err))
+			}
 		}
-		configs, err := p.Render(pPlan)
-		if err != nil {
-			return rollback(fmt.Sprintf("%s render: %v", provID, err))
-		}
-		if err := p.Apply(configs); err != nil {
-			return rollback(fmt.Sprintf("%s apply: %v", provID, err))
-		}
-		w.logApply(ctx, provID, "switch_mode", "applied for target "+targetModeID)
 	}
-
-	// ── 4.5 Start target providers ──
-	// Apply (step 4) reloads configs via systemctl reload — it does NOT start
-	// a stopped service. Providers that were stopped in step 3 (shared or
-	// not-in-target) must be explicitly started with their new config so they
-	// come up in the target-mode configuration.
-	for _, provID := range targetProviderIDs {
-		p := w.registry.Get(provID)
-		if p == nil {
-			continue
+	for _, id := range targetMode.ProviderIDs() {
+		sc := w.registry.Get(id).(provider.ServiceController)
+		if err := sc.Start(); err != nil {
+			return rollback(fmt.Sprintf("%s start: %v", id, err))
 		}
-		if sc, ok := p.(provider.ServiceController); ok {
-			_ = sc.Start()
-		}
+		w.logApply(ctx, id, "switch_mode", "started for target "+targetModeID)
 	}
 
 	// ── 5. Post-switch diagnostic ──
@@ -316,6 +369,9 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 			return rollback(fmt.Sprintf("%s: post-switch diag: %s — %s",
 				provID, diag.LastErrorCode, diag.LastErrorMessage))
 		}
+	}
+	if detected := provider.DetectRuntimeMode(w.registry.List()); detected.ID != targetMode.ID {
+		return rollback(fmt.Sprintf("runtime mode verification: got %s, want %s", detected.ID, targetMode.ID))
 	}
 
 	// ── 6. Smoke test (optional — skip if not injected) ──
@@ -336,17 +392,15 @@ func (w *Workflow) SwitchMode(ctx context.Context, targetModeID string) error {
 	return nil
 }
 
-// isServiceActive best-effort check whether a provider's service is running.
-func isServiceActive(sc provider.ServiceController) bool {
-	// ServiceController does not expose a dedicated "IsActive" query. We try
-	// a lightweight check via a no-op call. If the interface doesn't support
-	// probing, we conservatively assume it was running (so rollback restarts it).
-	return true
-}
-
 // Apply executes the full pipeline:
 // plan → render → validate → backup → write → reload → verify → log.
 func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.apply(ctx, email)
+}
+
+func (w *Workflow) apply(ctx context.Context, email string) (*ApplyResult, error) {
 	result := &ApplyResult{
 		Started:  time.Now(),
 		Provider: make(map[string]string),
@@ -407,20 +461,6 @@ func (w *Workflow) Apply(ctx context.Context, email string) (*ApplyResult, error
 	result.Completed = time.Now()
 	if w.planApplied != nil {
 		w.planApplied(plan)
-	}
-
-	// Sync auto-certs into CertStore after successful apply.
-	// Caddy may have obtained new certs during reload.
-	if w.certStore != nil {
-		if n, ids, err := w.certStore.SyncAutoCerts(""); err == nil && n > 0 {
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("cert_sync: imported %d auto-certs: %v", n, ids))
-		}
-	}
-	// Bind imported auto-certs to routes that have no cert_id yet.
-	if bound, err := w.planner.BindAutoCerts(); err == nil && bound > 0 {
-		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("cert_bind: bound %d routes to auto-certs", bound))
 	}
 
 	w.logApply(ctx, "all", "success", "")

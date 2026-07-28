@@ -16,19 +16,19 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{DB: db}
 }
 
-const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, source_provider, source_capabilities, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at`
+const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, source_provider, source_capabilities, tls_binding_mode, tls_provider, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at`
 
 // scanRoute scans a single row into a Route. Handles nullable columns.
 func scanRoute(scanner interface{ Scan(...interface{}) error }) (*Route, error) {
 	var rt Route
 	var createdAt, updatedAt string
-	var pathPrefix, composition, sourceProvider, sourceCaps, certID, gatewayLinkID sql.NullString
+	var pathPrefix, composition, sourceProvider, sourceCaps, tlsBindingMode, tlsProvider, certID, gatewayLinkID sql.NullString
 	var tlsVal, maintVal, stripVal int
 	var maintMsg sql.NullString
 
 	err := scanner.Scan(
 		&rt.ID, &rt.Domain, &pathPrefix, &stripVal, &rt.ServiceID, &tlsVal,
-		&composition, &sourceProvider, &sourceCaps,
+		&composition, &sourceProvider, &sourceCaps, &tlsBindingMode, &tlsProvider,
 		&rt.Status, &maintVal, &maintMsg,
 		&rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID,
 		&gatewayLinkID, &certID, &createdAt, &updatedAt,
@@ -40,6 +40,8 @@ func scanRoute(scanner interface{ Scan(...interface{}) error }) (*Route, error) 
 	rt.Composition = composition.String
 	rt.SourceProvider = sourceProvider.String
 	rt.SourceCapabilities = sourceCaps.String
+	rt.TLSBindingMode = tlsBindingMode.String
+	rt.TLSProvider = tlsProvider.String
 	rt.GatewayLinkID = gatewayLinkID.String
 	if certID.Valid {
 		id := certID.String
@@ -69,20 +71,28 @@ func scanRoutes(rows *sql.Rows) ([]Route, error) {
 // Create inserts a new route.
 func (r *Repository) Create(rt *Route) error {
 	tlsVal := 0
-	if rt.TLSEnabled { tlsVal = 1 }
+	if rt.TLSEnabled {
+		tlsVal = 1
+	}
 	maintVal := 0
-	if rt.MaintenanceEnabled { maintVal = 1 }
+	if rt.MaintenanceEnabled {
+		maintVal = 1
+	}
 	stripVal := 0
-	if rt.StripPrefix { stripVal = 1 }
+	if rt.StripPrefix {
+		stripVal = 1
+	}
 
 	certID := ""
-	if rt.CertID != nil { certID = *rt.CertID }
+	if rt.CertID != nil {
+		certID = *rt.CertID
+	}
 
 	_, err := r.DB.Exec(
-		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, source_provider, source_capabilities, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, source_provider, source_capabilities, tls_binding_mode, tls_provider, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rt.ID, rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal,
-		rt.Composition, rt.SourceProvider, rt.SourceCapabilities,
+		rt.Composition, rt.SourceProvider, rt.SourceCapabilities, rt.TLSBindingMode, rt.TLSProvider,
 		rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
 		rt.GatewayLinkID, certID,
@@ -157,7 +167,7 @@ func (r *Repository) FindByServiceID(serviceID string) ([]Route, error) {
 // FindActive returns all active routes, longest path first per domain.
 func (r *Repository) FindActive() ([]Route, error) {
 	rows, err := r.DB.Query(
-		`SELECT `+routeSelectCols+` FROM routes WHERE status = 'active' ORDER BY domain, LENGTH(COALESCE(path_prefix,'')) DESC`)
+		`SELECT ` + routeSelectCols + ` FROM routes WHERE status = 'active' ORDER BY domain, LENGTH(COALESCE(path_prefix,'')) DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("query active routes: %w", err)
 	}
@@ -204,19 +214,27 @@ func (r *Repository) CheckDuplicatePath(domain, pathPrefix, excludeID string) er
 // Update updates a route.
 func (r *Repository) Update(rt *Route) error {
 	tlsVal := 0
-	if rt.TLSEnabled { tlsVal = 1 }
+	if rt.TLSEnabled {
+		tlsVal = 1
+	}
 	maintVal := 0
-	if rt.MaintenanceEnabled { maintVal = 1 }
+	if rt.MaintenanceEnabled {
+		maintVal = 1
+	}
 	stripVal := 0
-	if rt.StripPrefix { stripVal = 1 }
+	if rt.StripPrefix {
+		stripVal = 1
+	}
 
 	certID := ""
-	if rt.CertID != nil { certID = *rt.CertID }
+	if rt.CertID != nil {
+		certID = *rt.CertID
+	}
 
 	_, err := r.DB.Exec(
-		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, composition=?, source_provider=?, source_capabilities=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, gateway_link_id=?, cert_id=?, updated_at=? WHERE id=?`,
+		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, composition=?, source_provider=?, source_capabilities=?, tls_binding_mode=?, tls_provider=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, gateway_link_id=?, cert_id=?, updated_at=? WHERE id=?`,
 		rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal,
-		rt.Composition, rt.SourceProvider, rt.SourceCapabilities,
+		rt.Composition, rt.SourceProvider, rt.SourceCapabilities, rt.TLSBindingMode, rt.TLSProvider,
 		rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
 		rt.GatewayLinkID, certID,
@@ -246,4 +264,38 @@ func (r *Repository) FindByCertID(certID string) ([]Route, error) {
 	}
 	defer rows.Close()
 	return scanRoutes(rows)
+}
+
+// SetCertificateBindings updates a group of TLS bindings in one transaction.
+// WHY: wildcard bulk binding must be all-or-nothing; a partially bound SAN set
+// is harder to detect and repair than a rejected operation.
+func (r *Repository) SetCertificateBindings(routeIDs []string, certID string, updatedAt time.Time) error {
+	if len(routeIDs) == 0 {
+		return nil
+	}
+	tx, err := r.DB.Begin()
+	if err != nil {
+		return fmt.Errorf("begin certificate binding transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, routeID := range routeIDs {
+		result, err := tx.Exec(
+			`UPDATE routes SET cert_id=?, tls_binding_mode=?, tls_provider='', updated_at=? WHERE id=?`,
+			certID, TLSBindingCertificate, updatedAt.Format(time.RFC3339), routeID,
+		)
+		if err != nil {
+			return fmt.Errorf("bind certificate to route %s: %w", routeID, err)
+		}
+		if count, err := result.RowsAffected(); err != nil || count != 1 {
+			if err != nil {
+				return fmt.Errorf("check certificate binding for route %s: %w", routeID, err)
+			}
+			return fmt.Errorf("route %s not found during certificate binding", routeID)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit certificate bindings: %w", err)
+	}
+	return nil
 }

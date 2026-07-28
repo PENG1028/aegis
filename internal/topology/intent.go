@@ -87,6 +87,12 @@ type RouteIntent struct {
 	MaintenanceEnabled bool   `json:"maintenance_enabled,omitempty"`
 	MaintenanceMessage string `json:"maintenance_message,omitempty"`
 
+	// TLSBindingMode and TLSExecutor preserve lifecycle affinity. Ordinary Apply
+	// must not hand provider-managed automatic TLS state to another executor;
+	// explicit mode migration may recreate it on a validated target.
+	TLSBindingMode string `json:"tls_binding_mode,omitempty"`
+	TLSExecutor    string `json:"tls_executor,omitempty"`
+
 	// ─── Internal fields (set by Planner, not part of public API) ───
 
 	// CertID is the certstore certificate ID for custom TLS cert.

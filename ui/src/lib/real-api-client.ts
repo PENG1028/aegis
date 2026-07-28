@@ -35,11 +35,13 @@ import type {
 export class ApiError extends Error {
   status: number;
   code?: string;
-  constructor(message: string, status: number, code?: string) {
+  details?: unknown;
+  constructor(message: string, status: number, code?: string, details?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -110,15 +112,20 @@ async function request<T>(
 
     if (!res.ok) {
       let msg = `HTTP ${res.status}`;
+      let code: string | undefined;
+      let details: unknown;
       try {
-        const err = await res.json() as { error?: string | { code?: string; message?: string } };
+        const err = await res.json() as { error?: string | { code?: string; message?: string }; code?: string };
+        details = err;
         if (typeof err.error === 'string') {
           msg = err.error;
         } else if (err.error && typeof err.error === 'object') {
           msg = err.error.message || msg;
+          code = err.error.code;
         }
+        code ||= err.code;
       } catch { /* ignore parse failures */ }
-      throw new ApiError(msg, res.status);
+      throw new ApiError(msg, res.status, code, details);
     }
 
     // 204 No Content
@@ -718,7 +725,27 @@ export const routeApi = {
 
   getPolicy: (id: string): Promise<any> =>
     get(`/api/admin/v1/routes/${id}/gateway-policy`),
+
+  setTLSBinding: (id: string, input: { mode: 'provider_auto' | 'certificate'; provider_id?: string; cert_id?: string }): Promise<any> =>
+    put(`/api/admin/v1/routes/${id}/tls-binding`, input),
+
+  deletePreview: (id: string): Promise<RouteDeletePreview> =>
+    get(`/api/admin/v1/routes/${id}/delete-preview`),
+
+  delete: (id: string, deleteUnusedCertificate = false): Promise<any> =>
+    del(`/api/admin/v1/routes/${id}?delete_unused_certificate=${deleteUnusedCertificate}`),
 };
+
+export interface RouteDeletePreview {
+  action: string;
+  allowed: boolean;
+  route_id: string;
+  domain: string;
+  tls_binding_mode: string;
+  certificate_id?: string;
+  delete_unused_certificate_allowed: boolean;
+  effects: string[];
+}
 
 export async function fetchRoutes(): Promise<Route[]> {
   const res = await routeApi.list();
@@ -1429,6 +1456,40 @@ export const credentialApi = {
 
 // ─── Admin operations ───
 
+export interface ModeSwitchRouteImpact {
+  route_id: string;
+  domain: string;
+  capabilities: string[];
+  compatible: boolean;
+  reason?: string;
+  current_executor?: string;
+  target_executor?: string;
+  state_class?: 'declarative' | 'portable_asset' | 'provider_managed' | 'runtime';
+  migration?: 're_render' | 'reload_asset' | 'recreate' | 'restart' | 'unsupported';
+}
+
+export interface ModeSwitchPreviewDetail {
+  current_mode: string;
+  target_mode: string;
+  total_routes: number;
+  route_breakdown: Array<{
+    key: string;
+    name: string;
+    route_count: number;
+    current_mode_ok: boolean;
+    target_mode_ok: boolean;
+    reason?: string;
+  }>;
+  affected_routes: { kept: number; unsupported: number };
+  provider_changes: Array<{ provider_id: string; action: string; detail: string }>;
+  risks: string[] | null;
+}
+
+export interface ModeSwitchPreviewResponse {
+  preview: ModeSwitchPreviewDetail;
+  rpcb_conflicts: ModeSwitchRouteImpact[];
+}
+
 export const adminApi = {
 
   // Logs
@@ -1565,7 +1626,7 @@ export const adminApi = {
     get('/api/admin/v1/egress/status'),
 
   // ── Runtime Mode (v1.9E) ──
-  modePreview: (target: string): Promise<any> =>
+  modePreview: (target: string): Promise<ModeSwitchPreviewResponse> =>
     post('/api/admin/v1/mode/preview?target=' + encodeURIComponent(target)),
 
   modeSwitch: (target: string, confirmRisks: boolean): Promise<any> =>
@@ -1804,6 +1865,9 @@ export interface CertificateItem {
   key_path?: string;
   source: string;       // gateway_auto | local_acme | manual_upload | external
   managed: boolean;     // in CertStore DB vs auto-discovered
+	managed_by?: string;  // caddy | aegis | user
+	record_type?: 'asset' | 'provider_observation';
+	ref_count?: number;
   auto_renew: boolean;  // provider auto-renews
   acme_path?: string;
   note?: string;
@@ -1811,15 +1875,58 @@ export interface CertificateItem {
   updated_at?: string;
 }
 
+export interface CertificateDeletePreview {
+  action: string;
+  allowed: boolean;
+  reason_code?: string;
+  reason?: string;
+  managed_by?: string;
+  references: Array<{ id: string; domain: string }>;
+  effects: string[];
+	alternatives: string[];
+}
+
+export interface CertificateBindingCandidate {
+  route_id: string;
+  domain: string;
+  current_cert_id?: string;
+  selected: boolean;
+}
+
+export interface CertificateBindingPreview {
+  cert_id: string;
+  domains: string;
+  candidates: CertificateBindingCandidate[];
+}
+
+export interface CertificateListResponse {
+  certificates: CertificateItem[];
+	assets: CertificateItem[];
+	automatic_tls: CertificateItem[];
+  count: number;
+	asset_count: number;
+	automatic_tls_count: number;
+  observation_warning?: string;
+}
+
 export const certApi = {
-  list: (): Promise<{ certificates: CertificateItem[]; count: number }> =>
+	list: (): Promise<CertificateListResponse> =>
     get('/api/admin/v1/certificates'),
 
-  uploadText: (cert_pem: string, key_pem: string, note?: string): Promise<CertificateItem> =>
-    post('/api/admin/v1/certificates', { cert_pem, key_pem, note }),
+  uploadText: (cert_pem: string, key_pem: string, note?: string, source: 'manual_upload' | 'external' = 'manual_upload'): Promise<CertificateItem> =>
+    post('/api/admin/v1/certificates', { cert_pem, key_pem, note, source }),
 
   delete: (id: string): Promise<{ status: string; id: string }> =>
     del(`/api/admin/v1/certificates/${id}`),
+
+  deletePreview: (id: string): Promise<CertificateDeletePreview> =>
+    get(`/api/admin/v1/certificates/${id}/delete-preview`),
+
+  bindingPreview: (id: string): Promise<CertificateBindingPreview> =>
+    get(`/api/admin/v1/certificates/${id}/binding-preview`),
+
+  bindRoutes: (id: string, route_ids: string[]): Promise<any> =>
+    post(`/api/admin/v1/certificates/${id}/bindings`, { route_ids }),
 };
 
 // ─── ACME (v1.9C) ───

@@ -33,10 +33,12 @@ type ProxyConfig struct {
 	Provider        string `yaml:"provider"         json:"provider"`
 	CaddyfilePath   string `yaml:"caddyfile_path"   json:"caddyfile_path"`
 	CaddyBinary     string `yaml:"caddy_binary"     json:"caddy_binary"`
+	CaddyDataDir    string `yaml:"caddy_data_dir"   json:"caddy_data_dir"`
 	ReloadCommand   string `yaml:"reload_command"   json:"reload_command"`
 	ValidateCommand string `yaml:"validate_command" json:"validate_command"`
 	BackupDir       string `yaml:"backup_dir"       json:"backup_dir"`
 	Email           string `yaml:"email"            json:"email"`
+	ACMEServer      string `yaml:"acme_server"      json:"acme_server"`
 	TlsCertFile     string `yaml:"tls_cert_file"    json:"tls_cert_file"`
 	TlsKeyFile      string `yaml:"tls_key_file"     json:"tls_key_file"`
 }
@@ -106,6 +108,8 @@ func DefaultConfig() *Config {
 			Provider:        "caddy",
 			CaddyfilePath:   filepath.Join(baseDir, "Caddyfile"),
 			CaddyBinary:     "caddy",
+			CaddyDataDir:    "",
+			ACMEServer:      "",
 			ReloadCommand:   "",
 			ValidateCommand: "{{caddy_binary}} validate --adapter caddyfile --config {{config_path}}",
 			BackupDir:       filepath.Join(baseDir, "backups"),
@@ -150,6 +154,8 @@ func ProductionConfig() *Config {
 			Provider:        "caddy",
 			CaddyfilePath:   "/etc/caddy/Caddyfile",
 			CaddyBinary:     "caddy",
+			CaddyDataDir:    "/var/lib/caddy/.local/share/caddy",
+			ACMEServer:      "",
 			ReloadCommand:   "systemctl reload caddy",
 			ValidateCommand: "caddy validate --adapter caddyfile --config {{config_path}}",
 			BackupDir:       "/var/lib/aegis/backups",

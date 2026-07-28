@@ -15,22 +15,30 @@ type Route struct {
 	PathPrefix         string    `json:"path_prefix"`
 	StripPrefix        bool      `json:"strip_prefix"`
 	ServiceID          string    `json:"service_id"`
-	TLSEnabled          bool      `json:"tls_enabled"`           // deprecated — derived from Composition
-	Composition        string    `json:"composition,omitempty"`  // v1.8L-22 → CompKey string, e.g. "https_route"
+	TLSEnabled         bool      `json:"tls_enabled"`                   // deprecated — derived from Composition
+	Composition        string    `json:"composition,omitempty"`         // v1.8L-22 → CompKey string, e.g. "https_route"
 	SourceProvider     string    `json:"source_provider,omitempty"`     // v2.0-RPCB — which Provider manages this route
 	SourceCapabilities string    `json:"source_capabilities,omitempty"` // v2.0-RPCB — JSON array of Capability keys
-	Status             string    `json:"status"` // active | disabled
+	TLSBindingMode     string    `json:"tls_binding_mode,omitempty"`    // off | provider_auto | certificate
+	TLSProvider        string    `json:"tls_provider,omitempty"`        // provider responsible for provider_auto TLS
+	Status             string    `json:"status"`                        // active | disabled
 	MaintenanceEnabled bool      `json:"maintenance_enabled"`
 	MaintenanceMessage string    `json:"maintenance_message"`
 	SpaceID            string    `json:"space_id"`
-	OwnerType          string    `json:"owner_type"`         // space | admin
-	OwnerID            string    `json:"owner_id"`           // space_id when owner_type=space
+	OwnerType          string    `json:"owner_type"` // space | admin
+	OwnerID            string    `json:"owner_id"`   // space_id when owner_type=space
 	CreatedByTokenID   string    `json:"created_by_token_id"`
 	GatewayLinkID      string    `json:"gateway_link_id,omitempty"` // v1.7AB
-	CertID             *string   `json:"cert_id,omitempty"`          // v1.9C — custom TLS certificate reference
+	CertID             *string   `json:"cert_id,omitempty"`         // v1.9C — custom TLS certificate reference
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }
+
+const (
+	TLSBindingOff          = "off"
+	TLSBindingProviderAuto = "provider_auto"
+	TLSBindingCertificate  = "certificate"
+)
 
 // CompDef returns the composition definition for this route, or nil.
 func (r *Route) CompDef() *provider.CompDef {
@@ -43,23 +51,57 @@ func (r *Route) CompDef() *provider.CompDef {
 	return provider.LookupComp(provider.CompHTTPRoute)
 }
 
-// CapabilityKeys returns the capability key chain for this route's composition.
-// Used to populate source_capabilities at creation time.
+// NormalizeManagement fills lifecycle fields that older and direct creation
+// paths may omit. CertID is meaningful only for certificate bindings.
+func (r *Route) NormalizeManagement(defaultProvider string) {
+	if defaultProvider == "" {
+		defaultProvider = "caddy"
+	}
+	if r.SourceProvider == "" {
+		r.SourceProvider = defaultProvider
+	}
+
+	def := r.CompDef()
+	terminatesTLS := def != nil && def.TLSMode == "terminate"
+	if !terminatesTLS {
+		r.TLSBindingMode = TLSBindingOff
+		r.TLSProvider = ""
+		r.CertID = nil
+		return
+	}
+
+	if r.CertID != nil && *r.CertID != "" {
+		r.TLSBindingMode = TLSBindingCertificate
+		r.TLSProvider = ""
+		return
+	}
+
+	r.TLSBindingMode = TLSBindingProviderAuto
+	if r.TLSProvider == "" {
+		r.TLSProvider = r.SourceProvider
+	}
+}
+
+// CapabilityKeys returns requirements for the route composition plus its
+// selected TLS strategy. auto_cert and load_cert are alternatives.
 func (r *Route) CapabilityKeys() []string {
-	switch r.Composition {
-	case "http_route":
-		return []string{"route_host", "load_cert", "auto_cert"}
-	case "https_route", "http3":
-		return []string{"route_host", "tls_terminate", "load_cert", "auto_cert"}
-	case "tls_passthrough":
-		return []string{"sni_preread", "tls_passthrough"}
-	case "raw_tcp":
-		return []string{"listen_tcp", "upstream_tcp"}
-	case "raw_udp":
-		return []string{"listen_udp", "upstream_udp"}
-	default:
+	def := r.CompDef()
+	if def == nil {
 		return nil
 	}
+	caps := def.Requirements()
+	if def.TLSMode == "terminate" {
+		if r.TLSBindingMode == TLSBindingCertificate {
+			caps = append(caps, provider.CapLoadCert)
+		} else {
+			caps = append(caps, provider.CapAutoCert)
+		}
+	}
+	keys := make([]string, 0, len(caps))
+	for _, capability := range caps {
+		keys = append(keys, string(capability))
+	}
+	return keys
 }
 
 // CreateRouteInput is the input for creating a route.

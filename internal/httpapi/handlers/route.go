@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"aegis/internal/route"
+	"aegis/internal/tlslifecycle"
+	"fmt"
 	"net/http"
+	"strconv"
 )
 
 func (h *Handlers) ListRoutes(w http.ResponseWriter, r *http.Request) {
@@ -59,44 +62,126 @@ func (h *Handlers) AdminGetRoute(w http.ResponseWriter, r *http.Request) {
 	h.GetRoute(w, r)
 }
 
-// AdminDeleteRoute handles DELETE /api/admin/v1/routes/{id}
-// Cascades: removes orphaned certs no longer referenced by any route.
+// AdminDeleteRoute deletes the route and its TLS binding. Certificate assets
+// are retained because their lifecycle is independent from route usage.
 func (h *Handlers) AdminDeleteRoute(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-
-	// Fetch route before deletion to get cert_id
-	rt, getErr := h.Route.GetRoute(r.Context(), id)
-	if getErr != nil {
-		writeError(w, http.StatusNotFound, getErr.Error())
+	deleteUnusedCertificate, _ := strconv.ParseBool(r.URL.Query().Get("delete_unused_certificate"))
+	var preview *tlslifecycle.RouteDeletePreview
+	if deleteUnusedCertificate && h.TLSLifecycle == nil {
+		writeError(w, http.StatusNotImplemented, "TLS lifecycle service not available")
 		return
+	}
+	if h.TLSLifecycle != nil {
+		var err error
+		preview, err = h.TLSLifecycle.PreviewDeleteRoute(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if deleteUnusedCertificate && !preview.DeleteUnusedCertificateAllowed {
+			writeErrorCode(w, http.StatusConflict, "CERTIFICATE_NOT_UNUSED", "the bound certificate is still referenced or is not an independent asset")
+			return
+		}
 	}
 
 	if err := h.Route.DeleteRoute(r.Context(), id); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-
-	// Cascade: delete orphaned certificate
-	if rt.CertID != nil && *rt.CertID != "" && h.CertStore != nil {
-		routes, _ := h.Route.ListRoutes(r.Context())
-		stillUsed := false
-		for _, other := range routes {
-			if other.CertID != nil && *other.CertID == *rt.CertID {
-				stillUsed = true
-				break
-			}
+	certificateDeleted := false
+	cleanupWarning := ""
+	if deleteUnusedCertificate && preview != nil && preview.CertificateID != "" {
+		impact, err := h.TLSLifecycle.DeleteCertificate(r.Context(), preview.CertificateID)
+		if err != nil || impact == nil || !impact.Allowed {
+			cleanupWarning = "route was deleted but the certificate asset could not be removed"
+		} else {
+			certificateDeleted = true
 		}
-		if !stillUsed {
-			h.CertStore.Delete(*rt.CertID)
-		}
+	}
+	if h.PendingState != nil {
+		_ = h.PendingState.MarkPending("route deleted: " + id)
 	}
 
 	// Trigger Apply to regenerate configs (HAProxy SNI, Caddyfile) without deleted route
 	if h.Apply != nil {
-		h.Apply.Apply(r.Context())
+		if _, err := h.Apply.TryApply(r.Context()); err != nil {
+			response := map[string]interface{}{
+				"status": "pending_apply", "route_id": id, "warning": err.Error(),
+				"certificate_deleted": certificateDeleted, "impact": preview,
+			}
+			if cleanupWarning != "" {
+				response["cleanup_warning"] = cleanupWarning
+			}
+			writeJSON(w, http.StatusAccepted, response)
+			return
+		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "route_id": id})
+	response := map[string]interface{}{
+		"status": "deleted", "route_id": id, "certificate_deleted": certificateDeleted, "impact": preview,
+	}
+	if cleanupWarning != "" {
+		response["cleanup_warning"] = cleanupWarning
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handlers) AdminPreviewDeleteRoute(w http.ResponseWriter, r *http.Request) {
+	if h.TLSLifecycle == nil {
+		writeError(w, http.StatusNotImplemented, "TLS lifecycle service not available")
+		return
+	}
+	preview, err := h.TLSLifecycle.PreviewDeleteRoute(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func (h *Handlers) AdminSetRouteTLSBinding(w http.ResponseWriter, r *http.Request) {
+	if h.TLSLifecycle == nil {
+		writeError(w, http.StatusNotImplemented, "TLS lifecycle service not available")
+		return
+	}
+	var input struct {
+		Mode       string `json:"mode"`
+		ProviderID string `json:"provider_id"`
+		CertID     string `json:"cert_id"`
+	}
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var (
+		rt  *route.Route
+		err error
+	)
+	switch input.Mode {
+	case route.TLSBindingCertificate:
+		rt, err = h.TLSLifecycle.BindCertificate(r.Context(), r.PathValue("id"), input.CertID)
+	case route.TLSBindingProviderAuto:
+		rt, err = h.TLSLifecycle.UseProviderAuto(r.Context(), r.PathValue("id"), input.ProviderID)
+	default:
+		err = fmt.Errorf("mode must be %q or %q", route.TLSBindingCertificate, route.TLSBindingProviderAuto)
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if h.PendingState != nil {
+		_ = h.PendingState.MarkPending("route TLS binding changed: " + rt.ID)
+	}
+	if h.Apply != nil {
+		if _, err := h.Apply.TryApply(r.Context()); err != nil {
+			writeJSON(w, http.StatusAccepted, map[string]interface{}{
+				"status": "pending_apply", "route": routeToMap(*rt), "warning": err.Error(),
+			})
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "updated", "route": routeToMap(*rt)})
 }
 
 func (h *Handlers) UpdateRoute(w http.ResponseWriter, r *http.Request) {
@@ -182,6 +267,10 @@ func routeToMap(rt route.Route) map[string]interface{} {
 		"service_id":          rt.ServiceID,
 		"composition":         rt.Composition,
 		"tls_enabled":         rt.TLSEnabled,
+		"tls_binding_mode":    rt.TLSBindingMode,
+		"tls_provider":        rt.TLSProvider,
+		"source_provider":     rt.SourceProvider,
+		"source_capabilities": parseCapJSON(rt.SourceCapabilities),
 		"status":              rt.Status,
 		"maintenance_enabled": rt.MaintenanceEnabled,
 		"maintenance_message": rt.MaintenanceMessage,

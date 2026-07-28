@@ -1,11 +1,13 @@
 package handlers
 
 import (
-	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
+	"slices"
 
+	"aegis/internal/apply"
 	"aegis/internal/hostdep/provider"
+	"aegis/internal/route"
 )
 
 // ModePreview shows the impact of switching to a different runtime mode.
@@ -64,37 +66,40 @@ func (h *Handlers) ModePreview(w http.ResponseWriter, r *http.Request) {
 
 	// RPCB: check each route's source_capabilities against target mode providers
 	type routeConflict struct {
-		RouteID         string   `json:"route_id"`
-		Domain          string   `json:"domain"`
-		Capabilities    []string `json:"capabilities"`
-		Compatible      bool     `json:"compatible"`
-		Reason          string   `json:"reason,omitempty"`
+		RouteID         string                     `json:"route_id"`
+		Domain          string                     `json:"domain"`
+		Capabilities    []string                   `json:"capabilities"`
+		Compatible      bool                       `json:"compatible"`
+		Reason          string                     `json:"reason,omitempty"`
+		CurrentExecutor string                     `json:"current_executor,omitempty"`
+		TargetExecutor  string                     `json:"target_executor,omitempty"`
+		StateClass      provider.StateClass        `json:"state_class,omitempty"`
+		Migration       provider.MigrationStrategy `json:"migration,omitempty"`
 	}
 	var rpcbConflicts []routeConflict
 	for _, rt := range dbRoutes {
-		if rt.SourceCapabilities == "" {
-			continue
-		}
-		var caps []string
-		if err := json.Unmarshal([]byte(rt.SourceCapabilities), &caps); err != nil || len(caps) == 0 {
-			continue
-		}
-		compat := targetModeHasAllCaps(targetMode, caps)
+		caps := rt.CapabilityKeys()
+		targetExecutor, semantics := routeExecutionForMode(rt, *targetMode, h.ProvReg)
+		compat := targetExecutor != ""
 		rc := routeConflict{
-			RouteID:      rt.ID,
-			Domain:       rt.Domain,
-			Capabilities: caps,
-			Compatible:   compat,
+			RouteID:         rt.ID,
+			Domain:          rt.Domain,
+			Capabilities:    caps,
+			Compatible:      compat,
+			CurrentExecutor: currentRouteExecutor(rt),
+			TargetExecutor:  targetExecutor,
+			StateClass:      semantics.StateClass,
+			Migration:       semantics.Migration,
 		}
 		if !compat {
-			rc.Reason = "缺少必需能力: " + missingCapsDesc(targetMode, caps)
+			rc.Reason = "目标模式不支持组合：" + rt.Composition
 		}
 		rpcbConflicts = append(rpcbConflicts, rc)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"preview":         preview,
-		"rpcb_conflicts":  rpcbConflicts,
+		"preview":        preview,
+		"rpcb_conflicts": rpcbConflicts,
 	})
 }
 
@@ -152,36 +157,32 @@ func (h *Handlers) ModeSwitch(w http.ResponseWriter, r *http.Request) {
 	}
 	var blocked []map[string]interface{}
 	for _, rt := range dbRoutes {
-		if rt.SourceCapabilities == "" {
-			continue
-		}
-		var caps []string
-		json.Unmarshal([]byte(rt.SourceCapabilities), &caps)
-		if len(caps) > 0 && !targetModeHasAllCaps(targetMode, caps) {
+		if !routeSupportedInMode(rt, *targetMode, h.ProvReg) {
 			blocked = append(blocked, map[string]interface{}{
 				"route_id":     rt.ID,
 				"domain":       rt.Domain,
-				"capabilities": caps,
-				"reason":       "缺少能力：" + missingCapsDesc(targetMode, caps),
+				"composition":  rt.Composition,
+				"capabilities": rt.CapabilityKeys(),
+				"reason":       "目标模式不支持该路由组合",
 			})
 		}
 	}
 	if len(blocked) > 0 {
 		writeJSON(w, http.StatusConflict, map[string]interface{}{
-			"error":    "RPCB_MODE_SWITCH_BLOCKED",
-			"reason":   "存在路由所需能力在切换目标模式下无 Provider 支持",
-			"blocked":  blocked,
-			"hint":     "请先修改或删除冲突路由再重试",
+			"error":   "RPCB_MODE_SWITCH_BLOCKED",
+			"reason":  "存在路由所需能力在切换目标模式下无 Provider 支持",
+			"blocked": blocked,
+			"hint":    "请先修改或删除冲突路由再重试",
 		})
 		return
 	}
 
 	// Execute standalone mode switch with snapshot/rollback.
 	if err := h.Apply.SwitchMode(r.Context(), req.TargetMode); err != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"status":   "failed",
-			"error":    err.Error(),
-			"rollback": "POST /api/rollback",
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"status":          "failed",
+			"error":           err.Error(),
+			"rollback_status": modeSwitchRollbackStatus(err),
 		})
 		return
 	}
@@ -192,42 +193,75 @@ func (h *Handlers) ModeSwitch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// targetModeHasAllCaps checks whether any provider in the target mode supports
-// ALL of the given capabilities.
-func targetModeHasAllCaps(mode *provider.RuntimeMode, caps []string) bool {
-	if len(caps) == 0 {
-		return true
+func modeSwitchRollbackStatus(err error) apply.RollbackStatus {
+	var switchErr *apply.ModeSwitchError
+	if errors.As(err, &switchErr) {
+		return switchErr.RollbackStatus
 	}
-	for _, p := range mode.Providers {
-		if provHasAllCaps(&p, caps) {
-			return true
-		}
-	}
-	return false
+	return apply.RollbackNotRequired
 }
 
-func provHasAllCaps(p *provider.ProviderAtoms, caps []string) bool {
-	for _, cap := range caps {
-		if _, ok := p.Bindings[cap]; !ok {
-			return false
-		}
+func routeSupportedInMode(rt route.Route, mode provider.RuntimeMode, registry *provider.Registry) bool {
+	if !provider.CompKeySupported(provider.CompKey(rt.Composition), mode) {
+		return false
 	}
-	return true
+	providerID, _ := routeExecutionForMode(rt, mode, registry)
+	return providerID != ""
 }
 
-func missingCapsDesc(mode *provider.RuntimeMode, caps []string) string {
-	var missing []string
-	for _, cap := range caps {
-		found := false
-		for _, p := range mode.Providers {
-			if _, ok := p.Bindings[cap]; ok {
-				found = true
-				break
+func currentRouteExecutor(rt route.Route) string {
+	if rt.TLSBindingMode == route.TLSBindingProviderAuto && rt.TLSProvider != "" {
+		return rt.TLSProvider
+	}
+	return rt.SourceProvider
+}
+
+// routeExecutionForMode preserves the current executor when possible, then
+// selects a target executor according to lifecycle semantics. A portable asset
+// may be reloaded elsewhere; provider-managed automatic TLS must be recreated.
+func routeExecutionForMode(rt route.Route, mode provider.RuntimeMode, registry *provider.Registry) (string, provider.CapabilitySemantics) {
+	var required provider.Capability
+	preferred := rt.SourceProvider
+	switch rt.TLSBindingMode {
+	case route.TLSBindingProviderAuto:
+		required = provider.CapAutoCert
+		preferred = rt.TLSProvider
+	case route.TLSBindingCertificate:
+		required = provider.CapLoadCert
+	default:
+		def := rt.CompDef()
+		switch {
+		case def != nil && def.TLSMode == "passthrough":
+			required = provider.CapTLSPassthrough
+		case def != nil && def.Transport == "udp":
+			required = provider.CapRawUDP
+		case def != nil && def.AppProtocol == "http":
+			required = provider.CapRouteHost
+		default:
+			required = provider.CapRawTCP
+		}
+	}
+	semantics := provider.SemanticsOf(required)
+	if registry == nil {
+		return "", semantics
+	}
+	if preferred != "" && slices.Contains(mode.ProviderIDs(), preferred) {
+		if p := registry.Get(preferred); p != nil {
+			state := p.State()
+			if state.Installed && state.HasCapability(required) {
+				return preferred, semantics
 			}
 		}
-		if !found {
-			missing = append(missing, cap)
+	}
+	for _, providerID := range mode.ProviderIDs() {
+		p := registry.Get(providerID)
+		if p == nil {
+			continue
+		}
+		state := p.State()
+		if state.Installed && state.HasCapability(required) {
+			return providerID, semantics
 		}
 	}
-	return strings.Join(missing, ", ")
+	return "", semantics
 }

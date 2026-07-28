@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { routeApi, exposureApi, runtimeModeApi, certApi } from '@/lib/api-bridge';
-import { Card, Btn, useToast } from '@/components/shared';
+import { Card, Btn, Modal, useToast } from '@/components/shared';
 import { useView } from '@/lib/view-context';
 import { routeDisplay, certSourceLabel, certSourceMeta, tlsBadgeLabel } from '@/lib/route-display';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,13 @@ export default function EntryList() {
   const nav = useNavigate(); const toast = useToast(); const qc = useQueryClient();
   const { activeNodeId } = useView();
   const [scope, setScope] = useState('all');
+	const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+	const [deleteUnusedCertificate, setDeleteUnusedCertificate] = useState(false);
+	const { data: deletePreview, isFetching: deletePreviewLoading } = useQuery({
+		queryKey: ['route-delete-preview', deleteTarget?.key],
+		queryFn: () => routeApi.deletePreview(deleteTarget.key),
+		enabled: !!deleteTarget && deleteTarget._t === 'route',
+	});
 
   const { data: rm } = useQuery({
     queryKey: ['runtime-mode', activeNodeId], queryFn: () => runtimeModeApi.get().catch(() => null), refetchInterval: 60_000,
@@ -50,11 +57,15 @@ export default function EntryList() {
     onError: (e: any) => toast(e.message || '失败', 'error'),
   });
   const deleteRoute = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/admin/v1/routes/${id}`, { method: 'DELETE', credentials: 'include' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['routes'] }); toast('已删除'); },
+    mutationFn: ({ id, deleteCertificate }: { id: string; deleteCertificate: boolean }) =>
+	  routeApi.delete(id, deleteCertificate),
+	onSuccess: (result: any) => {
+	  qc.invalidateQueries({ queryKey: ['routes'] });
+	  qc.invalidateQueries({ queryKey: ['certificates'] });
+	  setDeleteTarget(null);
+	  setDeleteUnusedCertificate(false);
+	  toast(result?.status === 'pending_apply' ? '域名已删除，等待配置发布' : '域名已删除');
+	},
     onError: (e: any) => toast(e.message || '删除失败', 'error'),
   });
   const disableExposure = useMutation({
@@ -87,13 +98,8 @@ export default function EntryList() {
     refetchInterval: 60_000,
   });
   const certMap: Record<string, string> = {};
-  const domainCertMap: Set<string> = new Set();
   (cd?.certificates || []).forEach((c: any) => {
     if (c.id) certMap[c.id] = c.source;
-    try {
-      const domains: string[] = JSON.parse(c.domains);
-      domains.forEach((d: string) => domainCertMap.add(d));
-    } catch {}
   });
 
   const allItems = useMemo(() => [
@@ -110,8 +116,7 @@ export default function EntryList() {
         scope: r.owner_type === 'space' ? (r.space_id || r.owner_id || 'service') : 'admin',
         isHTTP: rd.isHTTP,
         certSource: r.cert_id ? (certMap[r.cert_id] || '') : '',
-        domainHasCert: domainCertMap.has(r.domain),
-        sourceProvider: r.source_provider || 'caddy',
+		tlsBindingMode: r.tls_binding_mode || (r.cert_id ? 'certificate' : 'provider_auto'),
       };
     }),
     ...exposures.map((e: any) => ({
@@ -196,9 +201,9 @@ export default function EntryList() {
                           ? <span className={cn('px-1.5 py-0.5 rounded text-[9px] font-medium border', certSourceMeta(item.certSource).color)}>
                               {certSourceLabel(item.certSource)}
                             </span>
-                          : (item as any).domainHasCert
+						  : (item as any).tlsBindingMode === 'provider_auto'
                             ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-500/10 text-purple-400/60 border border-purple-500/20">
-                                由网关管理（待绑定）
+								自动 TLS
                               </span>
                             : null
                       )}
@@ -206,7 +211,7 @@ export default function EntryList() {
                     <td className="py-2.5 px-3 text-[10px] text-a-muted">{item.type}</td>
                     <td className="py-2.5 px-3">
                       {item._t === 'route'
-                        ? <span className="text-[10px] text-a-muted">{(item as any).sourceProvider === 'haproxy' ? 'HAProxy' : 'Caddy'}</span>
+						? <span className="text-[10px] text-a-muted">系统编排</span>
                         : <span className="text-[10px] text-a-muted/50">—</span>}
                     </td>
                     <td className="py-2.5 px-3"><HealthBadge status={item.health} /></td>
@@ -217,7 +222,7 @@ export default function EntryList() {
                             {item.status === 'active'
                               ? <button onClick={e => { e.stopPropagation(); disableRoute.mutate(item.key); }} className="text-[10px] px-2 py-0.5 rounded border border-[#e8b830]/30 text-[#e8b830] hover:bg-[#e8b830]/10 cursor-pointer">禁用</button>
                               : <button onClick={e => { e.stopPropagation(); enableRoute.mutate(item.key); }} className="text-[10px] px-2 py-0.5 rounded border border-[#4cd964]/30 text-[#4cd964] hover:bg-[#4cd964]/10 cursor-pointer">启用</button>}
-                            <button onClick={e => { e.stopPropagation(); if (confirm('确认删除？')) deleteRoute.mutate(item.key); }} className="text-[10px] px-2 py-0.5 rounded border border-[#ff5c72]/30 text-[#ff5c72] hover:bg-[#ff5c72]/10 cursor-pointer">删除</button>
+							<button onClick={e => { e.stopPropagation(); setDeleteUnusedCertificate(false); setDeleteTarget(item); }} className="text-[10px] px-2 py-0.5 rounded border border-[#ff5c72]/30 text-[#ff5c72] hover:bg-[#ff5c72]/10 cursor-pointer">删除</button>
                           </>
                         ) : (
                           item.status === 'active'
@@ -233,6 +238,37 @@ export default function EntryList() {
           </div>
         )}
       </Card>
+
+	  {deleteTarget && (
+		<Modal title="删除域名" onClose={() => setDeleteTarget(null)}
+		  footer={
+			<>
+			  <Btn onClick={() => setDeleteTarget(null)}>取消</Btn>
+			  <Btn danger onClick={() => deleteRoute.mutate({ id: deleteTarget.key, deleteCertificate: deleteUnusedCertificate })} disabled={deleteRoute.isPending || deletePreviewLoading}>
+				{deleteRoute.isPending ? '删除中...' : '删除域名'}
+			  </Btn>
+			</>
+		  }>
+		  <div className="space-y-3 text-sm">
+			<p className="text-a-fg">将删除域名 <span className="font-mono">{deleteTarget.name}</span> 及其 TLS 绑定。</p>
+			<p className="text-xs leading-5 text-a-muted">
+			  {deleteTarget.tlsBindingMode === 'certificate'
+				? '绑定的证书资产会保留在证书中心，不会随域名删除。'
+				: '自动 HTTPS 将停止使用；中间件托管的证书由中间件按自身机制回收。'}
+			</p>
+			{deletePreview?.delete_unused_certificate_allowed && deletePreview.certificate_id && (
+			  <label className="flex items-start gap-2 rounded-a-sm border border-a-border/40 p-2 text-xs text-a-fg">
+				<input type="checkbox" className="mt-0.5" checked={deleteUnusedCertificate}
+				  onChange={e => setDeleteUnusedCertificate(e.target.checked)} />
+				<span>
+				  同时删除不再使用的证书资产
+				  <span className="block font-mono text-[10px] text-a-muted mt-0.5">{deletePreview.certificate_id}</span>
+				</span>
+			  </label>
+			)}
+		  </div>
+		</Modal>
+	  )}
     </div>
   );
 }

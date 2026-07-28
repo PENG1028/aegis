@@ -3,6 +3,7 @@ package cluster
 import (
 	"database/sql"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -112,4 +113,34 @@ func TestPendingStateMarkClearMark(t *testing.T) {
 		t.Errorf("expected reason='change 2', got '%s'", status.Reason)
 	}
 	t.Logf("Mark/Clear/Mark cycle OK: pending=%v reason=%s", status.Pending, status.Reason)
+}
+
+func TestClearPendingIfUnchangedPreservesNewMutation(t *testing.T) {
+	db := setupPendingDB(t)
+	defer db.Close()
+	ps := NewPendingState(db)
+	if err := ps.MarkPending("first"); err != nil {
+		t.Fatal(err)
+	}
+	firstRevision := ps.PendingRevision()
+	time.Sleep(time.Millisecond)
+	if err := ps.MarkPending("second"); err != nil {
+		t.Fatal(err)
+	}
+	secondRevision := ps.PendingRevision()
+	if firstRevision == secondRevision {
+		t.Fatal("pending revision did not advance")
+	}
+	if err := ps.ClearPendingIfUnchanged(firstRevision); err != nil {
+		t.Fatal(err)
+	}
+	if status := ps.Status(); !status.Pending || status.Reason != "second" {
+		t.Fatalf("new mutation was cleared: %+v", status)
+	}
+	if err := ps.ClearPendingIfUnchanged(secondRevision); err != nil {
+		t.Fatal(err)
+	}
+	if ps.Status().Pending {
+		t.Fatal("matching pending revision was not cleared")
+	}
 }

@@ -57,6 +57,10 @@ func isPublicPath(path, method string) bool {
 	if path == "/api/admin/v1/auth/login" && method == "POST" {
 		return true
 	}
+	// ACME validators cannot authenticate; only expose the read-only challenge namespace.
+	if method == http.MethodGet && strings.HasPrefix(path, "/.well-known/acme-challenge/") {
+		return true
+	}
 	// distnode transport RPC — protected by distnode's own HMAC shared-secret
 	// auth inside Transport.Handler(). Distinct from the admin-protected
 	// /api/admin/v1/distnode/* management endpoints.

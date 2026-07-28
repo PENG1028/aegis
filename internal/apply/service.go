@@ -29,7 +29,9 @@ import (
 // PendingStateClearer is the interface for clearing pending apply state.
 type PendingStateClearer interface {
 	ClearPending() error
+	ClearPendingIfUnchanged(revision string) error
 	MarkPending(reason string) error
+	PendingRevision() string
 }
 
 // AppService is the main apply service. v1.8L: thin wrapper around Workflow.
@@ -72,38 +74,30 @@ func (s *AppService) DryRun(ctx context.Context) (*ApplyPlan, error) {
 	}, nil
 }
 
-// TryApply acquires the apply lock and executes Apply.
-
 // SwitchMode delegates to the workflow's standalone mode-switch method.
 func (s *AppService) SwitchMode(ctx context.Context, targetModeID string) error {
+	// WHY: mode handoff, regular Apply, and certificate replacement all mutate
+	// provider-visible state and must share one top-level serialization point.
+	if !s.mu.TryLock() {
+		return fmt.Errorf("APPLY_LOCKED: another apply is in progress")
+	}
+	defer s.mu.Unlock()
 	return s.workflow.SwitchMode(ctx, targetModeID)
 }
 
+// TryApply acquires the apply lock and executes Apply.
 func (s *AppService) TryApply(ctx context.Context) (*ApplyPlan, error) {
 	if !s.mu.TryLock() {
+		// The caller may already have committed desired-state mutations. Keep a
+		// retry marker so lock contention cannot strand those changes unapplied.
+		s.markPending("apply requested while another apply is in progress")
 		return nil, fmt.Errorf("APPLY_LOCKED: another apply is in progress")
 	}
 	defer s.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-
-	type result struct {
-		plan *ApplyPlan
-		err  error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		p, e := s.Apply(ctx)
-		ch <- result{p, e}
-	}()
-
-	select {
-	case r := <-ch:
-		return r.plan, r.err
-	case <-ctx.Done():
-		return nil, fmt.Errorf("APPLY_TIMEOUT: apply exceeded 60s deadline: %w", ctx.Err())
-	}
+	return s.apply(ctx, false)
 }
 
 // SetPendingState sets the pending state tracker.
@@ -113,6 +107,51 @@ func (s *AppService) SetPendingState(ps PendingStateClearer) {
 
 // Apply executes the full staged apply flow.
 func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.apply(ctx, false)
+}
+
+// ForceApply bypasses the rendered-hash shortcut while retaining the canonical
+// lock, audit log, and pending-revision semantics.
+func (s *AppService) ForceApply(ctx context.Context) (*ApplyPlan, error) {
+	if !s.mu.TryLock() {
+		return nil, fmt.Errorf("APPLY_LOCKED: another apply is in progress")
+	}
+	defer s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	return s.apply(ctx, true)
+}
+
+func (s *AppService) ReloadCertificateConsumers() error {
+	_, err := s.ForceApply(context.Background())
+	return err
+}
+
+// RenewCertificateAndApply serializes stable-path PEM replacement with config
+// validation and provider reload under the normal apply mutex.
+func (s *AppService) RenewCertificateAndApply(ctx context.Context, mutate func() error) error {
+	for !s.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for apply lock: %w", ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	defer s.mu.Unlock()
+	if err := mutate(); err != nil {
+		return err
+	}
+	_, err := s.apply(ctx, true)
+	return err
+}
+
+func (s *AppService) apply(ctx context.Context, force bool) (*ApplyPlan, error) {
+	pendingRevision := ""
+	if s.pendingState != nil {
+		pendingRevision = s.pendingState.PendingRevision()
+	}
 	version := fmt.Sprintf("v%s", time.Now().Format("20060102_150405"))
 	opID := core.NewID("apply")
 	stateVersion := uint64(time.Now().Unix())
@@ -126,6 +165,7 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	if err != nil {
 		stepLog.record("render_config", "failed", fmt.Sprintf("preview: %v", err))
 		s.writeApplyLog(opID, stateVersion, s.cfg.Proxy.Provider, "failed", stepLog, err.Error())
+		s.markPending("apply preview failed: " + err.Error())
 		return nil, fmt.Errorf("preview: %w", err)
 	}
 
@@ -135,18 +175,17 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	}
 	renderedStr := rendered.String()
 
-
 	stepLog.record("render_config", "success", "provider config rendered")
 
 	// 2. Hash comparison (skip if unchanged)
 	newHash := computeHash(renderedStr)
 	lastSuccess, _ := s.applyRepo.FindLastSuccess()
-	if lastSuccess != nil && lastSuccess.RenderedConfig != "" {
+	if !force && lastSuccess != nil && lastSuccess.RenderedConfig != "" {
 		lastHash := computeHash(lastSuccess.RenderedConfig)
 		if newHash == lastHash {
 			stepLog.record("config_hash_compare", "success", "config unchanged — skipping apply")
 			s.writeApplyLog(opID, stateVersion, s.cfg.Proxy.Provider, "success", stepLog, "")
-			s.clearPending()
+			s.clearPending(pendingRevision)
 			return &ApplyPlan{RenderedConfig: renderedStr, ConfigPath: s.cfg.Proxy.CaddyfilePath}, nil
 		}
 	}
@@ -158,6 +197,7 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	if err != nil {
 		stepLog.record("provider_apply", "failed", fmt.Sprintf("apply: %v", err))
 		s.writeApplyLog(opID, stateVersion, s.cfg.Proxy.Provider, "failed", stepLog, err.Error())
+		s.markPending("provider apply failed: " + err.Error())
 		return nil, fmt.Errorf("apply: %w", err)
 	}
 	stepLog.record("provider_apply", "success", "config applied to all providers")
@@ -167,7 +207,7 @@ func (s *AppService) Apply(ctx context.Context) (*ApplyPlan, error) {
 	stepLog.record("runtime_verify", "success", "providers verified")
 	stepLog.record("release_lock", "success", "apply lock released")
 
-	s.clearPending()
+	s.clearPending(pendingRevision)
 	s.writeApplyLog(opID, stateVersion, s.cfg.Proxy.Provider, "success", stepLog, "")
 
 	// 5. Record apply version
@@ -263,9 +303,15 @@ func (s *AppService) GetCurrentConfig() (string, error) {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-func (s *AppService) clearPending() {
+func (s *AppService) clearPending(revision string) {
 	if s.pendingState != nil {
-		s.pendingState.ClearPending()
+		_ = s.pendingState.ClearPendingIfUnchanged(revision)
+	}
+}
+
+func (s *AppService) markPending(reason string) {
+	if s.pendingState != nil {
+		_ = s.pendingState.MarkPending(reason)
 	}
 }
 
@@ -337,7 +383,9 @@ func (sl *applyStepLog) toJSON() string {
 
 func stepStatus(sl *applyStepLog, stepName string) string {
 	for _, s := range sl.steps {
-		if s.Name == stepName { return s.Status }
+		if s.Name == stepName {
+			return s.Status
+		}
 	}
 	return "skipped"
 }

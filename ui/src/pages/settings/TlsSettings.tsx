@@ -1,18 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchSettings, updateSettings, providerApi, certApi, acmeApi, system, type CertificateItem } from '@/lib/api-bridge';
+import { fetchSettings, updateSettings, providerApi, certApi, acmeApi, routeApi, runtimeModeApi, type CertificateItem } from '@/lib/api-bridge';
 import { useToast, Card, PageHeader, Btn } from '@/components/shared';
 import Input from '@/components/ui/Input';
+import { certificateCoversDomain, certificateIsCurrentlyValid, parseCertificateDomains } from '@/lib/certificate';
+import { capabilityIsReady, type ProviderCapabilityView } from '@/lib/provider-capability';
 
-interface ProviderInfo { id: string; name: string; capabilities: string[]; }
 interface ProviderListResponse {
-  providers: ProviderInfo[];
+  providers: ProviderCapabilityView[];
   capability_universe: Array<{ key: string; layer: string; label: string; description: string }>;
-}
-
-function parseDomains(item: CertificateItem): string[] {
-  try { const arr = JSON.parse(item.domains); return Array.isArray(arr) ? arr : [String(arr)]; }
-  catch { return [item.domains]; }
 }
 
 function expiryLabel(item: CertificateItem): string {
@@ -30,15 +26,21 @@ export default function TlsSettings() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
   const { data: provData } = useQuery({ queryKey: ['providers'], queryFn: () => providerApi.list() as Promise<ProviderListResponse> });
   const { data: certData } = useQuery({ queryKey: ['certificates'], queryFn: () => certApi.list() });
+  const { data: routeData } = useQuery({ queryKey: ['routes'], queryFn: () => routeApi.list() });
+  const { data: runtimeMode } = useQuery({ queryKey: ['runtime-mode'], queryFn: () => runtimeModeApi.get() });
   const { data: acmeStatus } = useQuery({ queryKey: ['acme-status'], queryFn: () => acmeApi.status(), refetchInterval: 60_000 });
 
   const s = settings as any;
-  const providers: ProviderInfo[] = provData?.providers || [];
+  const providers = provData?.providers || [];
   const certs: CertificateItem[] = certData?.certificates || [];
-  const autoCertProv = providers.find((p) => p.capabilities?.includes('auto_cert'));
-  const loadCertProv = providers.find((p) => p.capabilities?.includes('load_cert'));
+  const activeExecutorIDs = (runtimeMode?.current?.providers || []).map((item: any) => item.provider_id);
   const domainConfigured = s?.managed_domain?.gateway_domain || '';
   const acmeAvailable = acmeStatus?.available ?? false;
+  const routeItems: any[] = (routeData as any)?.data || (routeData as any)?.routes || [];
+  const panelRoute = routeItems.find((item) => item.service_id === '__panel' && item.domain === domainConfigured);
+  const autoExecutorIDs = panelRoute?.tls_provider ? [panelRoute.tls_provider] : activeExecutorIDs;
+  const autoCertReady = capabilityIsReady(providers, 'auto_cert', autoExecutorIDs);
+  const loadCertReady = capabilityIsReady(providers, 'load_cert', activeExecutorIDs);
 
   // ── Email ──
   const [email, setEmail] = useState('');
@@ -58,43 +60,77 @@ export default function TlsSettings() {
   const acmeMut = useMutation({
     mutationFn: async (domain: string) => {
       // 1. Obtain cert via ACME
-      await acmeApi.obtain([domain]);
-      // 2. Set domain in settings to create route (if panel domain not set)
-      if (!domainConfigured) {
-        await updateSettings({ managed_domain: { gateway_domain: domain } });
+      const normalized = domain.trim().toLowerCase();
+      if (domainConfigured && normalized !== domainConfigured.toLowerCase()) {
+        throw new Error(`申请域名必须与当前面板域名 ${domainConfigured} 一致`);
       }
-      // 3. Apply — BindAutoCerts matches cert to route
-      await system.apply();
+      const issued = await acmeApi.obtain([normalized]);
+      return updateSettings({
+        managed_domain: { gateway_domain: normalized, certificate_id: issued.cert_id },
+      });
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       qc.invalidateQueries({ queryKey: ['certificates'] });
       qc.invalidateQueries({ queryKey: ['acme-status'] });
       qc.invalidateQueries({ queryKey: ['settings'] });
       qc.invalidateQueries({ queryKey: ['routes'] });
-      toast(`证书已签发并绑定到域名 ${acmeDomain}。路由和 TLS 均已就绪。`);
+      toast(result?.apply_warning
+        ? `证书已签发并绑定到 ${acmeDomain}，配置等待自动重试`
+        : result?.status === 'pending_apply'
+        ? `证书已签发并绑定到 ${acmeDomain}，配置等待自动重试`
+        : `证书已签发并绑定到域名 ${acmeDomain}`);
     },
     onError: (e: any) => toast(e.message || '申请失败', 'error'),
   });
 
   // ── Cert binding ──
   const matchingCerts = certs.filter((c) => {
-    if (!domainConfigured) return false;
-    return parseDomains(c).includes(domainConfigured);
+    return c.record_type !== 'provider_observation'
+      && c.source !== 'gateway_auto'
+      && certificateIsCurrentlyValid(c)
+      && certificateCoversDomain(c, domainConfigured);
   });
   const [selectedCertId, setSelectedCertId] = useState('');
   useEffect(() => {
-    if (matchingCerts.length > 0 && !selectedCertId) setSelectedCertId(matchingCerts[0].id);
-  }, [domainConfigured, certData]);
+    if (panelRoute?.cert_id && matchingCerts.some((c) => c.id === panelRoute.cert_id)) {
+      setSelectedCertId(panelRoute.cert_id);
+    } else if (matchingCerts.length > 0 && !matchingCerts.some((c) => c.id === selectedCertId)) {
+      setSelectedCertId(matchingCerts[0].id);
+    }
+  }, [domainConfigured, certData, routeData]);
   const selectedCert = matchingCerts.find((c) => c.id === selectedCertId);
 
   const bindMut = useMutation({
-    mutationFn: async () => { await system.apply(); },
-    onSuccess: () => {
+    mutationFn: async () => {
+      if (!domainConfigured || !selectedCertId) throw new Error('面板域名或证书不可用');
+      return updateSettings({
+        managed_domain: { gateway_domain: domainConfigured, certificate_id: selectedCertId },
+      });
+    },
+    onSuccess: (result: any) => {
       qc.invalidateQueries({ queryKey: ['settings'] });
       qc.invalidateQueries({ queryKey: ['certificates'] });
-      toast(`已执行 Apply。证书将自动匹配到域名 ${domainConfigured}`);
+      qc.invalidateQueries({ queryKey: ['routes'] });
+      toast(result?.apply_warning || result?.status === 'pending_apply'
+        ? `证书已绑定到 ${domainConfigured}，配置等待自动重试`
+        : `证书已绑定到域名 ${domainConfigured}`);
     },
-    onError: (e: any) => toast(e.message || 'Apply 失败', 'error'),
+    onError: (e: any) => toast(e.message || '绑定失败', 'error'),
+  });
+
+  const autoMut = useMutation({
+    mutationFn: async () => {
+      if (!panelRoute) throw new Error('面板域名路由不可用');
+      return routeApi.setTLSBinding(panelRoute.id, {
+        mode: 'provider_auto',
+      });
+    },
+    onSuccess: (result: any) => {
+      qc.invalidateQueries({ queryKey: ['routes'] });
+      qc.invalidateQueries({ queryKey: ['certificates'] });
+      toast(result?.status === 'pending_apply' ? '已改用自动 HTTPS，配置等待自动重试' : '已改用中间件自动 HTTPS');
+    },
+    onError: (e: any) => toast(e.message || '切换失败', 'error'),
   });
 
   const handleUnbind = async () => {
@@ -104,9 +140,11 @@ export default function TlsSettings() {
     toast('已取消。面板域名已清空');
   };
 
-  const boundCert = matchingCerts.length > 0 ? matchingCerts[0] : null;
+  const boundCert = panelRoute?.cert_id ? certs.find((c) => c.id === panelRoute.cert_id) || null : null;
   let tlsStatus = 'HTTP only（未配置 TLS）';
-  if (boundCert) tlsStatus = `证书已就绪（${new Date(boundCert.not_after).toLocaleDateString('zh-CN')} 到期）`;
+  if (boundCert && certificateIsCurrentlyValid(boundCert)) tlsStatus = `证书已就绪（${new Date(boundCert.not_after).toLocaleDateString('zh-CN')} 到期）`;
+  else if (boundCert) tlsStatus = '绑定证书当前无效，配置无法发布';
+  else if (panelRoute?.tls_binding_mode === 'provider_auto') tlsStatus = '自动 TLS';
   else if (domainConfigured && emailConfigured) tlsStatus = "域名已设置，Apply 后将自动申请 Let's Encrypt";
   else if (domainConfigured) tlsStatus = '域名已设置（需配置邮箱或绑定证书）';
 
@@ -115,8 +153,8 @@ export default function TlsSettings() {
       <PageHeader title="TLS 证书配置" subtitle="创建 · 上传 · 绑定 · 状态" />
 
       {/* Section 1: ACME one-click create */}
-      {autoCertProv && (
-        <Card title="创建证书" subtitle={`通过 ${autoCertProv.name} 的 Let's Encrypt 自动签发`}>
+      {acmeAvailable && loadCertReady && (
+        <Card title="创建证书" subtitle="通过 Aegis ACME (lego) 签发并作为证书资产绑定">
           {!emailConfigured && (
             <div className="bg-[#e8b830]/10 border border-[#e8b830]/30 rounded-a-sm px-3 py-2 mb-3 text-xs text-[#e8b830]">
               未配置注册邮箱。可正常申请证书，但到期时将无法收到邮件通知。
@@ -160,8 +198,8 @@ export default function TlsSettings() {
       )}
 
       {/* Section 2: Bind existing certificate */}
-      {loadCertProv && (
-        <Card title="绑定已有证书" subtitle={boundCert ? `已绑定: ${parseDomains(boundCert).join(', ')} · ${expiryLabel(boundCert)}` : "从证书库选择已导入的证书绑定到面板域名"}>
+      {loadCertReady && (
+        <Card title="绑定已有证书" subtitle={boundCert ? `已绑定: ${parseCertificateDomains(boundCert).join(', ')} · ${expiryLabel(boundCert)}` : "从证书库选择已导入的证书绑定到面板域名"}>
           {!domainConfigured ? (
             <div className="py-4 text-center text-a-muted">
               <p className="text-sm">未配置面板域名</p>
@@ -179,19 +217,20 @@ export default function TlsSettings() {
                   value={selectedCertId} onChange={(e) => setSelectedCertId(e.target.value)}>
                   <option value="">— 不绑定 —</option>
                   {matchingCerts.map((c) => (
-                    <option key={c.id} value={c.id}>{parseDomains(c).join(', ')} ({expiryLabel(c)})</option>
+                    <option key={c.id} value={c.id}>{parseCertificateDomains(c).join(', ')} ({expiryLabel(c)})</option>
                   ))}
                 </select>
               </div>
               {selectedCert && (
                 <div className="bg-a-bg border border-a-border rounded-a-sm p-3 text-xs space-y-1">
-                  <div className="flex justify-between"><span className="text-a-muted">证书域名</span><span className="font-mono text-a-fg">{parseDomains(selectedCert).join(', ')}</span></div>
+                  <div className="flex justify-between"><span className="text-a-muted">证书域名</span><span className="font-mono text-a-fg">{parseCertificateDomains(selectedCert).join(', ')}</span></div>
                   <div className="flex justify-between"><span className="text-a-muted">签发者</span><span className="font-mono text-a-fg">{selectedCert.issuer?.split(',')[0]?.replace('CN=', '') || '—'}</span></div>
                   <div className="flex justify-between"><span className="text-a-muted">到期</span><span className="font-mono text-a-fg">{new Date(selectedCert.not_after).toLocaleDateString('zh-CN')} ({expiryLabel(selectedCert)})</span></div>
                 </div>
               )}
               <div className="flex gap-2">
-                <Btn primary onClick={() => bindMut.mutate()} disabled={bindMut.isPending}>{bindMut.isPending ? 'Apply 中...' : '执行 Apply（绑定证书）'}</Btn>
+                <Btn primary onClick={() => bindMut.mutate()} disabled={bindMut.isPending || !selectedCertId}>{bindMut.isPending ? '绑定中...' : '绑定证书'}</Btn>
+                {autoCertReady && panelRoute?.tls_enabled && <Btn onClick={() => autoMut.mutate()} disabled={autoMut.isPending} className="text-xs">改用自动 TLS</Btn>}
                 {domainConfigured && <Btn onClick={handleUnbind} className="text-xs">取消域名</Btn>}
               </div>
             </div>
@@ -204,7 +243,7 @@ export default function TlsSettings() {
         </Card>
       )}
 
-      {!autoCertProv && !loadCertProv && (
+      {!autoCertReady && !loadCertReady && (
         <Card title="TLS 未就绪"><p className="text-sm text-a-muted">当前没有网关提供 TLS 能力。请先安装网关中间件。</p></Card>
       )}
 
@@ -215,7 +254,7 @@ export default function TlsSettings() {
           <div className="flex justify-between"><span className="text-a-muted">Let's Encrypt 邮箱</span><span className="font-mono text-a-fg">{emailConfigured || '未配置'}</span></div>
           <div className="flex justify-between">
             <span className="text-a-muted">匹配的证书</span>
-            <span className="font-mono text-a-fg text-xs">{boundCert ? `${parseDomains(boundCert).join(', ')} (${expiryLabel(boundCert)})` : matchingCerts.length > 0 ? `${matchingCerts.length} 个可用` : '无'}</span>
+            <span className="font-mono text-a-fg text-xs">{boundCert ? `${parseCertificateDomains(boundCert).join(', ')} (${expiryLabel(boundCert)})` : matchingCerts.length > 0 ? `${matchingCerts.length} 个可用` : '无'}</span>
           </div>
           <div className="flex justify-between border-t border-a-border pt-2 mt-2">
             <span className="text-a-muted">TLS 状态</span>

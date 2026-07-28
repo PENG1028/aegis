@@ -1,6 +1,7 @@
 package certstore
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -14,17 +15,43 @@ import (
 // DiscoveredCert is a lightweight cert found in a provider's cert store.
 // Unlike Certificate, it has no DB ID — it's discovered from filesystem.
 type DiscoveredCert struct {
-	Domains   string `json:"domains"`    // JSON array
-	Issuer    string `json:"issuer"`
-	NotBefore string `json:"not_before"`
-	NotAfter  string `json:"not_after"`
-	Source    string `json:"source"` // gateway_auto
-	ACMEPath  string `json:"acme_path,omitempty"`
+	Domains    string `json:"domains"` // JSON array
+	Issuer     string `json:"issuer"`
+	NotBefore  string `json:"not_before"`
+	NotAfter   string `json:"not_after"`
+	Source     string `json:"source"` // gateway_auto
+	ACMEPath   string `json:"acme_path,omitempty"`
+	ExecutorID string `json:"executor_id"`
+}
+
+// AutomaticTLSObserver is the adapter boundary for executor-owned TLS state.
+// Observations are deliberately read-only and never become CertStore assets.
+type AutomaticTLSObserver interface {
+	ExecutorID() string
+	Observe(context.Context) ([]DiscoveredCert, error)
+}
+
+type CaddyTLSObserver struct {
+	dataDir string
+}
+
+func NewCaddyTLSObserver(dataDir string) *CaddyTLSObserver {
+	return &CaddyTLSObserver{dataDir: dataDir}
+}
+
+func (o *CaddyTLSObserver) ExecutorID() string { return "caddy" }
+
+func (o *CaddyTLSObserver) Observe(_ context.Context) ([]DiscoveredCert, error) {
+	certs, err := DiscoverCaddyCerts(o.dataDir)
+	for i := range certs {
+		certs[i].ExecutorID = o.ExecutorID()
+	}
+	return certs, err
 }
 
 // DiscoverCaddyCerts scans the Caddy certificate storage directory and returns
-// all discovered auto-issued certificates. Returns empty slice if the directory
-// doesn't exist or is inaccessible.
+// all discovered auto-issued certificates. A missing directory is an empty
+// observation; permission and I/O failures are returned so the UI can warn.
 //
 // Caddy stores certs at:
 //
@@ -36,10 +63,16 @@ func DiscoverCaddyCerts(caddyDataDir string) ([]DiscoveredCert, error) {
 	}
 
 	certDir := filepath.Join(caddyDataDir, "certificates")
-	if _, err := os.Stat(certDir); os.IsNotExist(err) {
+	if _, err := os.Stat(certDir); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("inspect Caddy certificate directory %s: %w", certDir, err)
+		}
 		// Also try the direct path (old Caddy versions or custom config)
-		if _, err2 := os.Stat(caddyDataDir); os.IsNotExist(err2) {
-			return nil, nil // no certs yet
+		if _, err2 := os.Stat(caddyDataDir); err2 != nil {
+			if os.IsNotExist(err2) {
+				return nil, nil // no certs yet
+			}
+			return nil, fmt.Errorf("inspect Caddy data directory %s: %w", caddyDataDir, err2)
 		}
 		certDir = caddyDataDir
 	}
@@ -49,7 +82,7 @@ func DiscoverCaddyCerts(caddyDataDir string) ([]DiscoveredCert, error) {
 	// Walk {acme_dir}/{domain}/ directory structure
 	entries, err := os.ReadDir(certDir)
 	if err != nil {
-		return nil, nil // permission denied or doesn't exist — not an error
+		return nil, fmt.Errorf("read Caddy certificate directory %s: %w", certDir, err)
 	}
 
 	for _, acmeEntry := range entries {

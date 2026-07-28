@@ -414,10 +414,12 @@ proxy:
   provider: caddy
   caddyfile_path: ./.aegis/Caddyfile
   caddy_binary: caddy
+  caddy_data_dir: ""
   reload_command: ""
   validate_command: ""
   backup_dir: ./.aegis/backups
   email: ""
+  acme_server: ""
 
 store:
   sqlite_path: ./.aegis/aegis.db
@@ -441,10 +443,12 @@ proxy:
   provider: caddy
   caddyfile_path: /etc/caddy/Caddyfile
   caddy_binary: caddy
+  caddy_data_dir: /var/lib/caddy/.local/share/caddy
   reload_command: systemctl reload caddy
   validate_command: caddy validate --config {{config_path}}
   backup_dir: /var/lib/aegis/backups
   email: admin@example.com
+  acme_server: "" # 生产 CA；预发布测试时填写 Let's Encrypt staging directory
 
 store:
   sqlite_path: /var/lib/aegis/aegis.db

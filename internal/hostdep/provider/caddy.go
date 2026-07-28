@@ -6,13 +6,13 @@ import (
 	"log"
 	"os"
 	"os/exec"
-
-	"aegis/internal/hostdep"
 	"os/user"
 	"strconv"
 	"strings"
+	"time"
 
 	"aegis/internal/config"
+	"aegis/internal/hostdep"
 )
 
 // ============================================================================
@@ -23,10 +23,14 @@ import (
 // It generates Caddyfile configuration from Plan/RouteSpec and manages the
 // full validate→backup→write→reload lifecycle.
 type CaddyProvider struct {
-	cfg        *config.Config
-	binaryPath string // resolved absolute path to caddy binary
-	email      string // ACME email from config
+	cfg            *config.Config
+	binaryPath     string // resolved absolute path to caddy binary
+	email          string // ACME email from config
+	commandTimeout time.Duration
+	runCommand     func(context.Context, string, ...string) ([]byte, error)
 }
+
+const defaultCaddyCommandTimeout = 30 * time.Second
 
 // NewCaddyProvider creates a Caddy Provider.
 // Resolves the caddy binary path at construction time.
@@ -36,9 +40,10 @@ func NewCaddyProvider(cfg *config.Config) *CaddyProvider {
 		bp = resolved
 	}
 	return &CaddyProvider{
-		cfg:        cfg,
-		binaryPath: bp,
-		email:      cfg.Proxy.Email,
+		cfg:            cfg,
+		binaryPath:     bp,
+		email:          cfg.Proxy.Email,
+		commandTimeout: defaultCaddyCommandTimeout,
 	}
 }
 
@@ -105,11 +110,18 @@ func (p *CaddyProvider) Diagnose() ProviderDiagnostic {
 	}
 
 	// Non-fatal capability warning: auto_cert without email disables expiry notifications
-	if p.email == "" {
+	if p.acmeEmail() == "" {
 		diag.Warnings = append(diag.Warnings, "ACME_NO_EMAIL: Let's Encrypt 注册邮箱未配置，证书到期时将无法收到通知")
 	}
 
 	return diag
+}
+
+func (p *CaddyProvider) acmeEmail() string {
+	if p.cfg != nil {
+		return p.cfg.Proxy.Email
+	}
+	return p.email
 }
 
 // Render generates a Caddyfile from a Plan and returns it as a ConfigFile.
@@ -137,47 +149,33 @@ func (p *CaddyProvider) Apply(configs []ConfigFile) error {
 	return nil
 }
 
+// StageConfig validates and writes Caddy configuration without reloading it.
+func (p *CaddyProvider) StageConfig(configs []ConfigFile) error {
+	if len(configs) == 0 {
+		return fmt.Errorf("no config files to stage")
+	}
+	for _, cf := range configs {
+		if _, err := p.stageOne(cf); err != nil {
+			return fmt.Errorf("stage %s: %w", cf.Path, err)
+		}
+	}
+	return nil
+}
+
 // ============================================================================
 // Apply helpers
 // ============================================================================
 
 // applyOne writes a single config file with the full 6-step pipeline.
 func (p *CaddyProvider) applyOne(cf ConfigFile) error {
-	configPath := cf.Path
-	if configPath == "" {
-		configPath = p.cfg.Proxy.CaddyfilePath
+	configPath, err := p.stageOne(cf)
+	if err != nil {
+		return err
 	}
 
-	// 1. Write to temp file
-	tmpFile := configPath + ".tmp"
-	if err := writeCaddyConfig(tmpFile, cf.Content); err != nil {
-		return fmt.Errorf("write temp config: %w", err)
-	}
-	defer os.Remove(tmpFile)
-
-	// 2. Validate temp file
-	if err := p.validateConfig(tmpFile); err != nil {
-		return fmt.Errorf("validate config: %w", err)
-	}
-
-	// 3. Backup existing config
-	if existing, err := os.ReadFile(configPath); err == nil {
-		backupPath := configPath + ".bak"
-		os.WriteFile(backupPath, existing, 0600)
-	}
-
-	// 4. Atomic replace
-	if err := os.Rename(tmpFile, configPath); err != nil {
-		// Fallback: read+write if rename fails (cross-filesystem)
-		data, _ := os.ReadFile(tmpFile)
-		if err := writeCaddyConfig(configPath, data); err != nil {
-			return fmt.Errorf("write config: %w", err)
-		}
-	}
-
-	// 5. Reload
+	// Reload only after the validated configuration is in place.
 	if err := p.reload(); err != nil {
-		// 6. Rollback — restore known-good config and retry reload
+		// Rollback restores the provider-local backup made by stageOne.
 		backupPath := configPath + ".bak"
 		if backupData, backupErr := os.ReadFile(backupPath); backupErr != nil {
 			log.Printf("[caddy] rollback: read backup %s: %v", backupPath, backupErr)
@@ -191,9 +189,43 @@ func (p *CaddyProvider) applyOne(cf ConfigFile) error {
 	return nil
 }
 
+func (p *CaddyProvider) stageOne(cf ConfigFile) (string, error) {
+	configPath := cf.Path
+	if configPath == "" {
+		configPath = p.cfg.Proxy.CaddyfilePath
+	}
+
+	// 1. Write to temp file
+	tmpFile := configPath + ".tmp"
+	if err := writeCaddyConfig(tmpFile, cf.Content); err != nil {
+		return "", fmt.Errorf("write temp config: %w", err)
+	}
+	defer os.Remove(tmpFile)
+
+	// 2. Validate temp file
+	if err := p.validateConfig(tmpFile); err != nil {
+		return "", fmt.Errorf("validate config: %w", err)
+	}
+
+	// 3. Backup existing config
+	if existing, err := os.ReadFile(configPath); err == nil {
+		backupPath := configPath + ".bak"
+		os.WriteFile(backupPath, existing, 0600)
+	}
+
+	// 4. Atomic replace
+	if err := os.Rename(tmpFile, configPath); err != nil {
+		// Fallback: read+write if rename fails (cross-filesystem)
+		data, _ := os.ReadFile(tmpFile)
+		if err := writeCaddyConfig(configPath, data); err != nil {
+			return "", fmt.Errorf("write config: %w", err)
+		}
+	}
+	return configPath, nil
+}
+
 func (p *CaddyProvider) validateConfig(configPath string) error {
-	cmd := exec.Command(p.binaryPath, "validate", "--config", configPath)
-	output, err := cmd.CombinedOutput()
+	output, err := p.runTimedCommand(p.binaryPath, "validate", "--config", configPath)
 	if err != nil {
 		return fmt.Errorf("caddy validate failed: %s\n%s", err.Error(), string(output))
 	}
@@ -209,8 +241,7 @@ func (p *CaddyProvider) reload() error {
 	if len(parts) == 0 {
 		return nil
 	}
-	cmd := exec.Command(parts[0], parts[1:]...)
-	output, err := cmd.CombinedOutput()
+	output, err := p.runTimedCommand(parts[0], parts[1:]...)
 	if err != nil {
 		errMsg := string(output)
 		hint := ""
@@ -220,6 +251,26 @@ func (p *CaddyProvider) reload() error {
 		return fmt.Errorf("reload failed (cmd: %s): %s\nstderr: %s%s", reloadCmd, err.Error(), errMsg, hint)
 	}
 	return nil
+}
+
+func (p *CaddyProvider) runTimedCommand(name string, args ...string) ([]byte, error) {
+	timeout := p.commandTimeout
+	if timeout <= 0 {
+		timeout = defaultCaddyCommandTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	runner := p.runCommand
+	if runner == nil {
+		runner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return exec.CommandContext(ctx, name, args...).CombinedOutput()
+		}
+	}
+	output, err := runner(ctx, name, args...)
+	if ctx.Err() != nil {
+		return output, fmt.Errorf("command timed out after %s: %w", timeout, ctx.Err())
+	}
+	return output, err
 }
 
 func (p *CaddyProvider) runtimeVerify() bool {
@@ -244,10 +295,14 @@ func writeCaddyConfig(path string, data []byte) error {
 	}
 	if grp, err := user.LookupGroup("caddy"); err == nil {
 		if gid, err := strconv.Atoi(grp.Gid); err == nil {
-			os.Chown(path, 0, gid)
+			if err := os.Chown(path, -1, gid); err != nil {
+				return fmt.Errorf("set Caddyfile group: %w", err)
+			}
 		}
 	}
-	os.Chmod(path, perm)
+	if err := os.Chmod(path, perm); err != nil {
+		return fmt.Errorf("set Caddyfile mode: %w", err)
+	}
 	return nil
 }
 

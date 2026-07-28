@@ -35,6 +35,34 @@ func (h *Handlers) driftRoutes(ctx context.Context) []provider.RouteSpec {
 type enrichedProvider struct {
 	provider.ProviderState
 	TheoreticalCapabilities []provider.Capability `json:"theoretical_capabilities"`
+	CapabilityStatuses      []capabilityInstance  `json:"capability_statuses"`
+}
+
+type capabilityInstance struct {
+	Key          provider.Capability          `json:"key"`
+	Availability string                       `json:"availability"`
+	Semantics    provider.CapabilitySemantics `json:"semantics"`
+}
+
+func providerCapabilityInstances(state provider.ProviderState) []capabilityInstance {
+	availability := state.Status
+	if availability == "" {
+		switch {
+		case !state.Installed:
+			availability = "unavailable"
+		case state.Healthy():
+			availability = "ready"
+		default:
+			availability = "degraded"
+		}
+	}
+	instances := make([]capabilityInstance, 0, len(state.Capabilities))
+	for _, capability := range state.Capabilities {
+		instances = append(instances, capabilityInstance{
+			Key: capability, Availability: availability, Semantics: provider.SemanticsOf(capability),
+		})
+	}
+	return instances
 }
 
 // ListProviders returns all registered providers with their current state,
@@ -55,6 +83,7 @@ func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 		enriched = append(enriched, enrichedProvider{
 			ProviderState:           s,
 			TheoreticalCapabilities: provider.TheoreticalMaxCapabilities(s.GatewayType),
+			CapabilityStatuses:      providerCapabilityInstances(s),
 		})
 	}
 

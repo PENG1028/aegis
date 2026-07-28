@@ -21,6 +21,8 @@ func newSettingsCommand(cfg *config.Config) *cobra.Command {
 			fmt.Printf("  provider:        %s\n", cfg.Proxy.Provider)
 			fmt.Printf("  caddyfile_path:  %s\n", cfg.Proxy.CaddyfilePath)
 			fmt.Printf("  caddy_binary:    %s\n", cfg.Proxy.CaddyBinary)
+			fmt.Printf("  caddy_data_dir:  %s\n", cfg.Proxy.CaddyDataDir)
+			fmt.Printf("  acme_server:     %s\n", cfg.Proxy.ACMEServer)
 			fmt.Printf("  reload_command:  %s\n", cfg.Proxy.ReloadCommand)
 			fmt.Printf("  validate_command:%s\n", cfg.Proxy.ValidateCommand)
 			fmt.Printf("  backup_dir:      %s\n", cfg.Proxy.BackupDir)

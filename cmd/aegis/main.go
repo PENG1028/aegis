@@ -47,6 +47,7 @@ import (
 	"aegis/internal/store"
 	"aegis/internal/sync"
 	"aegis/internal/tcp"
+	"aegis/internal/tlslifecycle"
 	"aegis/internal/token"
 	"aegis/internal/topology"
 	"aegis/internal/topology/templates"
@@ -237,11 +238,17 @@ func main() {
 
 	// ── Certificate Store (v1.9C) ──
 	certRepo := certstore.NewRepository(db)
-	certDir := cfg.Runtime.DataDir + "/certs"
+	certDir := filepath.Join(cfg.Runtime.DataDir, "certs")
 	certStoreSvc := certstore.NewService(certRepo, certDir)
+	// WHY: Caddy runs as an unprivileged service user but explicit TLS assets
+	// remain owned by Aegis. Group-read access avoids world-readable keys and
+	// also repairs root-only files created by older releases.
+	if err := certStoreSvc.ConfigureConsumerGroup("caddy"); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: certificate assets remain Aegis-only; explicit Caddy TLS bindings will fail: %v\n", err)
+	}
 
 	// ── ACME Client (v1.9C) — embedded lego, replaces certbot ──
-	acmeClient, err := acme.NewClient(certStoreSvc, cfg.Proxy.Email, "", cfg.Runtime.DataDir)
+	acmeClient, err := acme.NewClient(certStoreSvc, cfg.Proxy.Email, cfg.Proxy.ACMEServer, cfg.Runtime.DataDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  acme client: %v (ACME disabled)\n", err)
 		acmeClient = nil
@@ -259,25 +266,11 @@ func main() {
 		CertStore:        certStoreSvc,
 		ControlPort:      controlPort,
 	})
-	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc, certStoreSvc)
-
-	// Auto-bind certs immediately after route creation — eliminates the need to click Apply first.
-	routeSvc.SetAfterCreate(func(rt *route.Route) {
-		topoPlanner.BindAutoCertForDomain(rt.Domain)
-	})
-
-	// Periodic cert binding: every 5 minutes, bind any unbound routes to matching certs
-	// in CertStore. Covers cases where certs were imported/issued after route creation.
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for {
-			if bound, err := topoPlanner.BindAutoCerts(); err == nil && bound > 0 {
-				fmt.Fprintf(os.Stderr, "cert-auto-bind: bound %d routes\n", bound)
-			}
-			<-ticker.C
-		}
-	}()
+	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc)
+	tlsLifecycleSvc := tlslifecycle.New(routeSvc, certStoreSvc, provRegistry)
+	tlsObservers := []certstore.AutomaticTLSObserver{
+		certstore.NewCaddyTLSObserver(cfg.Proxy.CaddyDataDir),
+	}
 
 	applySvc := apply.NewAppService(cfg, workflow, applyRepo, logSvc)
 
@@ -296,6 +289,63 @@ func main() {
 	}
 	pendingState := cluster.NewPendingState(db)
 	applySvc.SetPendingState(pendingState)
+	// WHY: desired state is committed before gateway Apply. Failed applies stay
+	// visible as pending and are retried through the canonical apply lock.
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if !pendingState.Status().Pending {
+				continue
+			}
+			if _, err := applySvc.TryApply(context.Background()); err != nil && !strings.Contains(err.Error(), "APPLY_LOCKED") {
+				fmt.Fprintf(os.Stderr, "pending-apply: retry failed: %v\n", err)
+			}
+		}
+	}()
+	if acmeClient != nil {
+		renewalChecker := certstore.NewCertRenewalChecker(certStoreSvc, acmeClient)
+		renewalChecker.SetRenewalCoordinator(applySvc)
+		go func() {
+			run := func() {
+				expiring, err := renewalChecker.Check(context.Background(), 30)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "cert-renewal: scan failed: %v\n", err)
+					return
+				}
+				hasLocalACME := false
+				for _, cert := range expiring {
+					if cert.Source == certstore.SourceLocalACME && cert.CanRenew {
+						hasLocalACME = true
+						break
+					}
+				}
+				if !hasLocalACME {
+					return
+				}
+				// Applying first ensures the Caddy HTTP-01 proxy route exists.
+				if _, err := applySvc.ForceApply(context.Background()); err != nil {
+					fmt.Fprintf(os.Stderr, "cert-renewal: prepare challenge route: %v\n", err)
+					return
+				}
+				for _, result := range renewalChecker.RenewExpiring(context.Background(), 30) {
+					if result.PendingApply {
+						_ = pendingState.MarkPending("certificate renewed but provider reload is pending: " + result.CertID)
+					}
+					fmt.Fprintf(os.Stderr, "cert-renewal: %s: %s\n", result.CertID, result.Message)
+				}
+			}
+			initial := time.NewTimer(time.Minute)
+			defer initial.Stop()
+			<-initial.C
+			run()
+			ticker := time.NewTicker(12 * time.Hour)
+			defer ticker.Stop()
+			for range ticker.C {
+				run()
+			}
+		}()
+	}
 	gatewayInvRepo := gateway.NewInventoryRepository(db)
 	gatewayInvSvc := gateway.NewInventoryService(gatewayInvRepo)
 	topologyRepo := topology.NewRepository(db)
@@ -306,6 +356,7 @@ func main() {
 	spaceSvc := space.NewAppService(spaceRepo, logSvc)
 	endpointSvc := endpoint.NewAppService(endpointRepo, logSvc)
 	actionSvc := action.NewActionService(serviceSvc, routeSvc, edgeSvc, endpointRepo, endpointSvc, applySvc, spaceRepo, logSvc, listenerSvc)
+	actionSvc.SetCertificateStore(certStoreSvc)
 
 	routingPolicyRepo := routingpolicy.NewRepository(db)
 	routingPolicySvc := routingpolicy.NewService(routingPolicyRepo)
@@ -572,6 +623,8 @@ func main() {
 		ServiceAuthSvc:  serviceAuthSvc,
 		EgressSvc:       egressSvc,
 		CertStore:       certStoreSvc,
+		TLSLifecycle:    tlsLifecycleSvc,
+		TLSObservers:    tlsObservers,
 		ACMEClient:      acmeClient,
 		ProvReg:         provRegistry,
 		Version:         Version,

@@ -242,6 +242,16 @@ func AllMigrations() []Migration {
 			Name:    "add_route_source_provider",
 			UpSQL:   migration045,
 		},
+		{
+			Version: "046",
+			Name:    "route_tls_binding_lifecycle",
+			UpSQL:   migration046,
+		},
+		{
+			Version: "047",
+			Name:    "certificate_reference_integrity",
+			UpSQL:   migration047,
+		},
 	}
 }
 
@@ -1339,4 +1349,67 @@ UPDATE routes SET
   source_provider = 'caddy',
   source_capabilities = '["route_host","auto_cert","load_cert"]'
 WHERE source_provider = '';
+`
+
+// migration046 separates provider-managed TLS from certificate asset binding.
+// Legacy gateway_auto cert IDs are observations of Caddy state, not custom PEM
+// assets, so routes must return to provider_auto before the next render.
+const migration046 = `
+ALTER TABLE routes ADD COLUMN tls_binding_mode TEXT NOT NULL DEFAULT '';
+ALTER TABLE routes ADD COLUMN tls_provider TEXT NOT NULL DEFAULT '';
+
+UPDATE routes SET tls_binding_mode = CASE
+  WHEN composition NOT IN ('https_route', 'http3') OR tls_enabled = 0 THEN 'off'
+  WHEN cert_id <> '' AND cert_id IN (
+    SELECT id FROM certificates WHERE source <> 'gateway_auto'
+  ) THEN 'certificate'
+  ELSE 'provider_auto'
+END;
+
+UPDATE routes SET cert_id = ''
+WHERE tls_binding_mode <> 'certificate';
+
+-- Provider-managed rows are observations, not Aegis certificate assets. Their
+-- historical copied files are deliberately left untouched during startup.
+DELETE FROM certificates WHERE source = 'gateway_auto';
+
+UPDATE routes SET tls_provider = CASE
+  WHEN tls_binding_mode = 'provider_auto' THEN COALESCE(NULLIF(source_provider, ''), 'caddy')
+  ELSE ''
+END;
+
+CREATE INDEX IF NOT EXISTS idx_routes_cert_id ON routes(cert_id);
+CREATE INDEX IF NOT EXISTS idx_routes_tls_binding_mode ON routes(tls_binding_mode);
+`
+
+// migration047 is the final integrity guard for concurrent API operations.
+// WHY: preview checks improve UX, but only the database can close the race
+// between binding a route and deleting the referenced certificate.
+const migration047 = `
+CREATE TRIGGER IF NOT EXISTS trg_routes_cert_insert_guard
+BEFORE INSERT ON routes
+WHEN NEW.cert_id <> '' AND NOT EXISTS (
+  SELECT 1 FROM certificates WHERE id = NEW.cert_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'CERTIFICATE_NOT_FOUND');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_routes_cert_update_guard
+BEFORE UPDATE OF cert_id ON routes
+WHEN NEW.cert_id <> '' AND NOT EXISTS (
+  SELECT 1 FROM certificates WHERE id = NEW.cert_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'CERTIFICATE_NOT_FOUND');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_cert_delete_reference_guard
+BEFORE DELETE ON certificates
+WHEN EXISTS (
+  SELECT 1 FROM routes WHERE cert_id = OLD.id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'CERTIFICATE_REFERENCED');
+END;
 `

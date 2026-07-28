@@ -6,12 +6,12 @@
 // reading the filesystem paths returned by CertStore — they never interact with
 // the database directly.
 //
-// The store does NOT implement ACME. Auto-cert (CapAutoCert) is delegated to
-// the provider (Caddy's built-in client). CertStore holds ONLY user-provided
-// certificates — purchased, Cloudflare Origin CA, self-signed, etc.
+// Provider auto-cert (CapAutoCert) remains provider-owned. CertStore contains
+// only Aegis-managed PEM assets: local ACME, uploaded, and external certificates.
 package certstore
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -36,7 +36,7 @@ type Certificate struct {
 // Certificate source constants.
 const (
 	SourceGatewayAuto  = "gateway_auto"  // auto-issued by provider (Caddy Let's Encrypt)
-	SourceLocalACME    = "local_acme"    // obtained via Aegis certbot ACME
+	SourceLocalACME    = "local_acme"    // obtained via embedded Aegis lego ACME
 	SourceManualUpload = "manual_upload" // user uploaded PEM
 	SourceExternal     = "external"      // external channel (Cloudflare, DigiCert, etc.)
 )
@@ -44,6 +44,9 @@ const (
 // ValidatePEM checks that the provided bytes are valid PEM-encoded cert + key.
 // Returns the parsed x509 certificate (for domain/expiry extraction) or an error.
 func ValidatePEM(certPEM, keyPEM []byte) (*x509.Certificate, error) {
+	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
+		return nil, fmt.Errorf("certificate and private key do not match: %w", err)
+	}
 	// Decode cert
 	certBlock, _ := pem.Decode(certPEM)
 	if certBlock == nil {
@@ -69,6 +72,22 @@ func ValidatePEM(certPEM, keyPEM []byte) (*x509.Certificate, error) {
 	}
 
 	return cert, nil
+}
+
+// ValidAt reports whether certificate metadata is valid at the given instant.
+func ValidAt(cert *Certificate, now time.Time) bool {
+	if cert == nil {
+		return false
+	}
+	notBefore, err := time.Parse(time.RFC3339, cert.NotBefore)
+	if err != nil {
+		return false
+	}
+	notAfter, err := time.Parse(time.RFC3339, cert.NotAfter)
+	if err != nil {
+		return false
+	}
+	return !now.Before(notBefore) && now.Before(notAfter)
 }
 
 // DomainsFromCert extracts all DNS names from the certificate (SAN + CN fallback).

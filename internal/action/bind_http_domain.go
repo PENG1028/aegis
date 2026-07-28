@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"aegis/internal/endpoint"
+	"aegis/internal/certstore"
 	"aegis/internal/core"
+	"aegis/internal/endpoint"
 	"aegis/internal/hostdep/provider"
 	"aegis/internal/route"
 	"aegis/internal/service"
@@ -49,6 +50,9 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 	}
 	if input.TargetPort <= 0 || input.TargetPort > 65535 {
 		return nil, NewError(ErrCodeTargetNotAllowed, fmt.Sprintf("invalid target_port: %d", input.TargetPort))
+	}
+	if err := s.validateCertificateBinding(input.CertID, input.Domain); err != nil {
+		return nil, NewError(ErrCodeTargetNotAllowed, err.Error())
 	}
 
 	spaceID := ac.SpaceID
@@ -99,22 +103,22 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 
 	// 6. Create route — fields derived from composition registry
 	rt := &route.Route{
-		ID:                 core.NewID("rt"),
-		Domain:             input.Domain,
-		PathPrefix:         "",
-		StripPrefix:        false,
-		ServiceID:          svc.ID,
-		Composition:        string(compDef.Key),
-		TLSEnabled:         compDef.TLSMode != "none",
-		GatewayLinkID:      input.GatewayLinkID,
-		CertID:             certIDPtr(input.CertID),
-		Status:             "active",
-		SpaceID:            spaceID,
-		OwnerType:          ownerType,
-		OwnerID:            ownerID,
-		CreatedByTokenID:   tokenID,
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		ID:               core.NewID("rt"),
+		Domain:           input.Domain,
+		PathPrefix:       "",
+		StripPrefix:      false,
+		ServiceID:        svc.ID,
+		Composition:      string(compDef.Key),
+		TLSEnabled:       compDef.TLSMode != "none",
+		GatewayLinkID:    input.GatewayLinkID,
+		CertID:           certIDPtr(input.CertID),
+		Status:           "active",
+		SpaceID:          spaceID,
+		OwnerType:        ownerType,
+		OwnerID:          ownerID,
+		CreatedByTokenID: tokenID,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 
 	if err := createRouteDirect(ctx, s.routeSvc, rt); err != nil {
@@ -161,6 +165,32 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 		Message:     fmt.Sprintf("bound HTTP domain %s -> %s:%d", input.Domain, input.TargetHost, input.TargetPort),
 		Details:     fmt.Sprintf("service_id=%s route_id=%s", svc.ID, rt.ID),
 	}, nil
+}
+
+func (s *ActionService) validateCertificateBinding(certID, domain string) error {
+	if certID == "" {
+		return nil
+	}
+	if s.certStore == nil {
+		return fmt.Errorf("certificate validation is unavailable")
+	}
+	cert, err := s.certStore.Get(certID)
+	if err != nil {
+		return fmt.Errorf("read certificate %s: %w", certID, err)
+	}
+	if cert == nil {
+		return fmt.Errorf("certificate %s not found", certID)
+	}
+	if cert.Source == certstore.SourceGatewayAuto {
+		return fmt.Errorf("provider-managed certificates cannot be bound as PEM assets")
+	}
+	if !certstore.ValidAt(cert, time.Now()) {
+		return fmt.Errorf("certificate %s is not currently valid", certID)
+	}
+	if !certstore.CoversDomain(cert, domain) {
+		return fmt.Errorf("certificate %s does not cover domain %s", certID, domain)
+	}
+	return nil
 }
 
 // createServiceDirect creates a service directly via repo (bypasses project validation).

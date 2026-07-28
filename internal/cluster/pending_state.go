@@ -25,8 +25,13 @@ type PendingApplyStatus struct {
 
 // MarkPending sets the pending_apply flag to true with a reason.
 func (ps *PendingState) MarkPending(reason string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := ps.db.Exec(
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	tx, err := ps.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(
 		`INSERT OR REPLACE INTO cluster_state (key, value, updated_at)
 		 VALUES ('pending_apply', 'true', ?)`,
 		now,
@@ -35,17 +40,44 @@ func (ps *PendingState) MarkPending(reason string) error {
 		return err
 	}
 	// Store reason + since separately
-	_, _ = ps.db.Exec(
+	if _, err = tx.Exec(
 		`INSERT OR REPLACE INTO cluster_state (key, value, updated_at)
 		 VALUES ('pending_apply_reason', ?, ?)`,
 		reason, now,
-	)
-	_, _ = ps.db.Exec(
+	); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(
 		`INSERT OR REPLACE INTO cluster_state (key, value, updated_at)
 		 VALUES ('pending_apply_since', ?, ?)`,
 		now, now,
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// PendingRevision returns the revision an Apply operation is allowed to clear.
+// An empty revision means no change was pending when Apply started.
+func (ps *PendingState) PendingRevision() string {
+	var revision string
+	_ = ps.db.QueryRow(
+		`SELECT updated_at FROM cluster_state WHERE key='pending_apply' AND value='true'`,
+	).Scan(&revision)
+	return revision
+}
+
+// ClearPendingIfUnchanged avoids erasing a mutation that arrived during Apply.
+func (ps *PendingState) ClearPendingIfUnchanged(revision string) error {
+	if revision == "" {
+		return nil
+	}
+	_, err := ps.db.Exec(
+		`UPDATE cluster_state SET value='false', updated_at=?
+		 WHERE key='pending_apply' AND value='true' AND updated_at=?`,
+		time.Now().UTC().Format(time.RFC3339Nano), revision,
 	)
-	return nil
+	return err
 }
 
 // ClearPending resets the pending_apply flag after successful apply.

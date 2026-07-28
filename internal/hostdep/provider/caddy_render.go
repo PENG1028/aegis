@@ -42,17 +42,18 @@ import (
 // (not from shell detection) so it's consistent with RuntimeMode.
 func (p *CaddyProvider) renderCaddyfile(plan Plan) []byte {
 	var buf bytes.Buffer
+	email := p.acmeEmail()
 
 	// Detect if Caddy is behind HAProxy by checking for internal_https listener.
 	// This derives the mode from Plan data — the same RuntimeMode that the
 	// Planner and API use.
 	isEdgeMux := hasListenerPurpose(plan.Listeners, "internal_https")
-	needGlobalBlock := p.email != "" || isEdgeMux
+	needGlobalBlock := email != "" || isEdgeMux
 
 	if needGlobalBlock {
 		buf.WriteString("{\n")
-		if p.email != "" {
-			buf.WriteString("    email " + sanitizeCaddyValue(p.email) + "\n")
+		if email != "" {
+			buf.WriteString("    email " + sanitizeCaddyValue(email) + "\n")
 		}
 		if isEdgeMux {
 			httpsPort := listenerPort(plan.Listeners, "internal_https")

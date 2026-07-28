@@ -1,9 +1,9 @@
 package topology
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"aegis/internal/certstore"
 	"aegis/internal/endpoint"
@@ -46,81 +46,6 @@ type Dependencies struct {
 	// HTTP provider so cross-node distnode traffic traverses the 80/443 edge.
 	// Zero disables the injection (e.g. in tests). See docs/distnode-onboarding-fix.md.
 	ControlPort int
-}
-
-// BindAutoCerts matches routes with empty cert_id to CertStore auto-certs
-// by domain, and updates the route with the cert ID. Called after Apply
-// to ensure newly imported auto-certs are linked to their routes.
-func (p *Planner) BindAutoCerts() (bound int, _ error) {
-	if p.deps.CertStore == nil || p.deps.RouteRepo == nil {
-		return 0, nil
-	}
-
-	certs, err := p.deps.CertStore.List()
-	if err != nil {
-		return 0, err
-	}
-
-	routes, err := p.deps.RouteRepo.FindActive()
-	if err != nil {
-		return 0, err
-	}
-
-	for _, rt := range routes {
-		if rt.CertID != nil && *rt.CertID != "" {
-			continue // already has a cert
-		}
-		for _, cert := range certs {
-			var domains []string
-			json.Unmarshal([]byte(cert.Domains), &domains)
-			for _, d := range domains {
-				if d == rt.Domain {
-					certID := cert.ID
-					rt.CertID = &certID
-					if err := p.deps.RouteRepo.Update(&rt); err == nil {
-						bound++
-					}
-					break
-				}
-			}
-		}
-	}
-	return bound, nil
-}
-
-// BindAutoCertForDomain looks up a cert by domain in CertStore and binds it
-// to the route if no cert is already bound. Returns true if bound.
-func (p *Planner) BindAutoCertForDomain(domain string) bool {
-	if p.deps.CertStore == nil || p.deps.RouteRepo == nil || domain == "" {
-		return false
-	}
-
-	rt, err := p.deps.RouteRepo.FindByDomain(domain)
-	if err != nil || rt == nil {
-		return false
-	}
-	if rt.CertID != nil && *rt.CertID != "" {
-		return false // already has a cert
-	}
-
-	certs, err := p.deps.CertStore.List()
-	if err != nil {
-		return false
-	}
-
-	for _, cert := range certs {
-		var domains []string
-		json.Unmarshal([]byte(cert.Domains), &domains)
-		for _, d := range domains {
-			if d == domain {
-				certID := cert.ID
-				rt.CertID = &certID
-				_ = p.deps.RouteRepo.Update(rt)
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // ============================================================================
@@ -203,25 +128,36 @@ func (p *Planner) collectIntents() ([]RouteIntent, []string, error) {
 			StripPathPrefix:    rt.StripPrefix,
 			MaintenanceEnabled: rt.MaintenanceEnabled,
 			MaintenanceMessage: rt.MaintenanceMessage,
+			TLSBindingMode:     rt.TLSBindingMode,
+			TLSExecutor:        rt.TLSProvider,
 			gatewayLinkID:      rt.GatewayLinkID,
 			serviceID:          rt.ServiceID,
 			CertID:             certIDStr(rt.CertID),
 		}
-		// Resolve cert paths from certstore for custom certs. Stat the files first:
-		// a cert DB row whose PEM files are missing (deleted out-of-band, or a DB
-		// restore/leader-sync that didn't carry the files) must NOT poison the whole
-		// apply — `caddy validate` rejects the ENTIRE Caddyfile on one bad tls path,
-		// taking every route down. Degrade that one route to auto-HTTPS with a
-		// warning instead. See docs/distnode-onboarding-fix.md (audit finding 1-1).
+		// WHY: a certificate binding is an explicit security choice. Missing local
+		// material must block Apply instead of silently changing it to provider ACME.
 		if rt.CertID != nil && *rt.CertID != "" && p.deps.CertStore != nil {
-			if cp, kp, err := p.deps.CertStore.GetPaths(*rt.CertID); err != nil {
-				warnings = append(warnings, fmt.Sprintf("route %s: cert %s unresolved (%v) — falling back to auto-cert", rt.Domain, *rt.CertID, err))
-			} else if fileExists(cp) && fileExists(kp) {
-				ri.CertPath = cp
-				ri.KeyPath = kp
-			} else {
-				warnings = append(warnings, fmt.Sprintf("route %s: cert %s files missing (%s) — falling back to auto-cert", rt.Domain, *rt.CertID, cp))
+			cert, err := p.deps.CertStore.Get(*rt.CertID)
+			if err != nil {
+				return nil, warnings, fmt.Errorf("route %s: certificate %s unresolved: %w", rt.Domain, *rt.CertID, err)
 			}
+			if cert == nil {
+				return nil, warnings, fmt.Errorf("route %s: certificate %s not found", rt.Domain, *rt.CertID)
+			}
+			if cert.Source == certstore.SourceGatewayAuto {
+				return nil, warnings, fmt.Errorf("route %s: certificate %s is provider-managed and cannot be loaded as a PEM asset", rt.Domain, *rt.CertID)
+			}
+			if !certstore.ValidAt(cert, time.Now()) {
+				warnings = append(warnings, fmt.Sprintf("route %s: certificate %s is not currently valid; renewal or replacement is required", rt.Domain, *rt.CertID))
+			}
+			if !certstore.CoversDomain(cert, rt.Domain) {
+				return nil, warnings, fmt.Errorf("route %s: certificate %s does not cover the route domain", rt.Domain, *rt.CertID)
+			}
+			if !fileExists(cert.CertPath) || !fileExists(cert.KeyPath) {
+				return nil, warnings, fmt.Errorf("route %s: certificate %s files are missing", rt.Domain, *rt.CertID)
+			}
+			ri.CertPath = cert.CertPath
+			ri.KeyPath = cert.KeyPath
 		}
 		intents = append(intents, ri)
 	}
@@ -229,8 +165,7 @@ func (p *Planner) collectIntents() ([]RouteIntent, []string, error) {
 	return intents, warnings, nil
 }
 
-// fileExists reports whether path names an existing regular file. Used to keep a
-// route with a dangling custom-cert reference from failing the whole apply.
+// fileExists reports whether path names an existing regular file.
 func fileExists(path string) bool {
 	if path == "" {
 		return false
@@ -311,6 +246,30 @@ func (p *Planner) resolveIntents(intents []RouteIntent) ([]RouteIntent, []string
 // ============================================================================
 
 func (p *Planner) PlanWithProviders(email string, available []provider.ProviderState) (*TopologyPlan, error) {
+	healthy := healthyProviders(available)
+	return p.planWithMode(email, healthy, provider.DetectRuntimeMode(healthy), false)
+}
+
+// PlanForMode plans against an explicit target mode. Stopped but installed
+// target providers are valid here because Workflow stages config before start.
+func (p *Planner) PlanForMode(email string, available []provider.ProviderState, mode provider.RuntimeMode) (*TopologyPlan, error) {
+	wanted := make(map[string]bool, len(mode.Providers))
+	for _, id := range mode.ProviderIDs() {
+		wanted[id] = true
+	}
+	var candidates []provider.ProviderState
+	for _, state := range available {
+		if wanted[state.ID] && state.Installed {
+			candidates = append(candidates, state)
+		}
+	}
+	if len(candidates) != len(wanted) {
+		return nil, fmt.Errorf("target mode %s requires all providers to be installed", mode.ID)
+	}
+	return p.planWithMode(email, candidates, mode, true)
+}
+
+func (p *Planner) planWithMode(_ string, available []provider.ProviderState, mode provider.RuntimeMode, allowMigration bool) (*TopologyPlan, error) {
 	// Phase 1-2: Collect + resolve intents
 	intents, warnings, err := p.collectIntents()
 	if err != nil {
@@ -318,25 +277,28 @@ func (p *Planner) PlanWithProviders(email string, available []provider.ProviderS
 	}
 	resolved, resolveWarns := p.resolveIntents(intents)
 	warnings = append(warnings, resolveWarns...)
-
-	healthy := healthyProviders(available)
-
-	// Detect the active runtime mode from available providers.
-	// This replaces the old shell-based CurrentPortPolicyMode() — now the Planner
-	// and API use the same detection function, eliminating divergence.
-	mode := provider.DetectRuntimeMode(healthy)
+	if err := validateExecutionAffinity(resolved, available, mode, allowMigration); err != nil {
+		return nil, err
+	}
 
 	// Phase 3: Match templates
 	var best *TopologyPlan
 	var alternatives []Solution
 
 	for _, tmpl := range p.templates {
-		plan, err := tmpl.BuildPlan(resolved, healthy, mode)
+		plan, err := tmpl.BuildPlan(resolved, available, mode)
 		if err != nil {
-			level, explanation := EvaluateFallback(tmpl.RequiredCapabilities(), healthy)
+			level, explanation := EvaluateFallback(tmpl.RequiredCapabilities(), available)
 			alternatives = append(alternatives, Solution{
 				TemplateName: tmpl.Name(), Level: level,
 				Description: tmpl.Description(), Warnings: []string{explanation},
+			})
+			continue
+		}
+		if !planMatchesMode(plan, mode) {
+			alternatives = append(alternatives, Solution{
+				TemplateName: tmpl.Name(), Level: 1,
+				Description: tmpl.Description(), Warnings: []string{"template does not use the providers assigned by the runtime mode"},
 			})
 			continue
 		}
@@ -350,7 +312,7 @@ func (p *Planner) PlanWithProviders(email string, available []provider.ProviderS
 	}
 
 	if best == nil {
-		fallback := FallbackSolution(resolved, healthy)
+		fallback := FallbackSolution(resolved, available)
 		if len(alternatives) > 0 {
 			fallback = alternatives[0]
 		}
@@ -367,18 +329,77 @@ func (p *Planner) PlanWithProviders(email string, available []provider.ProviderS
 	// provider so cross-node distnode health checks + RPC traverse the 80/443
 	// edge instead of the localhost-only API port. Capability-selected — never
 	// keyed on a provider name. See docs/distnode-onboarding-fix.md.
-	p.injectControlPlaneRoute(best, healthy)
+	p.injectControlPlaneRoute(best, available)
 
 	// ForwardTarget for transparent proxy
 	for _, ri := range resolved {
 		if ri.Transport == "tcp" && ri.AppProtocol == "raw" {
 			// Cross-node transparent forwarding needed
-			best.ForwardTarget = findForwardTarget(healthy, mode)
+			best.ForwardTarget = findForwardTarget(available, mode)
 			break
 		}
 	}
 
 	return best, nil
+}
+
+func validateExecutionAffinity(intents []RouteIntent, available []provider.ProviderState, mode provider.RuntimeMode, allowMigration bool) error {
+	for _, intent := range intents {
+		if intent.TLSBindingMode != route.TLSBindingProviderAuto {
+			continue
+		}
+		if !allowMigration && intent.TLSExecutor != "" {
+			if providerAvailableForCapability(intent.TLSExecutor, provider.CapAutoCert, available, mode) {
+				continue
+			}
+			return fmt.Errorf("route %s: automatic TLS execution binding %s is unavailable; explicit migration is required", intent.Domain, intent.TLSExecutor)
+		}
+		found := false
+		for _, providerID := range mode.ProviderIDs() {
+			if providerAvailableForCapability(providerID, provider.CapAutoCert, available, mode) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("route %s: target mode cannot recreate automatic TLS state", intent.Domain)
+		}
+	}
+	return nil
+}
+
+func providerAvailableForCapability(providerID string, capability provider.Capability, available []provider.ProviderState, mode provider.RuntimeMode) bool {
+	if providerID == "" {
+		return false
+	}
+	inMode := false
+	for _, id := range mode.ProviderIDs() {
+		if id == providerID {
+			inMode = true
+			break
+		}
+	}
+	if !inMode {
+		return false
+	}
+	for _, state := range available {
+		if state.ID == providerID && state.HasCapability(capability) {
+			return true
+		}
+	}
+	return false
+}
+
+func planMatchesMode(plan *TopologyPlan, mode provider.RuntimeMode) bool {
+	if plan == nil || len(plan.Plans) != len(mode.Providers) {
+		return false
+	}
+	for _, id := range mode.ProviderIDs() {
+		if _, ok := plan.Plans[id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // ============================================================================
@@ -417,6 +438,21 @@ func (p *Planner) injectControlPlaneRoute(plan *TopologyPlan, healthy []provider
 		return
 	}
 	pl := plan.Plans[targetID]
+	// WHY: lego must not bind :80 beside the gateway. The catch-all HTTP route
+	// lets the existing Aegis listener serve only active ACME challenge tokens.
+	pl.Routes = append(pl.Routes, provider.RouteSpec{
+		Transport:   "tcp",
+		AppProtocol: "http",
+		Match: provider.MatchSpec{
+			Host: "http://",
+			Path: "/.well-known/acme-challenge",
+		},
+		Upstream: provider.UpstreamSpec{
+			Type:   "http",
+			Target: fmt.Sprintf("http://127.0.0.1:%d", p.deps.ControlPort),
+		},
+		Priority: provider.RoutePriorityControlPlane + 100,
+	})
 	pl.Routes = append(pl.Routes, provider.RouteSpec{
 		Transport:   "tcp",
 		TLSMode:     "terminate",

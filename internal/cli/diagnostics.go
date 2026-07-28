@@ -75,6 +75,8 @@ func newDiagnosticsExportCommand(
 					"provider":         cfg.Proxy.Provider,
 					"caddyfile_path":   cfg.Proxy.CaddyfilePath,
 					"caddy_binary":     cfg.Proxy.CaddyBinary,
+					"caddy_data_dir":   cfg.Proxy.CaddyDataDir,
+					"acme_server":      cfg.Proxy.ACMEServer,
 					"reload_command":   cfg.Proxy.ReloadCommand,
 					"validate_command": cfg.Proxy.ValidateCommand,
 					"backup_dir":       cfg.Proxy.BackupDir,

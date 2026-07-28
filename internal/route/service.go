@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"aegis/internal/edgemux"
 	"aegis/internal/core"
+	"aegis/internal/edgemux"
 	"aegis/internal/logs"
 )
 
@@ -18,11 +18,10 @@ type MutationHook interface {
 
 // AppService defines the route application service interface.
 type AppService struct {
-	repo        *Repository
-	logSvc      logs.Logger
-	edgeSvc     *edgemux.AppService
-	hook        MutationHook
-	afterCreate func(rt *Route)
+	repo    *Repository
+	logSvc  logs.Logger
+	edgeSvc *edgemux.AppService
+	hook    MutationHook
 }
 
 // NewAppService creates a new route application service.
@@ -33,11 +32,6 @@ func NewAppService(repo *Repository, logSvc logs.Logger, edgeSvc *edgemux.AppSer
 // SetMutationHook sets the mutation hook for desired state regeneration.
 func (s *AppService) SetMutationHook(hook MutationHook) {
 	s.hook = hook
-}
-
-// SetAfterCreate sets a callback invoked after successful route creation.
-func (s *AppService) SetAfterCreate(fn func(rt *Route)) {
-	s.afterCreate = fn
 }
 
 // CreateRoute creates a new route.
@@ -63,9 +57,10 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 	if comp == "" {
 		comp = "https_route" // default: HTTPS with TLS termination
 	}
-
-	caps := (&Route{Composition: comp}).CapabilityKeys()
-	capsJSON, _ := json.Marshal(caps)
+	compDef := (&Route{Composition: comp}).CompDef()
+	if compDef == nil {
+		return nil, fmt.Errorf("unknown route composition %q", comp)
+	}
 
 	now := time.Now()
 	rt := &Route{
@@ -74,16 +69,15 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		PathPrefix:         input.PathPrefix,
 		StripPrefix:        input.StripPrefix,
 		ServiceID:          input.ServiceID,
-		TLSEnabled:          true,
-		Composition:         comp,
-		SourceProvider:      "caddy",
-		SourceCapabilities:  string(capsJSON),
-		Status:              "active",
-		MaintenanceEnabled:  false,
-		MaintenanceMessage:  "",
+		TLSEnabled:         compDef.TLSMode == "terminate",
+		Composition:        comp,
+		Status:             "active",
+		MaintenanceEnabled: false,
+		MaintenanceMessage: "",
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
+	normalizeRouteManagement(rt, "caddy")
 
 	if err := s.repo.Create(rt); err != nil {
 		s.logSvc.Log(ctx, "route.create", "route", rt.ID, "failed", err.Error(), "cli")
@@ -107,16 +101,13 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		}
 	}
 
-	if s.afterCreate != nil {
-		s.afterCreate(rt)
-	}
-
 	return rt, nil
 }
 
 // CreateRouteDirect creates a pre-built route directly via the repository.
 // Used by the action service to create routes with ownership fields set.
 func (s *AppService) CreateRouteDirect(rt *Route) error {
+	normalizeRouteManagement(rt, "caddy")
 	if err := s.repo.Create(rt); err != nil {
 		return err
 	}
@@ -128,7 +119,6 @@ func (s *AppService) CreateRouteDirect(rt *Route) error {
 	return nil
 }
 
-
 // UpsertSystemRoute ensures a route exists for the panel's own domain.
 // If tlsAvailable is false (no email, no custom cert), the route is created
 // as plain HTTP so Caddy does not attempt auto-TLS and block IP access.
@@ -138,6 +128,7 @@ func (s *AppService) UpsertSystemRoute(ctx context.Context, domain string, tlsAv
 		if existing.TLSEnabled != tlsAvailable || existing.Composition != compositionForTLS(tlsAvailable) {
 			existing.TLSEnabled = tlsAvailable
 			existing.Composition = compositionForTLS(tlsAvailable)
+			normalizeRouteManagement(existing, "caddy")
 			existing.UpdatedAt = time.Now()
 			return s.repo.Update(existing)
 		}
@@ -155,7 +146,14 @@ func (s *AppService) UpsertSystemRoute(ctx context.Context, domain string, tlsAv
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+	normalizeRouteManagement(rt, "caddy")
 	return s.repo.Create(rt)
+}
+
+func normalizeRouteManagement(rt *Route, defaultProvider string) {
+	rt.NormalizeManagement(defaultProvider)
+	capsJSON, _ := json.Marshal(rt.CapabilityKeys())
+	rt.SourceCapabilities = string(capsJSON)
 }
 
 func compositionForTLS(tlsAvailable bool) string {
@@ -192,6 +190,63 @@ func (s *AppService) ListRoutes(ctx context.Context) ([]Route, error) {
 // FindRoutesByCertID returns all routes that reference a given certificate.
 func (s *AppService) FindRoutesByCertID(ctx context.Context, certID string) ([]Route, error) {
 	return s.repo.FindByCertID(certID)
+}
+
+// SetTLSBinding changes how a TLS-terminating route obtains its certificate.
+func (s *AppService) SetTLSBinding(ctx context.Context, idOrDomain, mode, providerID, certID string) (*Route, error) {
+	rt, err := s.GetRoute(ctx, idOrDomain)
+	if err != nil {
+		return nil, err
+	}
+	def := rt.CompDef()
+	if def == nil || def.TLSMode != "terminate" {
+		return nil, fmt.Errorf("route %q does not terminate TLS", rt.Domain)
+	}
+
+	switch mode {
+	case TLSBindingProviderAuto:
+		rt.CertID = nil
+		rt.TLSBindingMode = TLSBindingProviderAuto
+		rt.TLSProvider = providerID
+	case TLSBindingCertificate:
+		if certID == "" {
+			return nil, fmt.Errorf("certificate ID is required")
+		}
+		rt.CertID = &certID
+		rt.TLSBindingMode = TLSBindingCertificate
+		rt.TLSProvider = ""
+	default:
+		return nil, fmt.Errorf("invalid TLS binding mode %q", mode)
+	}
+
+	normalizeRouteManagement(rt, rt.SourceProvider)
+	rt.UpdatedAt = time.Now()
+	if err := s.repo.Update(rt); err != nil {
+		return nil, fmt.Errorf("update TLS binding: %w", err)
+	}
+	if s.hook != nil {
+		if err := s.hook.OnRouteChanged(ctx, rt.ID); err != nil {
+			s.logSvc.Log(ctx, "desired-state.regen", "route", rt.ID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+		}
+	}
+	return rt, nil
+}
+
+// SetCertificateBindings atomically binds one portable certificate asset to a
+// validated set of routes. Validation belongs to tlslifecycle; this method owns
+// persistence and desired-state notifications.
+func (s *AppService) SetCertificateBindings(ctx context.Context, routeIDs []string, certID string) error {
+	if err := s.repo.SetCertificateBindings(routeIDs, certID, time.Now()); err != nil {
+		return err
+	}
+	if s.hook != nil {
+		for _, routeID := range routeIDs {
+			if err := s.hook.OnRouteChanged(ctx, routeID); err != nil {
+				s.logSvc.Log(ctx, "desired-state.regen", "route", routeID, "warning", "desired state regeneration failed: "+err.Error(), "system")
+			}
+		}
+	}
+	return nil
 }
 
 // GetRoute finds a route by ID or domain.

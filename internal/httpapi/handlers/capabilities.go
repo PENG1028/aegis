@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+
+	providerpkg "aegis/internal/hostdep/provider"
 )
 
 // capabilityStatus is the common response shape for resource capability queries.
@@ -26,18 +28,33 @@ func (h *Handlers) AdminRouteCapabilityStatus(w http.ResponseWriter, r *http.Req
 
 	provider := rt.SourceProvider
 	if provider == "" {
-		provider = "caddy"
+		provider = "unassigned"
+	}
+	migrationAvailable := false
+	if h.ProvReg != nil {
+		for _, mode := range providerpkg.AllRuntimeModes() {
+			target, _ := routeExecutionForMode(*rt, mode, h.ProvReg)
+			if target != "" && target != currentRouteExecutor(*rt) {
+				migrationAvailable = true
+				break
+			}
+		}
+	}
+	semantics := make(map[string]providerpkg.CapabilitySemantics)
+	for _, capability := range rt.CapabilityKeys() {
+		semantics[capability] = providerpkg.SemanticsOf(providerpkg.Capability(capability))
 	}
 
 	resp := map[string]interface{}{
-		"route_id":     rt.ID,
-		"provider":     provider,
-		"capabilities": parseCapJSON(rt.SourceCapabilities),
+		"route_id":             rt.ID,
+		"provider":             provider,
+		"capabilities":         parseCapJSON(rt.SourceCapabilities),
+		"capability_semantics": semantics,
 		"operations": map[string]capOp{
 			"modify": {Available: true},
 			"delete": {Available: true},
-			"switch_provider": {
-				Available: provider == "caddy" || provider == "haproxy",
+			"migrate_execution": {
+				Available: migrationAvailable,
 				Reason:    "",
 			},
 		},
@@ -77,6 +94,7 @@ func (h *Handlers) AdminCertCapabilityStatus(w http.ResponseWriter, r *http.Requ
 	// Count routes that reference this cert
 	refs, _ := h.Route.FindRoutesByCertID(r.Context(), id)
 	refCount := len(refs)
+	deleteAvailable := certCanDelete(cert.Source) && refCount == 0
 
 	var refIDs []string
 	for _, ref := range refs {
@@ -84,19 +102,19 @@ func (h *Handlers) AdminCertCapabilityStatus(w http.ResponseWriter, r *http.Requ
 	}
 
 	resp := map[string]interface{}{
-		"cert_id":     cert.ID,
-		"source":      cert.Source,
-		"managed_by":  managedBy,
-		"ref_count":   refCount,
+		"cert_id":       cert.ID,
+		"source":        cert.Source,
+		"managed_by":    managedBy,
+		"ref_count":     refCount,
 		"ref_route_ids": refIDs,
 		"operations": map[string]capOp{
 			"delete": {
-				Available: certCanDelete(cert.Source),
+				Available: deleteAvailable,
 				Reason:    certDeleteReason(cert.Source, refCount),
 			},
 			"renew": {
-				Available: cert.Source == "gateway_auto" || cert.Source == "local_acme",
-				Reason:    "",
+				Available: cert.Source == "local_acme",
+				Reason:    certRenewReason(cert.Source),
 			},
 		},
 	}
@@ -104,10 +122,20 @@ func (h *Handlers) AdminCertCapabilityStatus(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func certRenewReason(source string) string {
+	if source == "gateway_auto" {
+		return "renewal is managed internally by the automatic TLS executor"
+	}
+	if source != "local_acme" {
+		return "this certificate must be replaced manually"
+	}
+	return ""
+}
+
 func certManagedBy(source string) string {
 	switch source {
 	case "gateway_auto":
-		return "caddy"
+		return "executor"
 	case "local_acme":
 		return "aegis"
 	case "manual_upload", "external":
@@ -123,7 +151,7 @@ func certCanDelete(source string) bool {
 
 func certDeleteReason(source string, refCount int) string {
 	if source == "gateway_auto" {
-		return "Caddy 自动签发的证书，删除后将自动重新签发"
+		return "自动 TLS 状态随入口策略管理，不能作为独立证书资产删除"
 	}
 	if refCount > 0 {
 		return "certificate is referenced by routes — unbind first"

@@ -156,11 +156,8 @@ func (p *HAProxyProvider) Apply(configs []ConfigFile) error {
 		return fmt.Errorf("no config files to apply")
 	}
 
-	// Write all config files first
-	for _, cf := range configs {
-		if err := p.applyOne(cf); err != nil {
-			return fmt.Errorf("apply %s: %w", cf.Path, err)
-		}
+	if err := p.StageConfig(configs); err != nil {
+		return err
 	}
 
 	// Reload once after all files are written
@@ -180,6 +177,19 @@ func (p *HAProxyProvider) Apply(configs []ConfigFile) error {
 		return fmt.Errorf("reload failed (all configs restored from backup): %w", err)
 	}
 
+	return nil
+}
+
+// StageConfig validates and writes all HAProxy files before port handoff.
+func (p *HAProxyProvider) StageConfig(configs []ConfigFile) error {
+	if len(configs) == 0 {
+		return fmt.Errorf("no config files to stage")
+	}
+	for _, cf := range configs {
+		if err := p.applyOne(cf); err != nil {
+			return fmt.Errorf("stage %s: %w", cf.Path, err)
+		}
+	}
 	return nil
 }
 

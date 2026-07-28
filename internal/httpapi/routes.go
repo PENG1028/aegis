@@ -3,6 +3,7 @@ package httpapi
 import (
 	"aegis/internal/httpapi/handlers"
 	"aegis/internal/uiassets"
+	"encoding/json"
 	"net/http"
 )
 
@@ -40,9 +41,11 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		PolicySvc:       svcs.PolicySvc,
 		RoutingTableSvc: svcs.RoutingTableSvc,
 		TransparentMgr:  svcs.TransparentMgr,
-		ProvReg:         svcs.ProvReg,    // v1.8L-19 — provider registry for install/uninstall/config handlers
-		EgressSvc:       svcs.EgressSvc,  // v1.9A-5 — egress rule engine
-		CertStore:       svcs.CertStore,  // v1.9C — TLS certificate store
+		ProvReg:         svcs.ProvReg,   // v1.8L-19 — provider registry for install/uninstall/config handlers
+		EgressSvc:       svcs.EgressSvc, // v1.9A-5 — egress rule engine
+		CertStore:       svcs.CertStore, // v1.9C — TLS certificate store
+		TLSLifecycle:    svcs.TLSLifecycle,
+		TLSObservers:    svcs.TLSObservers,
 		ACMEClient:      svcs.ACMEClient, // v1.9C — ACME auto-cert manager
 		DistNode:        svcs.DistNode,   // v1.9B — distributed node runtime (was never wired → admin/call endpoints saw nil)
 		DNSMgmt:         svcs.DNSMgmt,    // was never wired → egress toggle-off silently failed to stop the DNS resolver
@@ -61,6 +64,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	}
 
 	// System
+	mux.HandleFunc("GET /.well-known/acme-challenge/{token}", h.ACMEHTTPChallenge)
 	mux.HandleFunc("GET /api/system/status", h.SystemStatus)
 	mux.HandleFunc("GET /api/system/runtime-mode", h.RuntimeMode)  // v1.8L-20
 	mux.HandleFunc("GET /api/system/compositions", h.Compositions) // v1.8L-22 — canonical composition registry
@@ -104,6 +108,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("POST /api/admin/v1/routes/{id}/enable", h.EnableRoute)
 	mux.HandleFunc("POST /api/admin/v1/routes/{id}/disable", h.DisableRoute)
 	mux.HandleFunc("DELETE /api/admin/v1/routes/{id}", h.AdminDeleteRoute)
+	mux.HandleFunc("GET /api/admin/v1/routes/{id}/delete-preview", h.AdminPreviewDeleteRoute)
+	mux.HandleFunc("PUT /api/admin/v1/routes/{id}/tls-binding", h.AdminSetRouteTLSBinding)
 	mux.HandleFunc("POST /api/routes/{id}/switch-service", h.SwitchRouteService)
 	mux.HandleFunc("POST /api/routes/{id}/maintenance-on", h.RouteMaintenanceOn)
 	mux.HandleFunc("POST /api/routes/{id}/maintenance-off", h.RouteMaintenanceOff)
@@ -205,6 +211,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/routes/safety", h.CheckAllRoutesSafety)
 	mux.HandleFunc("GET /api/admin/v1/routes/{id}/capability-status", h.AdminRouteCapabilityStatus)
 	mux.HandleFunc("GET /api/admin/v1/certificates/{id}/capability-status", h.AdminCertCapabilityStatus)
+	mux.HandleFunc("GET /api/admin/v1/certificates/{id}/binding-preview", h.AdminPreviewCertificateBindings)
+	mux.HandleFunc("POST /api/admin/v1/certificates/{id}/bindings", h.AdminBindCertificateRoutes)
 	mux.HandleFunc("GET /api/admin/v1/trace/egress", h.TraceEgress)
 	// v1.7AB Gateway Links
 	mux.HandleFunc("POST /api/admin/v1/gateway-links", h.CreateGatewayLink)
@@ -371,6 +379,7 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("POST /api/admin/v1/certificates/{id}/renew", h.AdminRenewCert)
 		mux.HandleFunc("POST /api/admin/v1/certificates", h.AdminUploadCertificate)
 		mux.HandleFunc("DELETE /api/admin/v1/certificates/{id}", h.AdminDeleteCertificate)
+		mux.HandleFunc("GET /api/admin/v1/certificates/{id}/delete-preview", h.AdminPreviewDeleteCertificate)
 		// ACME endpoints
 		mux.HandleFunc("POST /api/admin/v1/acme/obtain", h.AdminACMEObtain)
 		mux.HandleFunc("GET /api/admin/v1/acme/status", h.AdminACMEStatus)
@@ -378,6 +387,11 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("POST /api/admin/v1/infra/{name}/install", h.InfraInstall)
 		mux.HandleFunc("DELETE /api/admin/v1/infra/{name}", h.InfraUninstall)
 	}
+
+	// WHY: API typos and unsupported methods must never look successful by
+	// falling through to the SPA shell. Specific API patterns remain preferred.
+	mux.HandleFunc("/api", apiNotFound)
+	mux.HandleFunc("/api/{path...}", apiNotFound)
 
 	// v1.8J Embedded UI — catch-all for SPA routes not matching any API path.
 	// Uses /{path...} wildcard to match all paths (Go 1.22+ mux syntax).
@@ -387,4 +401,15 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		panic("uiassets: failed to initialize embedded UI handler: " + err.Error())
 	}
 	mux.HandleFunc("/{path...}", uiHandler.ServeHTTP)
+}
+
+func apiNotFound(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": map[string]string{
+			"code":    "NOT_FOUND",
+			"message": "API endpoint not found",
+		},
+	})
 }

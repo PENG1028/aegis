@@ -57,6 +57,45 @@ func TestAuthMiddlewareBlocksNonLoginWithoutToken(t *testing.T) {
 	t.Log("Bug 1 regression PASS: non-admin paths correctly require Bearer token")
 }
 
+func TestAuthMiddlewareBypassesACMEHTTPChallenge(t *testing.T) {
+	called := false
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	h := NewAuthMiddleware("test-admin-token").Middleware(handler)
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/acme-challenge/test-token", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if !called {
+		t.Fatal("ACME HTTP-01 challenge did not reach the public handler")
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestAuthMiddlewareProtectsUnknownWellKnownPath(t *testing.T) {
+	called := false
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})
+
+	h := NewAuthMiddleware("test-admin-token").Middleware(handler)
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/other", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if called {
+		t.Fatal("unknown .well-known path reached the protected handler")
+	}
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+}
+
 func TestAuthMiddlewareLoginWrongPassword(t *testing.T) {
 	// The login handler itself should return "invalid credentials" not "missing Authorization header"
 	// This tests that the middleware lets the request through to the handler

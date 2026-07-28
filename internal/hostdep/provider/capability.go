@@ -23,6 +23,79 @@ package provider
 // closed enumeration — every gateway-relevant protocol primitive is covered.
 type Capability string
 
+// StateClass describes the state produced or consumed by a capability. It is
+// intentionally orthogonal to the capability key: equal capabilities are not
+// interchangeable when one execution owns non-portable state.
+type StateClass string
+
+const (
+	StateDeclarative     StateClass = "declarative"
+	StatePortableAsset   StateClass = "portable_asset"
+	StateProviderManaged StateClass = "provider_managed"
+	StateRuntime         StateClass = "runtime"
+)
+
+type Affinity string
+
+const (
+	AffinityNone           Affinity = "none"
+	AffinityExecutorSticky Affinity = "executor_sticky"
+	AffinityBundleSticky   Affinity = "bundle_sticky"
+)
+
+type MigrationStrategy string
+
+const (
+	MigrationRerender    MigrationStrategy = "re_render"
+	MigrationReloadAsset MigrationStrategy = "reload_asset"
+	MigrationRecreate    MigrationStrategy = "recreate"
+	MigrationRestart     MigrationStrategy = "restart"
+	MigrationUnsupported MigrationStrategy = "unsupported"
+)
+
+// CapabilitySemantics declares lifecycle behavior, not runtime availability.
+// ProviderState remains authoritative for whether an executor is currently
+// installed, healthy, and able to perform the capability.
+type CapabilitySemantics struct {
+	StateClass  StateClass        `json:"state_class"`
+	Affinity    Affinity          `json:"affinity"`
+	Migration   MigrationStrategy `json:"migration"`
+	CoupledWith []Capability      `json:"coupled_with,omitempty"`
+}
+
+// SemanticsOf is the canonical lifecycle contract for planner and UI previews.
+func SemanticsOf(capability Capability) CapabilitySemantics {
+	switch capability {
+	case CapAutoCert:
+		return CapabilitySemantics{
+			StateClass: StateProviderManaged, Affinity: AffinityExecutorSticky,
+			Migration:   MigrationRecreate,
+			CoupledWith: []Capability{CapTLSTerminate, CapRouteHost},
+		}
+	case CapLoadCert:
+		return CapabilitySemantics{
+			StateClass: StatePortableAsset, Affinity: AffinityNone,
+			Migration:   MigrationReloadAsset,
+			CoupledWith: []Capability{CapTLSTerminate},
+		}
+	case CapListenTCP, CapListenUDP:
+		return CapabilitySemantics{
+			StateClass: StateRuntime, Affinity: AffinityBundleSticky,
+			Migration: MigrationRestart,
+		}
+	case CapHotReload, CapValidateConfig:
+		return CapabilitySemantics{
+			StateClass: StateRuntime, Affinity: AffinityExecutorSticky,
+			Migration: MigrationUnsupported,
+		}
+	default:
+		return CapabilitySemantics{
+			StateClass: StateDeclarative, Affinity: AffinityNone,
+			Migration: MigrationRerender,
+		}
+	}
+}
+
 const (
 	// ==========================================================================
 	// L3 — Network layer
@@ -236,16 +309,17 @@ func (c Capability) IsIngress() bool {
 
 // CapabilityDef is a UI-ready description of a single capability.
 type CapabilityDef struct {
-	Key         string `json:"key"`         // e.g. "listen_tcp"
-	Layer       string `json:"layer"`       // "L3" | "L4" | "L5" | "L6" | "L7"
-	Label       string `json:"label"`       // Chinese display name
-	Description string `json:"description"` // One-line explanation
+	Key         string              `json:"key"`         // e.g. "listen_tcp"
+	Layer       string              `json:"layer"`       // "L3" | "L4" | "L5" | "L6" | "L7"
+	Label       string              `json:"label"`       // Chinese display name
+	Description string              `json:"description"` // One-line explanation
+	Semantics   CapabilitySemantics `json:"semantics"`
 }
 
 // AllCapabilities returns all 30 capabilities in layer-grouped display order.
 // This is the canonical row list for the capability matrix UI.
 func AllCapabilities() []CapabilityDef {
-	return []CapabilityDef{
+	definitions := []CapabilityDef{
 		// L3 — Network
 		{Key: "route_src_ip", Layer: "L3", Label: "源 IP 路由", Description: "基于客户端源 IP 的流量路由与白名单"},
 		{Key: "transparent_proxy", Layer: "L3", Label: "透明代理", Description: "通过 iptables DNAT 拦截出站 TCP 连接并重定向"},
@@ -291,6 +365,10 @@ func AllCapabilities() []CapabilityDef {
 		{Key: "hot_reload", Layer: "L7", Label: "热重载", Description: "不中断现有连接即可重载配置"},
 		{Key: "validate_config", Layer: "L7", Label: "配置校验", Description: "在应用前对配置文件进行语法验证"},
 	}
+	for i := range definitions {
+		definitions[i].Semantics = SemanticsOf(Capability(definitions[i].Key))
+	}
+	return definitions
 }
 
 // TheoreticalMaxCapabilities returns the full set of capabilities a gateway type

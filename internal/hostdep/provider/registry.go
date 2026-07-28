@@ -1,6 +1,9 @@
 package provider
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ============================================================================
 // Registry — manages the set of known Provider implementations.
@@ -23,8 +26,8 @@ import "fmt"
 
 // Registry manages a set of Provider implementations.
 type Registry struct {
-	providers map[string]Provider       // keyed by Provider.State().ID
-	order     []string                  // registration order
+	providers map[string]Provider        // keyed by Provider.State().ID
+	order     []string                   // registration order
 	builtins  map[string]func() Provider // zero-config constructors for built-in providers
 }
 
@@ -119,6 +122,33 @@ func (r *Registry) ListAll() []Provider {
 		}
 	}
 	return all
+}
+
+// ReloadCertificateConsumers reloads running providers that can load PEM
+// assets. It is the post-renewal bridge used by certstore.ProviderReloader.
+func (r *Registry) ReloadCertificateConsumers() error {
+	if r == nil {
+		return nil
+	}
+	var failures []string
+	for _, p := range r.ListAll() {
+		state := p.State()
+		if !state.Running || !state.HasCapability(CapLoadCert) {
+			continue
+		}
+		reloader, ok := p.(ReloadableProvider)
+		if !ok {
+			failures = append(failures, state.ID+": reload unsupported")
+			continue
+		}
+		if err := reloader.Reload(); err != nil {
+			failures = append(failures, state.ID+": "+err.Error())
+		}
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("reload certificate consumers: %s", strings.Join(failures, "; "))
+	}
+	return nil
 }
 
 // protocolCaps maps protocol types to required capabilities.

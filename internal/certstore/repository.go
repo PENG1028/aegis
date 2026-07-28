@@ -3,10 +3,13 @@ package certstore
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
+
+var ErrCertificateReferenced = errors.New("certificate is referenced by routes")
 
 // Repository handles database operations for certificates.
 type Repository struct {
@@ -104,23 +107,50 @@ func (r *Repository) FindByDomain(domain string) ([]Certificate, error) {
 // Delete removes a certificate record by ID.
 func (r *Repository) Delete(id string) error {
 	_, err := r.db.Exec(`DELETE FROM certificates WHERE id = ?`, id)
+	if err != nil && strings.Contains(err.Error(), "CERTIFICATE_REFERENCED") {
+		return ErrCertificateReferenced
+	}
 	return err
 }
 
-// Update updates an existing certificate record's expiry and issuer fields.
+// Update updates certificate metadata while preserving its stable ID and paths.
 func (r *Repository) Update(cert *Certificate) error {
 	_, err := r.db.Exec(
-		`UPDATE certificates SET not_before=?, not_after=?, issuer=?, updated_at=? WHERE id=?`,
-		cert.NotBefore, cert.NotAfter, cert.Issuer, cert.UpdatedAt.Format(time.RFC3339), cert.ID,
+		`UPDATE certificates SET domains=?, not_before=?, not_after=?, issuer=?, note=?, updated_at=? WHERE id=?`,
+		cert.Domains, cert.NotBefore, cert.NotAfter, cert.Issuer, cert.Note,
+		cert.UpdatedAt.Format(time.RFC3339), cert.ID,
 	)
 	return err
 }
 
 // matchDomain checks if pattern (which may start with "*.") covers domain.
 func matchDomain(pattern, domain string) bool {
+	pattern = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(pattern), "."))
+	domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
 	if strings.HasPrefix(pattern, "*.") {
-		suffix := pattern[1:] // ".example.com"
-		return strings.HasSuffix(domain, suffix)
+		suffix := pattern[2:]
+		if suffix == "" || !strings.HasSuffix(domain, "."+suffix) {
+			return false
+		}
+		// RFC 6125 wildcards cover exactly one label.
+		return strings.Count(domain, ".") == strings.Count(suffix, ".")+1
 	}
 	return pattern == domain
+}
+
+// CoversDomain reports whether a certificate SAN/CN set covers domain.
+func CoversDomain(cert *Certificate, domain string) bool {
+	if cert == nil {
+		return false
+	}
+	var domains []string
+	if err := json.Unmarshal([]byte(cert.Domains), &domains); err != nil {
+		return false
+	}
+	for _, pattern := range domains {
+		if matchDomain(pattern, domain) {
+			return true
+		}
+	}
+	return false
 }

@@ -2,6 +2,7 @@ package certstore
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -9,14 +10,19 @@ import (
 // ACMERenewer is an optional interface for ACME-based certificate renewal.
 // The acme package implements this; certstore does not depend on acme.
 type ACMERenewer interface {
-	Renew(ctx context.Context, domains []string) (certID string, err error)
+	RenewCertificate(ctx context.Context, certID string, domains []string) (renewedID string, err error)
 }
 
-// ProviderReloader reloads the gateway provider that handles auto-cert
-// (e.g., Caddy). Defined here as an interface so certstore does not
-// import the provider package directly.
+// ProviderReloader is implemented by the provider registry. The small
+// interface keeps certificate policy independent from gateway packages.
 type ProviderReloader interface {
-	Reload() error
+	ReloadCertificateConsumers() error
+}
+
+// RenewalCoordinator holds the canonical apply lock across PEM replacement and
+// provider reload, preventing config validation from observing a mixed pair.
+type RenewalCoordinator interface {
+	RenewCertificateAndApply(ctx context.Context, mutate func() error) error
 }
 
 // ExpiringCert wraps a Certificate with computed fields about its expiry.
@@ -30,27 +36,31 @@ type ExpiringCert struct {
 
 // RenewalResult is returned after a renewal attempt.
 type RenewalResult struct {
-	CertID   string `json:"cert_id"`
-	Renewed  bool   `json:"renewed"`
-	Message  string `json:"message"`
-	NotAfter string `json:"not_after"`
+	CertID       string `json:"cert_id"`
+	Renewed      bool   `json:"renewed"`
+	PendingApply bool   `json:"pending_apply,omitempty"`
+	Message      string `json:"message"`
+	NotAfter     string `json:"not_after"`
 }
 
 // CertRenewalChecker checks certificate expiry and triggers renewal.
 type CertRenewalChecker struct {
-	svc      *Service
-	acme     ACMERenewer       // nil if no ACME capability
-	reloader ProviderReloader  // reloads the gateway provider for auto-cert renewal
+	svc         *Service
+	acme        ACMERenewer // nil if no ACME capability
+	reloader    ProviderReloader
+	coordinator RenewalCoordinator
 }
 
 func NewCertRenewalChecker(svc *Service, acme ACMERenewer) *CertRenewalChecker {
 	return &CertRenewalChecker{svc: svc, acme: acme}
 }
 
-// SetProviderReloader sets the gateway provider reloader for auto-cert renewal.
-// Called from main.go after the provider registry is available.
-func (c *CertRenewalChecker) SetProviderReloader(r ProviderReloader) {
-	c.reloader = r
+func (c *CertRenewalChecker) SetProviderReloader(reloader ProviderReloader) {
+	c.reloader = reloader
+}
+
+func (c *CertRenewalChecker) SetRenewalCoordinator(coordinator RenewalCoordinator) {
+	c.coordinator = coordinator
 }
 
 // Check returns all certificates expiring within the given number of days.
@@ -75,7 +85,7 @@ func (c *CertRenewalChecker) Check(ctx context.Context, withinDays int) ([]Expir
 		switch cert.Source {
 		case SourceGatewayAuto:
 			ec.RenewMethod = "gateway_auto"
-			ec.CanRenew = true
+			ec.CanRenew = false
 			ec.RenewNote = "网关自动续期，重载网关提供者即可触发。"
 		case SourceLocalACME:
 			ec.RenewMethod = "acme"
@@ -101,29 +111,71 @@ func (c *CertRenewalChecker) Renew(ctx context.Context, certID string) (*Renewal
 	if err != nil {
 		return nil, err
 	}
+	if cert == nil {
+		return nil, fmt.Errorf("certificate %s not found", certID)
+	}
 	switch cert.Source {
 	case SourceGatewayAuto:
-		if c.reloader != nil {
-			if err := c.reloader.Reload(); err != nil {
-				return &RenewalResult{CertID: certID, Message: fmt.Sprintf("gateway reload failed: %v", err)}, nil
-			}
-		}
-		c.svc.SyncAutoCerts("")
-		return &RenewalResult{CertID: certID, Renewed: true, Message: "Gateway reloaded, auto-renewal triggered."}, nil
+		return &RenewalResult{CertID: certID, Message: "Renewal is managed internally by the gateway provider."}, nil
 
 	case SourceLocalACME:
 		if c.acme == nil {
 			return nil, fmt.Errorf("ACME not configured")
 		}
 		var domains []string
-		fmt.Sscanf(cert.Domains, "%q", &domains)
-		newID, err := c.acme.Renew(ctx, domains)
+		if err := json.Unmarshal([]byte(cert.Domains), &domains); err != nil || len(domains) == 0 {
+			return nil, fmt.Errorf("certificate domains are invalid")
+		}
+		newID := ""
+		renew := func() error {
+			var renewErr error
+			newID, renewErr = c.acme.RenewCertificate(ctx, certID, domains)
+			return renewErr
+		}
+		if c.coordinator != nil {
+			err = c.coordinator.RenewCertificateAndApply(ctx, renew)
+		} else {
+			err = renew()
+		}
 		if err != nil {
+			if newID != "" {
+				return &RenewalResult{CertID: newID, Renewed: true, PendingApply: true, Message: fmt.Sprintf("ACME renewed, but provider apply failed: %v", err)}, nil
+			}
 			return &RenewalResult{CertID: certID, Message: fmt.Sprintf("ACME renewal failed: %v", err)}, nil
+		}
+		if c.coordinator != nil {
+			return &RenewalResult{CertID: newID, Renewed: true, Message: "ACME renewal succeeded."}, nil
+		}
+		if c.reloader == nil {
+			return &RenewalResult{CertID: newID, Renewed: true, PendingApply: true, Message: "ACME renewed, but provider reload is unavailable."}, nil
+		}
+		if err := c.reloader.ReloadCertificateConsumers(); err != nil {
+			return &RenewalResult{CertID: newID, Renewed: true, PendingApply: true, Message: fmt.Sprintf("ACME renewed, but provider reload failed: %v", err)}, nil
 		}
 		return &RenewalResult{CertID: newID, Renewed: true, Message: "ACME renewal succeeded."}, nil
 
 	default:
 		return &RenewalResult{CertID: certID, Message: "此证书为手动导入，无法自动续期。"}, nil
 	}
+}
+
+// RenewExpiring renews eligible local ACME certificates inside the threshold.
+func (c *CertRenewalChecker) RenewExpiring(ctx context.Context, withinDays int) []RenewalResult {
+	expiring, err := c.Check(ctx, withinDays)
+	if err != nil {
+		return []RenewalResult{{Message: err.Error()}}
+	}
+	results := make([]RenewalResult, 0)
+	for _, cert := range expiring {
+		if !cert.CanRenew || cert.Source != SourceLocalACME {
+			continue
+		}
+		result, err := c.Renew(ctx, cert.ID)
+		if err != nil {
+			results = append(results, RenewalResult{CertID: cert.ID, Message: err.Error()})
+			continue
+		}
+		results = append(results, *result)
+	}
+	return results
 }

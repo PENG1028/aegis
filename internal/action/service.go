@@ -5,9 +5,10 @@ import (
 	"fmt"
 
 	"aegis/internal/apply"
+	"aegis/internal/certstore"
+	"aegis/internal/core"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
-	"aegis/internal/core"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/route"
@@ -39,7 +40,14 @@ type ActionService struct {
 	spaceRepo    *space.Repository
 	logSvc       logs.Logger
 	listenerSvc  *listener.Service
+	certStore    *certstore.Service
 	callReporter CallReporter // optional, set via SetCallReporter
+}
+
+// SetCertificateStore enables certificate ownership and domain validation for
+// actions that create certificate-bound routes.
+func (s *ActionService) SetCertificateStore(store *certstore.Service) {
+	s.certStore = store
 }
 
 // NewActionService creates a new ActionService.

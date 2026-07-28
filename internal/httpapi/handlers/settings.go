@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"aegis/internal/certstore"
 	"aegis/internal/endpoint"
 	"aegis/internal/hostdep/provider"
 	"aegis/internal/service"
@@ -37,6 +38,7 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 //
 // Allowed fields:
 //   - managed_domain.gateway_domain — sets the panel domain, triggers Caddyfile regen + reload
+//   - managed_domain.certificate_id — explicitly binds a CertStore asset to the panel route
 //   - proxy.email — Let's Encrypt notification email
 //
 // Security: admin_token, sqlite_path, and other critical fields are NOT updatable
@@ -50,6 +52,11 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	changed := false
 	domainChanged := false
+	tlsStrategyChanged := false
+	emailChanged := false
+	bindingRequested := false
+	requestedCertID := ""
+	nextGatewayDomain := h.Config.ManagedDomain.GatewayDomain
 
 	// ─── managed_domain.gateway_domain ───
 	if mdRaw, ok := req["managed_domain"]; ok {
@@ -71,10 +78,38 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if domainStr != h.Config.ManagedDomain.GatewayDomain {
-				h.Config.ManagedDomain.GatewayDomain = domainStr
+				nextGatewayDomain = domainStr
 				changed = true
 				domainChanged = true
 			}
+		}
+		if certID, ok := md["certificate_id"]; ok {
+			certIDStr, ok := certID.(string)
+			if !ok || strings.TrimSpace(certIDStr) == "" {
+				writeError(w, http.StatusBadRequest, "certificate_id must be a non-empty string")
+				return
+			}
+			certIDStr = strings.TrimSpace(certIDStr)
+			domain := nextGatewayDomain
+			if domain == "" || h.CertStore == nil {
+				writeError(w, http.StatusBadRequest, "a panel domain and certificate store are required")
+				return
+			}
+			cert, err := h.CertStore.Get(certIDStr)
+			if err != nil || cert == nil {
+				writeError(w, http.StatusBadRequest, "certificate not found")
+				return
+			}
+			if cert.Source == certstore.SourceGatewayAuto || !certstore.ValidAt(cert, time.Now()) || !certstore.CoversDomain(cert, domain) {
+				writeError(w, http.StatusBadRequest, "certificate cannot be bound to the panel domain")
+				return
+			}
+			requestedCertID = certIDStr
+			bindingRequested = true
+			changed = true
+		}
+		if domainChanged {
+			h.Config.ManagedDomain.GatewayDomain = nextGatewayDomain
 		}
 	}
 
@@ -95,6 +130,8 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			if emailStr != h.Config.Proxy.Email {
 				h.Config.Proxy.Email = emailStr
 				changed = true
+				tlsStrategyChanged = true
+				emailChanged = true
 			}
 		}
 
@@ -167,18 +204,23 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := map[string]interface{}{
-		"status":             "updated",
-		"message":            "settings saved",
-		"gateway_domain":     h.Config.ManagedDomain.GatewayDomain,
-		"config_path":        configPath,
+		"status":         "updated",
+		"message":        "settings saved",
+		"gateway_domain": h.Config.ManagedDomain.GatewayDomain,
+		"config_path":    configPath,
+	}
+	if emailChanged && h.ACMEClient != nil {
+		if err := h.ACMEClient.UpdateEmail(r.Context(), h.Config.Proxy.Email); err != nil {
+			result["acme_email_warning"] = err.Error()
+		}
 	}
 
 	// If domain changed, ensure panel service + endpoint exist,
 	// then create a system route via the Apply pipeline.
 	// Panel domain now goes through: service+endpoint → route → Apply → planner → render → reload
-	if domainChanged {
+	if domainChanged || bindingRequested || tlsStrategyChanged {
 		domain := h.Config.ManagedDomain.GatewayDomain
-		tlsAvailable := h.Config.Proxy.Email != "" ||
+		tlsAvailable := bindingRequested || h.Config.Proxy.Email != "" ||
 			(h.Config.Proxy.TlsCertFile != "" && h.Config.Proxy.TlsKeyFile != "")
 
 		if domain != "" {
@@ -191,7 +233,26 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			if err := h.ensurePanelEndpoint(r.Context()); err != nil {
 				result["panel_endpoint_warning"] = err.Error()
 			}
-			h.Route.UpsertSystemRoute(r.Context(), domain, tlsAvailable)
+			if err := h.Route.UpsertSystemRoute(r.Context(), domain, tlsAvailable); err != nil {
+				writeError(w, http.StatusInternalServerError, "update panel route: "+err.Error())
+				return
+			}
+			if bindingRequested {
+				if h.TLSLifecycle == nil {
+					writeError(w, http.StatusInternalServerError, "TLS lifecycle service is unavailable")
+					return
+				}
+				rt, err := h.Route.GetRoute(r.Context(), domain)
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, "find panel route: "+err.Error())
+					return
+				}
+				if _, err := h.TLSLifecycle.BindCertificate(r.Context(), rt.ID, requestedCertID); err != nil {
+					writeError(w, http.StatusBadRequest, "bind panel certificate: "+err.Error())
+					return
+				}
+				result["certificate_id"] = requestedCertID
+			}
 		} else {
 			// Domain cleared: remove any panel routes for the __panel service
 			_ = h.Route.DeleteAllSystemRoutes(r.Context())
@@ -208,8 +269,8 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if domain != "" {
 			if tlsAvailable {
 				result["panel_url"] = "https://" + domain
-				tlsLabel := "automatic (Let's Encrypt)"
-				if h.ProvReg != nil {
+				tlsLabel := "certificate asset"
+				if !bindingRequested && h.ProvReg != nil {
 					if p := h.ProvReg.FindByCapability(provider.CapAutoCert); p != nil {
 						tlsLabel = fmt.Sprintf("automatic (Let's Encrypt via %s)", p.State().Name)
 					}

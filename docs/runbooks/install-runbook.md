@@ -56,10 +56,13 @@ proxy:
     provider: caddy
     caddyfile_path: /etc/caddy/Caddyfile
     caddy_binary: caddy
+    caddy_data_dir: /var/lib/caddy/.local/share/caddy
     reload_command: systemctl reload caddy
     validate_command: '{{caddy_binary}} validate --config {{config_path}}'
     backup_dir: /var/lib/aegis/backups
     email: ""
+    # 首次上线先使用 https://acme-staging-v02.api.letsencrypt.org/directory
+    acme_server: ""
 store:
     sqlite_path: /var/lib/aegis/aegis.db
 server:
@@ -107,6 +110,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable aegis
 sudo systemctl start aegis
 ```
+
+At startup Aegis grants the existing `caddy` group read-only access to managed
+certificate assets: `/var/lib/aegis/certs` is `0750` and `.crt`/`.key` files are
+`0640`. Assets remain owned by Aegis and private keys are never world-readable.
+If the `caddy` group is unavailable, Aegis logs a warning and keeps the files
+private; install Caddy and restart Aegis before using explicit certificate
+bindings. Caddy validate and reload commands are limited to 30 seconds so a
+stuck service operation cannot hold the Apply lock indefinitely.
 
 ## Step 7: Verify Service
 

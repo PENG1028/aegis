@@ -5,22 +5,40 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi, providerApi, runtimeModeApi } from '@/lib/api-bridge';
+import type { ModeSwitchPreviewResponse, ModeSwitchRouteImpact } from '@/lib/real-api-client';
+import { ApiError } from '@/lib/real-api-client';
 import { PageHeader, Card, Btn, HealthDot, StatusBadge, useToast, LoadingState, ErrorBanner, EmptyState, Modal } from '@/components/shared';
 import { cn } from '@/lib/utils';
 
 // ─── Types ───
 
-interface CompSummary {
-  key: string; name: string; route_count: number;
-  current_mode_ok: boolean; target_mode_ok: boolean; reason?: string;
+function migrationLabel(route: ModeSwitchRouteImpact): string {
+  switch (route.migration) {
+    case 're_render': return '重新生成配置';
+    case 'reload_asset': return '重新加载证书资产';
+    case 'recreate': return '重新创建自动 TLS 状态';
+    case 'restart': return '重启运行组件';
+    case 'unsupported': return '无法迁移';
+    default: return route.compatible ? '保持现有状态' : '无法迁移';
+  }
 }
 
-interface ModeSwitchPreview {
-  current_mode: string; target_mode: string; total_routes: number;
-  route_breakdown: CompSummary[];
-  affected_routes: { kept: number; unsupported: number };
-  provider_changes: { provider_id: string; action: string; detail: string }[];
-  risks: string[];
+function stateClassLabel(stateClass?: string): string {
+  switch (stateClass) {
+    case 'portable_asset': return '证书资产';
+    case 'provider_managed': return '自动 TLS';
+    case 'runtime': return '运行状态';
+    default: return '路由配置';
+  }
+}
+
+function rollbackStatusLabel(status: string): string {
+  switch (status) {
+    case 'complete': return '已自动恢复';
+    case 'incomplete': return '恢复不完整，需要人工检查';
+    case 'not_required': return '未修改运行状态';
+    default: return status;
+  }
 }
 
 interface ProviderState {
@@ -38,7 +56,7 @@ interface CompStatus {
 export default function ModeSwitch() {
   const toast = useToast();
   const [showPreview, setShowPreview] = useState(false);
-  const [previewData, setPreviewData] = useState<ModeSwitchPreview | null>(null);
+  const [previewData, setPreviewData] = useState<ModeSwitchPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [confirmChecks, setConfirmChecks] = useState<Record<string, boolean>>({});
   const [executing, setExecuting] = useState(false);
@@ -78,7 +96,7 @@ export default function ModeSwitch() {
       setPreviewData(data);
       // Reset confirm checks for each risk
       const checks: Record<string, boolean> = {};
-      data.risks?.forEach((_: string, i: number) => { checks[`risk_${i}`] = false; });
+      data.preview.risks?.forEach((_: string, i: number) => { checks[`risk_${i}`] = false; });
       setConfirmChecks(checks);
     } catch (err: any) {
       toast(err.message || '预览加载失败', 'error');
@@ -94,18 +112,23 @@ export default function ModeSwitch() {
     setExecuting(true);
     setExecStep('正在备份当前配置...');
     try {
-      const result = await adminApi.modeSwitch(previewData.target_mode, true);
+      const result = await adminApi.modeSwitch(previewData.preview.target_mode, true);
       setExecResult(result);
       setExecStep('');
     } catch (err: any) {
-      setExecError(err.message || '切换失败');
+      const rollback = err instanceof ApiError
+        ? (err.details as { rollback_status?: string } | undefined)?.rollback_status
+        : undefined;
+      setExecError(`${err.message || '切换失败'}${rollback ? `（回滚状态：${rollbackStatusLabel(rollback)}）` : ''}`);
       setExecStep('');
     } finally {
       setExecuting(false);
     }
   };
 
-  const allConfirmed = previewData?.risks?.every((_, i) => confirmChecks[`risk_${i}`]) ?? false;
+  const risks = previewData?.preview.risks || [];
+  const hasBlockedRoutes = previewData?.rpcb_conflicts.some(route => !route.compatible) ?? false;
+  const allConfirmed = !hasBlockedRoutes && risks.every((_, i) => confirmChecks[`risk_${i}`]);
 
   // Available actions based on mode status
   const switchActions = otherModes.map((m: any) => ({
@@ -234,18 +257,18 @@ export default function ModeSwitch() {
             <div className="space-y-4 text-sm">
               {/* Summary */}
               <div className="flex items-center gap-3">
-                <span className="font-semibold text-a-fg">{previewData.current_mode}</span>
+                <span className="font-semibold text-a-fg">{previewData.preview.current_mode}</span>
                 <span className="text-a-muted">→</span>
-                <span className="font-semibold text-a-accent">{previewData.target_mode}</span>
+                <span className="font-semibold text-a-accent">{previewData.preview.target_mode}</span>
               </div>
 
-              {previewData.affected_routes.unsupported > 0 && (
+              {hasBlockedRoutes && (
                 <div className="px-3 py-2 rounded-a-sm bg-[#e8b830]/5 border border-[#e8b830]/20">
                   <div className="text-[11px] font-medium text-[#e8b830] mb-1">
-                    ⚠️ {previewData.affected_routes.unsupported} 条路由将不可用
+                    {previewData.rpcb_conflicts.filter(route => !route.compatible).length} 条入口无法迁移
                   </div>
                   <div className="text-[10px] text-a-muted">
-                    {previewData.affected_routes.kept} 条保持可用
+                    请先调整这些入口，模式切换已禁止执行。
                   </div>
                 </div>
               )}
@@ -254,7 +277,7 @@ export default function ModeSwitch() {
               <div>
                 <div className="text-[11px] font-medium text-a-fg mb-1.5">各组合能力影响</div>
                 <div className="space-y-1">
-                  {previewData.route_breakdown.map((b, i) => (
+                  {previewData.preview.route_breakdown.map((b, i) => (
                     <div key={i} className="flex items-center gap-2 px-2 py-1 rounded-a-sm bg-a-bg border border-a-border/20 text-[11px]">
                       <span className={b.target_mode_ok ? 'text-[#4cd964]' : 'text-[#e8b830]'}>
                         {b.target_mode_ok ? '✅' : '⛔'}
@@ -267,11 +290,40 @@ export default function ModeSwitch() {
                 </div>
               </div>
 
+              {/* Route lifecycle migration */}
+              <div>
+                <div className="text-[11px] font-medium text-a-fg mb-1.5">入口迁移计划</div>
+                <div className="max-h-56 space-y-1 overflow-y-auto">
+                  {previewData.rpcb_conflicts.map(route => (
+                    <div key={route.route_id} className={cn(
+                      'grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-a-sm border px-2.5 py-2 text-[11px]',
+                      route.compatible ? 'border-a-border/20 bg-a-bg' : 'border-[#ff5c72]/25 bg-[#ff5c72]/5',
+                    )}>
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-a-fg" title={route.domain}>{route.domain}</div>
+                        <div className="mt-0.5 text-[10px] text-a-muted">
+                          {stateClassLabel(route.state_class)} · {migrationLabel(route)}
+                        </div>
+                        {route.reason && <div className="mt-0.5 text-[10px] text-[#ff8a9b]">{route.reason}</div>}
+                      </div>
+                      <div className="text-right font-mono text-[10px] text-a-muted">
+                        <div>{route.current_executor || '未绑定'}</div>
+                        <div className="my-0.5">↓</div>
+                        <div className={route.compatible ? 'text-a-fg' : 'text-[#ff8a9b]'}>{route.target_executor || '不可用'}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {previewData.rpcb_conflicts.length === 0 && (
+                    <div className="text-[11px] text-a-muted">当前没有需要迁移的入口。</div>
+                  )}
+                </div>
+              </div>
+
               {/* Provider changes */}
               <div>
                 <div className="text-[11px] font-medium text-a-fg mb-1.5">Provider 变更</div>
                 <div className="space-y-1">
-                  {previewData.provider_changes.map((pc, i) => (
+                  {previewData.preview.provider_changes.map((pc, i) => (
                     <div key={i} className="flex items-center gap-2 px-2 py-1 rounded-a-sm bg-a-bg border border-a-border/20 text-[11px]">
                       <span className={cn(
                         pc.action === 'stop' ? 'text-[#ff5c72]' : pc.action === 'start' ? 'text-[#4cd964]' : 'text-[#e8b830]'
@@ -286,11 +338,11 @@ export default function ModeSwitch() {
               </div>
 
               {/* Risk confirmation */}
-              {previewData.risks?.length > 0 && (
+              {risks.length > 0 && (
                 <div className="px-3 py-2 rounded-a-sm bg-[#ff5c72]/5 border border-[#ff5c72]/20">
                   <div className="text-[11px] font-medium text-[#ff5c72] mb-2">确认风险</div>
                   <div className="space-y-1.5">
-                    {previewData.risks.map((risk, i) => (
+                    {risks.map((risk, i) => (
                       <label key={i} className="flex items-start gap-2 cursor-pointer">
                         <input type="checkbox" checked={confirmChecks[`risk_${i}`] || false}
                           onChange={(e) => setConfirmChecks({ ...confirmChecks, [`risk_${i}`]: e.target.checked })}
@@ -317,8 +369,7 @@ export default function ModeSwitch() {
               )}
               {execError && (
                 <div className="px-3 py-2 rounded-a-sm bg-[#ff5c72]/5 border border-[#ff5c72]/20">
-                  <div className="text-[11px] text-[#ff5c72]">❌ {execError}</div>
-                  <div className="mt-1 text-[10px] text-a-muted">可使用 POST /api/rollback 回滚</div>
+                  <div className="text-[11px] text-[#ff5c72]">{execError}</div>
                 </div>
               )}
             </div>

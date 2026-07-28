@@ -2,11 +2,13 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, Link } from 'react-router-dom';
-import { runtimeModeApi, exposureApi, nodeApi, certApi } from '@/lib/api-bridge';
+import { runtimeModeApi, exposureApi, nodeApi, certApi, providerApi } from '@/lib/api-bridge';
 import type { Composition, CertificateItem } from '@/lib/api-bridge';
 import { Btn, useToast } from '@/components/shared';
 import { routeDisplay } from '@/lib/route-display';
+import { certificateCoversDomain, certificateIsCurrentlyValid } from '@/lib/certificate';
 import { cn } from '@/lib/utils';
+import { capabilityIsReady, type ProviderCapabilityView } from '@/lib/provider-capability';
 
 function entryType(c: Composition) {
   if (c.atoms?.includes('udp')) return 'udp';
@@ -39,12 +41,21 @@ export default function NewEntry() {
   const { data: rm } = useQuery({ queryKey: ['runtime-mode'], queryFn: () => runtimeModeApi.get(), refetchInterval: 60_000 });
   const { data: nd } = useQuery({ queryKey: ['nodes'], queryFn: () => nodeApi.list().catch(() => ({ nodes: [] })), refetchInterval: 120_000 });
   const { data: certData } = useQuery({ queryKey: ['certificates'], queryFn: () => certApi.list(), refetchInterval: 60_000 });
+  const { data: providerData } = useQuery({ queryKey: ['providers'], queryFn: () => providerApi.list() as Promise<{ providers: ProviderCapabilityView[] }> });
 
   const compositions = rm?.current?.compositions || [];
   const certs: CertificateItem[] = (certData as any)?.certificates || [];
-  // Auto-cert availability: provider with CapAutoCert + this is an HTTPS composition
+  const bindableCerts = certs.filter(c =>
+    c.record_type !== 'provider_observation'
+    && c.source !== 'gateway_auto'
+    && certificateIsCurrentlyValid(c)
+    && certificateCoversDomain(c, domain),
+  );
+  // HTTPS composition availability and automatic TLS availability are separate.
   const selectedComp = compositions.find((c: Composition) => c.name === comp);
-  const hasAutoCert = selectedComp?.status === 'available';
+  const activeExecutorIDs = (rm?.current?.providers || []).map((item: any) => item.provider_id);
+  const hasAutoCert = selectedComp?.status === 'available'
+    && capabilityIsReady(providerData?.providers || [], 'auto_cert', activeExecutorIDs);
 
   const nodes: NodeInfo[] = ((nd as any)?.nodes || []).map((n: any) => ({
     id: n.id||n.node_id, name: n.name||n.node_id||n.id, privateIP: n.private_ip||'', publicIP: n.public_ip||'', networkID: n.network_id||'', region: n.region||'',
@@ -55,7 +66,10 @@ export default function NewEntry() {
   const isHTTP = selected ? entryType(selected) === 'http' : true;
   const compStatus = selected?.status || 'unsupported';
   const canUse = compStatus === 'available';
-  const canSubmit = canUse && (isHTTP ? (domain && targetHost && targetPort>0) : (targetHost && targetPort>0));
+  const tlsSelectionValid = certMode === 'auto' ? hasAutoCert : bindableCerts.some(c => c.id === certId);
+  const canSubmit = canUse && (isHTTP
+    ? Boolean(domain && targetHost && targetPort > 0 && (!selectedComp?.atoms?.includes('tls') || tlsSelectionValid))
+    : Boolean(targetHost && targetPort > 0));
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -103,7 +117,7 @@ export default function NewEntry() {
         </div>
         {!canUse && selected && (
           <div className="mt-2 text-[10px] text-[#ff5c72]/80">
-            {compStatus === 'missing_provider' ? '所选类型需要安装中间件（Caddy/HAProxy）才能使用' : '当前模式不支持此类型，请切换到 EdgeMux 或 Legacy'}
+            {compStatus === 'missing_provider' ? '所选类型缺少可用执行器' : '当前运行模式不支持此入口类型'}
           </div>
         )}
       </div>
@@ -164,9 +178,9 @@ export default function NewEntry() {
                   certMode === 'auto' ? 'bg-a-accent/10 border-a-accent/50 text-a-accent' : 'bg-a-bg border-a-border/30 text-a-muted hover:border-a-border/50',
                   !hasAutoCert && 'opacity-50 cursor-not-allowed')}
                 disabled={!hasAutoCert}
-                title={hasAutoCert ? 'Provider 自动申请 Let\'s Encrypt 证书' : '当前 Provider 不支持自动签发，需手动上传或选择已有证书'}
+                title={hasAutoCert ? '由当前自动 TLS 执行链负责签发和续期' : '当前执行链不能提供自动 TLS，请选择已有证书资产'}
               >
-                {hasAutoCert ? '自动 (Let\'s Encrypt)' : '自动 — 不可用'}
+                {hasAutoCert ? '自动 TLS' : '自动 TLS — 不可用'}
               </button>
               <button
                 onClick={() => setCertMode('manual')}
@@ -176,12 +190,18 @@ export default function NewEntry() {
                 手动指定
               </button>
             </div>
+			{certMode === 'auto' && bindableCerts.length > 0 && (
+			  <button type="button" onClick={() => setCertMode('manual')}
+				className="mt-2 text-left text-[10px] text-a-accent hover:underline">
+				发现 {bindableCerts.length} 张覆盖当前域名的证书资产，可手动选择
+			  </button>
+			)}
             {certMode === 'manual' && (
               <>
                 <select value={certId} onChange={e => setCertId(e.target.value)}
                   className="w-full mt-2 px-3 py-2 rounded-a-sm border border-a-border/50 bg-a-bg text-xs outline-none focus:border-a-accent/50">
                   <option value="">选择证书...</option>
-                  {certs.map((c: CertificateItem) => {
+                  {bindableCerts.map((c: CertificateItem) => {
                     let domains = c.domains;
                     try { domains = JSON.parse(c.domains).join(', '); } catch {}
                     const expDate = new Date(c.not_after).toLocaleDateString('zh-CN');
@@ -192,7 +212,7 @@ export default function NewEntry() {
                 </select>
                 {/* Selected cert preview */}
                 {certId && (() => {
-                  const selected = certs.find(c => c.id === certId);
+                  const selected = bindableCerts.find(c => c.id === certId);
                   if (!selected) return null;
                   let domains = selected.domains; try { domains = JSON.parse(selected.domains).join(', '); } catch {}
                   const es = (notAfter: string) => {
@@ -214,7 +234,7 @@ export default function NewEntry() {
                 })()}
               </>
             )}
-            {certMode === 'manual' && certs.length === 0 && (
+            {certMode === 'manual' && bindableCerts.length === 0 && (
               <div className="mt-1.5 text-[10px] text-a-muted bg-a-border/5 border border-a-border/20 rounded-a-sm px-2 py-1.5">
                 暂无可用证书 ·
                 <Link to="/access/certificates" className="text-a-accent hover:underline ml-0.5">前往证书管理 →</Link>

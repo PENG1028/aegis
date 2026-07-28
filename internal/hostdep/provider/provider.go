@@ -108,6 +108,14 @@ type ReloadableProvider interface {
 	Reload() error
 }
 
+// ConfigStager validates and atomically writes configuration without touching
+// the running process. Mode switching needs this two-phase handoff because the
+// old and target providers may own the same ports.
+type ConfigStager interface {
+	Provider
+	StageConfig(configs []ConfigFile) error
+}
+
 // ConfigReader is an optional interface for providers whose current config
 // can be read back. Used by the config preview HTTP handler.
 type ConfigReader interface {
@@ -154,13 +162,13 @@ type Reader interface {
 
 // ConfigSnapshot 是 Reader.ReadConfig 的返回值。
 type ConfigSnapshot struct {
-	ProviderID string          `json:"provider_id"`
-	Routes     []RouteSpec     `json:"routes"`
-	Unmanaged  []UnmanagedBlock `json:"unmanaged,omitempty"`  // 无法解析的配置块
+	ProviderID string           `json:"provider_id"`
+	Routes     []RouteSpec      `json:"routes"`
+	Unmanaged  []UnmanagedBlock `json:"unmanaged,omitempty"` // 无法解析的配置块
 }
 
 // UnmanagedBlock 表示配置文件中 Aegis 无法解析或识别的部分。
 type UnmanagedBlock struct {
-	Content  string `json:"content"`   // 原始文本
-	Location string `json:"location"`  // file:line 位置
+	Content  string `json:"content"`  // 原始文本
+	Location string `json:"location"` // file:line 位置
 }

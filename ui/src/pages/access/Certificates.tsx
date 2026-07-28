@@ -1,8 +1,7 @@
 // ─── TLS 证书管理 (v1.9C) ───
-// 统一证书中心：Caddy 自动证书 + 手动上传 + ACME 申请。
-// 每条证书标注来源渠道和续期方式。
+// 证书资产与自动 TLS 状态共享观察入口，但不共享 CRUD 生命周期。
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { certApi, acmeApi, type CertificateItem } from '@/lib/api-bridge';
 import { PageHeader, Card, Btn, useToast, LoadingState, ErrorBanner, Modal } from '@/components/shared';
@@ -41,20 +40,23 @@ function expiryStatus(notAfter: string): { label: string; date: string; accent: 
   return { label: '有效', date: dateStr, accent: true, warn: false, danger: false };
 }
 
-type Tab = 'all' | 'auto' | 'manual';
+type Tab = 'assets' | 'automatic_tls';
 
 // ══════════════════════════════════════════════════════════════════
 
 export default function Certificates() {
   const toast = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>('all');
+  const [tab, setTab] = useState<Tab>('assets');
   const [showUpload, setShowUpload] = useState(false);
   const [showACME, setShowACME] = useState(false);
   const [acmeDomain, setAcmeDomain] = useState('');
   const [note, setNote] = useState('');
+	const [uploadSource, setUploadSource] = useState<'manual_upload' | 'external'>('manual_upload');
   const [certPEM, setCertPEM] = useState('');
   const [keyPEM, setKeyPEM] = useState('');
+	const [bindingCertId, setBindingCertId] = useState<string | null>(null);
+	const [bindingSelection, setBindingSelection] = useState<string[]>([]);
 
   const { data: acmeStatus } = useQuery({
     queryKey: ['acme-status'],
@@ -67,32 +69,56 @@ export default function Certificates() {
     queryFn: () => certApi.list(),
     refetchInterval: 60_000,
   });
-  const certs: CertificateItem[] = (data as any)?.certificates || [];
+  const assets: CertificateItem[] = data?.assets || data?.certificates || [];
+	const automaticTLS: CertificateItem[] = data?.automatic_tls || [];
+	const certs = tab === 'assets' ? assets : automaticTLS;
 
-  // ── Filter by tab ──
-  const filtered = useMemo(() => {
-    if (tab === 'auto') return certs.filter(c => c.source === 'gateway_auto');
-    if (tab === 'manual') return certs.filter(c => c.source !== 'gateway_auto');
-    return certs;
-  }, [certs, tab]);
+	const filtered = useMemo(() => certs, [certs]);
+	const { data: bindingPreview, isFetching: bindingPreviewLoading } = useQuery({
+		queryKey: ['certificate-binding-preview', bindingCertId],
+		queryFn: () => certApi.bindingPreview(bindingCertId!),
+		enabled: !!bindingCertId,
+	});
+	useEffect(() => {
+		setBindingSelection(bindingPreview?.candidates.filter(candidate => !candidate.selected).map(candidate => candidate.route_id) || []);
+	}, [bindingPreview]);
+	const bindMut = useMutation({
+		mutationFn: () => certApi.bindRoutes(bindingCertId!, bindingSelection),
+		onSuccess: (result: any) => {
+			qc.invalidateQueries({ queryKey: ['certificates'] });
+			qc.invalidateQueries({ queryKey: ['routes'] });
+			toast(result?.status === 'pending_apply' ? '绑定已保存，等待配置发布' : '证书已批量绑定');
+			setBindingCertId(null);
+		},
+		onError: (e: any) => toast(e.message || '批量绑定失败', 'error'),
+	});
 
   const uploadMut = useMutation({
-    mutationFn: () => certApi.uploadText(certPEM, keyPEM, note),
+    mutationFn: () => certApi.uploadText(certPEM, keyPEM, note, uploadSource),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['certificates'] });
       toast('证书已上传');
-      setShowUpload(false); setNote(''); setCertPEM(''); setKeyPEM('');
+	  setShowUpload(false); setNote(''); setUploadSource('manual_upload'); setCertPEM(''); setKeyPEM('');
     },
     onError: (e: any) => toast(e.message || '上传失败', 'error'),
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => certApi.delete(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['certificates'] }); toast('证书已删除'); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['certificates'] });
+      toast('证书已删除');
+      setDeleteId(null);
+    },
     onError: (e: any) => toast(e.message || '删除失败', 'error'),
   });
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+	const { data: deletePreview, isFetching: deletePreviewLoading, error: deletePreviewError, refetch: retryDeletePreview } = useQuery({
+    queryKey: ['certificate-delete-preview', deleteId],
+    queryFn: () => certApi.deletePreview(deleteId!),
+    enabled: !!deleteId,
+  });
 
   const acmeAvailable = (acmeStatus as any)?.available || false;
   const acmeMsg = (acmeStatus as any)?.message || '';
@@ -101,8 +127,6 @@ export default function Certificates() {
   const expired = certs.filter(c => expiryStatus(c.not_after).danger).length;
   const expiringSoon = certs.filter(c => expiryStatus(c.not_after).warn).length;
   const valid = certs.filter(c => expiryStatus(c.not_after).accent && !expiryStatus(c.not_after).warn && !expiryStatus(c.not_after).danger).length;
-  const autoCount = certs.filter(c => c.source === 'gateway_auto').length;
-  const manualCount = certs.filter(c => c.source !== 'gateway_auto').length;
 
   const acmeMut = useMutation({
     mutationFn: (domain: string) => acmeApi.obtain([domain]),
@@ -118,25 +142,31 @@ export default function Certificates() {
     <div className="p-6 space-y-5">
       <PageHeader
         title="TLS 证书"
-        subtitle="统一管理所有 TLS 证书 — 自动签发、手动导入、ACME 申请"
-        actions={
+        subtitle="管理可移植证书资产，并观察入口的自动 TLS 状态"
+        actions={tab === 'assets' ? (
           <div className="flex items-center gap-2">
             <span className={cn('flex items-center gap-1 text-[10px]', acmeAvailable ? 'text-[#4cd964]' : 'text-a-muted')}>
               <span className={cn('w-1.5 h-1.5 rounded-full', acmeAvailable ? 'bg-[#4cd964]' : 'bg-a-border')} />
               {acmeAvailable ? 'ACME 就绪' : acmeMsg || 'ACME 不可用'}
             </span>
-            <Btn onClick={() => setShowACME(true)} className="text-xs">申请证书</Btn>
+            <Btn onClick={() => setShowACME(true)} disabled={!acmeAvailable} className="text-xs">申请证书</Btn>
             <Btn primary onClick={() => setShowUpload(true)}>上传证书</Btn>
           </div>
-        }
+        ) : undefined}
       />
+
+	  {data?.observation_warning && (
+		<ErrorBanner
+		  message={`自动 TLS 状态读取失败：${data.observation_warning}`}
+		  onRetry={() => { void refetch(); }}
+		/>
+	  )}
 
       {/* ── Tabs ── */}
       <div className="flex gap-1 bg-a-surface border border-a-border/30 rounded-a-sm p-0.5 w-fit">
         {([
-          { key: 'all' as Tab, label: '全部', count: certs.length },
-          { key: 'auto' as Tab, label: certSourceMeta('gateway_auto').label, count: autoCount },
-          { key: 'manual' as Tab, label: '手动管理', count: manualCount },
+          { key: 'assets' as Tab, label: '证书资产', count: assets.length },
+          { key: 'automatic_tls' as Tab, label: '自动 TLS', count: automaticTLS.length },
         ]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={cn('px-3 py-1 rounded-a-sm text-xs font-medium transition-colors',
@@ -148,7 +178,7 @@ export default function Certificates() {
 
       {/* ── Stats ── */}
       {certs.length > 0 && (
-        <div className="grid grid-cols-5 gap-3">
+		<div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="bg-a-surface border border-a-border/30 rounded-a-sm px-3 py-2 text-center">
             <div className="text-lg font-bold text-a-fg">{certs.length}</div>
             <div className="text-[10px] text-a-muted">总数</div>
@@ -165,10 +195,6 @@ export default function Certificates() {
             <div className={cn('text-lg font-bold', expired > 0 ? 'text-[#ff5c72]' : 'text-a-muted')}>{expired}</div>
             <div className="text-[10px] text-a-muted">已过期</div>
           </div>
-          <div className="bg-a-surface border border-a-border/30 rounded-a-sm px-3 py-2 text-center">
-            <div className="text-lg font-bold text-purple-400">{autoCount}</div>
-            <div className="text-[10px] text-a-muted">自动续期</div>
-          </div>
         </div>
       )}
 
@@ -176,17 +202,15 @@ export default function Certificates() {
       {isLoading ? <LoadingState /> : error ? <ErrorBanner message="加载失败" onRetry={refetch} /> : filtered.length === 0 ? (
         <Card>
           <div className="py-10 text-center text-a-muted">
-            <p className="text-lg mb-2">🔐</p>
-            <p className="text-sm">{tab === 'auto' ? '暂无网关自动签发的证书' : tab === 'manual' ? '暂无手动管理的证书' : '暂无证书'}</p>
+			<p className="text-sm">{tab === 'automatic_tls' ? '暂无自动 TLS 状态' : '暂无证书资产'}</p>
             <p className="text-xs mt-1 opacity-60 mb-4">
-              {tab === 'auto' ? '为域名创建 HTTPS 路由后，Caddy 会自动签发 Let\'s Encrypt 证书' :
-               tab === 'manual' ? '上传 PEM 证书和私钥，或通过 ACME 自动签发' :
-               '上传 PEM 证书和私钥，或通过 ACME 自动签发'}
+              {tab === 'automatic_tls' ? '入口使用自动 TLS 后，执行器托管状态会显示在这里' :
+               '上传 PEM 证书和私钥，或通过 ACME 创建可移植证书资产'}
             </p>
-            {tab !== 'auto' && (
+            {tab === 'assets' && (
               <div className="flex items-center justify-center gap-3">
                 <Btn primary onClick={() => setShowUpload(true)}>上传证书</Btn>
-                {acmeAvailable ? <Btn onClick={() => setShowACME(true)}>🔑 ACME 申请</Btn> : (
+				{acmeAvailable ? <Btn onClick={() => setShowACME(true)}>ACME 申请</Btn> : (
                   <span className="text-[10px] text-a-muted">{acmeMsg}</span>
                 )}
               </div>
@@ -204,6 +228,7 @@ export default function Certificates() {
                   <th className="py-1.5 px-2 font-medium">签发者</th>
                   <th className="py-1.5 px-2 font-medium text-center">到期</th>
                   <th className="py-1.5 px-2 font-medium">续期</th>
+				  <th className="py-1.5 px-2 font-medium text-center">使用情况</th>
                   <th className="py-1.5 pl-2 font-medium w-16"></th>
                 </tr>
               </thead>
@@ -226,17 +251,30 @@ export default function Certificates() {
                         )} title={`到期: ${es.date}`}>{es.label}</span>
                       </td>
                       <td className="py-1.5 px-2">
-                        {c.auto_renew ? (
-                          <span className="text-[10px] text-purple-400" title="Provider 自动续期，无需干预">🔄 自动</span>
+						{c.auto_renew ? (
+						  <span className="text-[10px] text-purple-400"
+							title={c.source === 'gateway_auto' ? '由当前自动 TLS 执行器管理续期' : '由 Aegis ACME 定时续期'}>
+							{c.source === 'gateway_auto' ? '执行器托管' : 'Aegis 自动'}
+						  </span>
                         ) : (
                           <span className="text-[10px] text-a-muted">手动</span>
                         )}
                       </td>
+					  <td className="py-1.5 px-2 text-center">
+						<span className="text-[10px] text-a-muted">
+						  {c.record_type === 'provider_observation' ? `${c.ref_count || 0} 个域名 · 中间件托管` : `${c.ref_count || 0} 个域名`}
+						</span>
+					  </td>
                       <td className="py-1.5 pl-2 text-right">
                         {c.source === 'gateway_auto' ? (
-                          <span className="text-[9px] text-a-muted/50" title="由 Caddy 自动管理，无法手动删除">网关管理</span>
+                          <span className="text-[9px] text-a-muted/50" title="随入口 TLS 策略管理，不是可删除资产">入口 TLS 策略</span>
                         ) : (
-                          <Btn onClick={() => setDeleteId(c.id)} className="text-[9px]" danger>删除</Btn>
+						  <div className="flex items-center justify-end gap-1">
+							{parseDomains(c).includes('*.') && (
+							  <Btn onClick={() => setBindingCertId(c.id)} className="text-[9px]">批量绑定</Btn>
+							)}
+							<Btn onClick={() => setDeleteId(c.id)} className="text-[9px]" danger>删除</Btn>
+						  </div>
                         )}
                       </td>
                     </tr>
@@ -277,12 +315,12 @@ export default function Certificates() {
             </div>
             <div>
               <label className="text-a-muted block mb-1 font-medium">渠道（可选）</label>
-              <select value={note.startsWith('CF:') ? 'cloudflare' : note.startsWith('DC:') ? 'digicert' : 'other'}
+			  <select value={note.startsWith('CF:') ? 'cloudflare' : note.startsWith('DC:') ? 'digicert' : 'other'}
                 onChange={e => {
                   const v = e.target.value;
-                  if (v === 'cloudflare') setNote('CF: Cloudflare Origin CA');
-                  else if (v === 'digicert') setNote('DC: DigiCert');
-                  else setNote('');
+				  if (v === 'cloudflare') { setNote('CF: Cloudflare Origin CA'); setUploadSource('external'); }
+				  else if (v === 'digicert') { setNote('DC: DigiCert'); setUploadSource('external'); }
+				  else { setNote(''); setUploadSource('manual_upload'); }
                 }}
                 className="w-full bg-a-bg border border-a-border rounded-a-sm px-2 py-1 text-a-fg text-xs">
                 <option value="other">通用 / 不标注</option>
@@ -322,18 +360,86 @@ export default function Certificates() {
         </Modal>
       )}
 
+      {bindingCertId && (
+		<Modal onClose={() => setBindingCertId(null)} title="批量绑定匹配域名"
+		  footer={
+			<div className="flex items-center gap-2 justify-end">
+			  <Btn onClick={() => setBindingCertId(null)} className="text-xs">取消</Btn>
+			  <Btn primary onClick={() => bindMut.mutate()} className="text-xs"
+				disabled={bindingPreviewLoading || bindMut.isPending || bindingSelection.length === 0}>
+				{bindMut.isPending ? '绑定中...' : `绑定所选域名 (${bindingSelection.length})`}
+			  </Btn>
+			</div>
+		  }>
+		  {bindingPreviewLoading ? <p className="text-sm text-a-muted">正在匹配域名...</p> : (
+			<div className="space-y-3">
+			  <p className="text-xs text-a-muted">只列出证书 SAN/CN 能覆盖的 TLS 终结入口；通配符只匹配一层子域。</p>
+			  {(bindingPreview?.candidates.length || 0) === 0 ? (
+				<p className="text-sm text-a-muted">当前没有匹配的域名入口。</p>
+			  ) : (
+				<div className="divide-y divide-a-border/30 rounded-a-sm border border-a-border/40">
+				  {bindingPreview?.candidates.map(candidate => (
+					<label key={candidate.route_id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+					  <span className="font-mono text-a-fg">{candidate.domain}</span>
+					  <span className="flex items-center gap-2 text-a-muted">
+						{candidate.selected && <span>已绑定</span>}
+						<input type="checkbox" disabled={candidate.selected}
+						  checked={candidate.selected || bindingSelection.includes(candidate.route_id)}
+						  onChange={event => setBindingSelection(current => event.target.checked
+							? [...current, candidate.route_id]
+							: current.filter(id => id !== candidate.route_id))} />
+					  </span>
+					</label>
+				  ))}
+				</div>
+			  )}
+			</div>
+		  )}
+		</Modal>
+	  )}
+
       {/* ── Delete Confirm ── */}
       {deleteId && (
         <Modal onClose={() => setDeleteId(null)} title="确认删除"
           footer={
             <div className="flex items-center gap-2 justify-end">
               <Btn onClick={() => setDeleteId(null)} className="text-xs">取消</Btn>
-              <Btn onClick={() => deleteMut.mutate(deleteId)} danger className="text-xs" disabled={deleteMut.isPending}>
+			  <Btn onClick={() => deleteMut.mutate(deleteId)} danger className="text-xs"
+				disabled={deleteMut.isPending || deletePreviewLoading || !deletePreview?.allowed}>
                 {deleteMut.isPending ? '删除中...' : '确认删除'}
               </Btn>
             </div>
           }>
-          <p className="text-sm text-a-muted">删除后使用此证书的路由将回退到 ACME 自动签发或变为无效。</p>
+		  {deletePreviewError ? (
+			<div role="alert" className="space-y-2 text-sm">
+			  <p className="text-[#ff8a9b]">无法检查证书引用，请重试后再删除。</p>
+			  <Btn onClick={() => retryDeletePreview()} className="text-xs">重新检查</Btn>
+			</div>
+		  ) : deletePreviewLoading ? (
+			<p className="text-sm text-a-muted">正在检查证书引用...</p>
+		  ) : deletePreview?.allowed ? (
+			<div className="space-y-2 text-sm">
+			  <p className="text-a-fg">该证书当前没有域名引用，可以安全删除。</p>
+			  <p className="text-xs text-a-muted">证书记录和 Aegis 管理的 PEM 文件将一并删除。</p>
+			</div>
+		  ) : (
+			<div className="space-y-3 text-sm">
+			  <p className="text-[#ff8a9b]">{deletePreview?.reason || '当前不能删除该证书。'}</p>
+			  {(deletePreview?.references?.length || 0) > 0 && (
+				<div>
+				  <div className="mb-1 text-xs font-medium text-a-muted">引用域名</div>
+				  <div className="divide-y divide-a-border/30 rounded-a-sm border border-a-border/40">
+					{deletePreview?.references.map(ref => (
+					  <div key={ref.id} className="flex items-center justify-between gap-3 px-3 py-2">
+						<span className="font-mono text-xs text-a-fg">{ref.domain}</span>
+						<a href={`/exposure/entry/${ref.id}`} className="text-xs text-a-accent hover:underline">处理绑定</a>
+					  </div>
+					))}
+				  </div>
+				</div>
+			  )}
+			</div>
+		  )}
         </Modal>
       )}
     </div>

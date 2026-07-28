@@ -13,10 +13,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
-	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/certcrypto"
-	"github.com/go-acme/lego/v4/challenge/http01"
+	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/lego"
 	"github.com/go-acme/lego/v4/registration"
 
@@ -31,8 +31,11 @@ type Client struct {
 	dataDir    string
 	certStore  *certstore.Service
 	accountKey *ecdsa.PrivateKey
+	user       *acmeUser
 	legoClient *lego.Client
+	http01     *HTTPChallengeProvider
 	mu         chan struct{} // capacity 1 → single concurrent obtain
+	emailMu    sync.RWMutex
 }
 
 // NewClient creates an ACME client. The account key is loaded or generated
@@ -50,6 +53,7 @@ func NewClient(certStore *certstore.Service, email, acmeServer, dataDir string) 
 		dataDir:    dataDir,
 		certStore:  certStore,
 		accountKey: key,
+		http01:     newHTTPChallengeProvider(),
 		mu:         make(chan struct{}, 1),
 	}
 
@@ -68,11 +72,42 @@ func (c *Client) Available() bool {
 // HasEmail returns true if a registration email was configured.
 // Used by diagnostics to warn about missing expiry notifications.
 func (c *Client) HasEmail() bool {
+	c.emailMu.RLock()
+	defer c.emailMu.RUnlock()
 	return c.email != ""
 }
 
+// UpdateEmail updates the local lego user and, when registered, the remote
+// ACME account contact without racing an obtain or renewal operation.
+func (c *Client) UpdateEmail(ctx context.Context, email string) error {
+	select {
+	case c.mu <- struct{}{}:
+		defer func() { <-c.mu }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	c.emailMu.Lock()
+	c.email = strings.TrimSpace(email)
+	if c.user == nil {
+		c.emailMu.Unlock()
+		return nil
+	}
+	c.user.email = c.email
+	c.emailMu.Unlock()
+	if c.user.registration == nil || c.legoClient == nil {
+		return nil
+	}
+	reg, err := c.legoClient.Registration.UpdateRegistration(registration.RegisterOptions{TermsOfServiceAgreed: true})
+	if err != nil {
+		return fmt.Errorf("update ACME account contact: %w", err)
+	}
+	c.user.registration = reg
+	return nil
+}
+
 func (c *Client) initLego() error {
-	config := lego.NewConfig(&acmeUser{email: c.email, key: c.accountKey})
+	user := &acmeUser{email: c.email, key: c.accountKey}
+	config := lego.NewConfig(user)
 	config.CADirURL = c.acmeServer
 	if config.CADirURL == "" {
 		config.CADirURL = lego.LEDirectoryProduction
@@ -84,14 +119,24 @@ func (c *Client) initLego() error {
 		return fmt.Errorf("create lego client: %w", err)
 	}
 
-	// HTTP-01 challenge — opens a temporary listener on :80 during validation
-	if err := client.Challenge.SetHTTP01Provider(http01.NewProviderServer("", "80")); err != nil {
+	// WHY: the gateway owns port 80 in production. Tokens are served through
+	// Aegis' existing listener and a Planner-injected Caddy route.
+	if err := client.Challenge.SetHTTP01Provider(c.http01); err != nil {
 		return fmt.Errorf("set HTTP-01 provider: %w", err)
 	}
 
 	c.legoClient = client
+	c.user = user
 	// Account registration is lazy — done on first Obtain call
 	return nil
+}
+
+// HTTPChallengeResponse returns the active key authorization for a lego token.
+func (c *Client) HTTPChallengeResponse(token string) (string, bool) {
+	if c == nil || c.http01 == nil {
+		return "", false
+	}
+	return c.http01.Response(token)
 }
 
 // ObtainResult is returned by Obtain.
@@ -171,13 +216,18 @@ func (c *Client) Obtain(ctx context.Context, domains []string) (*ObtainResult, e
 	return &ObtainResult{CertID: cert.ID, Domains: domains}, nil
 }
 
-// Renew renews a certificate — implements certstore.ACMERenewer.
-func (c *Client) Renew(ctx context.Context, domains []string) (string, error) {
+// RenewCertificate obtains fresh material and promotes it into the existing
+// CertStore asset, preserving route references.
+func (c *Client) RenewCertificate(ctx context.Context, certID string, domains []string) (string, error) {
 	result, err := c.Obtain(ctx, domains)
 	if err != nil {
 		return "", err
 	}
-	return result.CertID, nil
+	if err := c.certStore.ReplaceWith(certID, result.CertID); err != nil {
+		_ = c.certStore.Delete(result.CertID)
+		return "", err
+	}
+	return certID, nil
 }
 
 func sanitizeCertName(domain string) string {
@@ -186,23 +236,37 @@ func sanitizeCertName(domain string) string {
 
 // ensureRegistered registers or recovers the ACME account if not already done.
 func (c *Client) ensureRegistered() error {
-	if c.legoClient == nil {
+	if c.user == nil {
 		return fmt.Errorf("lego client not initialized")
 	}
-	_, err := c.legoClient.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
-	if err != nil && strings.Contains(err.Error(), "already registered") {
-		_, err = c.legoClient.Registration.ResolveAccountByKey()
+	// WHY: lego switches its JWS signer from an embedded JWK to the account
+	// KID after registration. Calling newAccount again with that KID is invalid
+	// at some CAs, so the successful registration is the process-local guard.
+	if c.user.registration != nil {
+		return nil
 	}
-	return err
+	if c.legoClient == nil || c.legoClient.Registration == nil {
+		return fmt.Errorf("lego client not initialized")
+	}
+	reg, err := c.legoClient.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
+	if err != nil {
+		return err
+	}
+	if reg == nil || reg.URI == "" {
+		return fmt.Errorf("ACME registration returned no account URI")
+	}
+	c.user.registration = reg
+	return nil
 }
 
 // ─── lego user implementation ───
 
 type acmeUser struct {
-	email string
-	key   *ecdsa.PrivateKey
+	email        string
+	key          *ecdsa.PrivateKey
+	registration *registration.Resource
 }
 
 func (u *acmeUser) GetEmail() string                        { return u.email }
-func (u *acmeUser) GetRegistration() *registration.Resource { return nil }
-func (u *acmeUser) GetPrivateKey() crypto.PrivateKey         { return u.key }
+func (u *acmeUser) GetRegistration() *registration.Resource { return u.registration }
+func (u *acmeUser) GetPrivateKey() crypto.PrivateKey        { return u.key }

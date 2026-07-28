@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"aegis/internal/apply"
+	"aegis/internal/certstore"
 	"aegis/internal/config"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
@@ -506,5 +507,37 @@ func TestSpaceTokenWithoutSpaceID(t *testing.T) {
 		t.Error("expected error for space token without space_id")
 	} else {
 		t.Logf("Correctly denied: %v", err)
+	}
+}
+
+func TestCertificateBindingValidation(t *testing.T) {
+	svc, db := setupActionService(t)
+	defer db.Close()
+	svc.SetCertificateStore(certstore.NewService(certstore.NewRepository(db), t.TempDir()))
+
+	insert := func(id, domains, source string) {
+		t.Helper()
+		_, err := db.Exec(`INSERT INTO certificates
+			(id, domains, issuer, not_before, not_after, cert_path, key_path, source, note, created_at, updated_at)
+			VALUES (?, ?, 'test', '2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z', '', '', ?, '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+			id, domains, source)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("cert_wild", `["*.example.com"]`, certstore.SourceManualUpload)
+	insert("cert_observed", `["api.example.com"]`, certstore.SourceGatewayAuto)
+
+	if err := svc.validateCertificateBinding("cert_wild", "api.example.com"); err != nil {
+		t.Fatalf("valid wildcard binding rejected: %v", err)
+	}
+	if err := svc.validateCertificateBinding("cert_wild", "deep.api.example.com"); err == nil {
+		t.Fatal("multi-label wildcard binding accepted")
+	}
+	if err := svc.validateCertificateBinding("cert_observed", "api.example.com"); err == nil {
+		t.Fatal("provider observation accepted as a PEM asset")
+	}
+	if err := svc.validateCertificateBinding("missing", "api.example.com"); err == nil {
+		t.Fatal("missing certificate accepted")
 	}
 }

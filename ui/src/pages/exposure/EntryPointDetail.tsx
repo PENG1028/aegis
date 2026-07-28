@@ -2,13 +2,16 @@
 // Shows everything about a route in one place without forcing the user
 // to navigate to service/cert pages for basic information.
 
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { runtimeModeApi } from '@/lib/api-bridge';
+import { routeApi, runtimeModeApi, providerApi } from '@/lib/api-bridge';
 import { viewStore } from '@/lib/view-store';
 import { routeDisplay, certSourceLabel } from '@/lib/route-display';
-import { Card, StatusBadge, Btn, useToast } from '@/components/shared';
+import { certificateCoversDomain, certificateIsCurrentlyValid } from '@/lib/certificate';
+import { Card, StatusBadge, Btn, Modal, useToast } from '@/components/shared';
 import { cn } from '@/lib/utils';
+import { capabilityIsReady, type ProviderCapabilityView } from '@/lib/provider-capability';
 
 function authHeaders(): Record<string, string> {
   const viewAs = viewStore.headerValue;
@@ -23,6 +26,8 @@ function parseDomains(domains: string): string {
 export default function EntryPointDetail() {
   const { entryId } = useParams<{ entryId: string }>();
   const nav = useNavigate(); const toast = useToast(); const qc = useQueryClient();
+	const [showTLSBinding, setShowTLSBinding] = useState(false);
+	const [selectedCertID, setSelectedCertID] = useState('');
 
   // ── Route detail ──
   const { data: route, isLoading: rl } = useQuery({
@@ -69,10 +74,19 @@ export default function EntryPointDetail() {
   });
   const certs = certData?.certificates || [];
   const cert = route?.cert_id ? certs.find((c: any) => c.id === route.cert_id) : null;
+	const assetCerts = certs.filter((c: any) =>
+		c.record_type !== 'provider_observation'
+		&& c.source !== 'gateway_auto'
+		&& certificateIsCurrentlyValid(c));
 
   // ── Runtime mode ──
   const { data: rm } = useQuery({
     queryKey: ['runtime-mode'], queryFn: () => runtimeModeApi.get(), refetchInterval: 60_000,
+  });
+  const { data: providerData } = useQuery({
+    queryKey: ['providers'],
+    queryFn: () => providerApi.list() as Promise<{ providers: ProviderCapabilityView[] }>,
+    refetchInterval: 60_000,
   });
 
   // ── Mutations ──
@@ -92,6 +106,20 @@ export default function EntryPointDetail() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['route-detail', entryId] }); toast('已启用'); },
     onError: (e: any) => toast(e.message || '失败', 'error'),
   });
+	const tlsBindingMutation = useMutation({
+		mutationFn: () => selectedCertID === '__provider_auto__'
+			? routeApi.setTLSBinding(entryId!, {
+				mode: 'provider_auto',
+			})
+			: routeApi.setTLSBinding(entryId!, { mode: 'certificate', cert_id: selectedCertID }),
+		onSuccess: (result: any) => {
+			qc.invalidateQueries({ queryKey: ['route-detail', entryId] });
+			qc.invalidateQueries({ queryKey: ['certificates'] });
+			setShowTLSBinding(false);
+			toast(result?.status === 'pending_apply' ? 'TLS 绑定已保存，等待配置发布' : 'TLS 绑定已更新');
+		},
+		onError: (e: any) => toast(e.message || 'TLS 绑定更新失败', 'error'),
+	});
 
   if (rl) return <div className="p-6 text-a-muted text-sm">加载中...</div>;
   if (!route) return <div className="p-6 text-a-muted text-sm">未找到入口 {entryId}</div>;
@@ -100,7 +128,14 @@ export default function EntryPointDetail() {
   const kind = svc?.kind || '';
   const rd = routeDisplay({ ...route, kind });
   const comp = (rm?.current?.compositions || []).find((c: any) => c.name === rd.typeLabel);
-  const entryHealthy = rd.isHTTP ? comp?.status === 'available' : true;
+  const providers = providerData?.providers || [];
+  const activeExecutorIDs = (rm?.current?.providers || []).map((item: any) => item.provider_id);
+  const routeChainReady = rd.isHTTP ? comp?.status === 'available' : true;
+  const tlsReady = !rd.tlsActive
+    || (route.tls_binding_mode === 'certificate'
+      ? capabilityIsReady(providers, 'load_cert', activeExecutorIDs)
+      : capabilityIsReady(providers, 'auto_cert', route.tls_provider ? [route.tls_provider] : activeExecutorIDs));
+  const entryHealthy = routeChainReady && tlsReady;
   const mode = rm?.current?.label || 'Legacy';
 
   const serviceName = svc?.name || route.service_id;
@@ -135,18 +170,35 @@ export default function EntryPointDetail() {
         </div>
       </div>
 
+	  {rd.tlsActive && (
+		<div className="flex flex-wrap items-center justify-between gap-3 border-y border-a-border/30 bg-a-surface/40 px-3 py-2.5">
+		  <div className="min-w-0">
+			<div className="text-xs font-medium text-a-fg">TLS 管理</div>
+			<div className="mt-0.5 text-[11px] text-a-muted">
+			  {route.tls_binding_mode === 'certificate' && cert
+				? `指定证书 · ${parseDomains(cert.domains)}`
+				: `自动 TLS · ${route.tls_provider || '当前执行链'}`}
+			</div>
+		  </div>
+		  <Btn onClick={() => {
+			setSelectedCertID(route.tls_binding_mode === 'certificate' && route.cert_id ? route.cert_id : '__provider_auto__');
+			setShowTLSBinding(true);
+		  }}>更改绑定</Btn>
+		</div>
+	  )}
+
       {/* ── Health ── */}
       <Card title="运行状态">
         <div className="space-y-2">
-          {/* Provider health */}
+          {/* Execution chain health */}
           <div className={cn('flex items-center gap-3 px-3 py-2.5 rounded-a-sm border text-xs',
             entryHealthy ? 'bg-[#4cd964]/5 border-[#4cd964]/15' : 'bg-[#ff5c72]/5 border-[#ff5c72]/15')}>
             <span className={cn('font-mono text-sm shrink-0', entryHealthy ? 'text-[#4cd964]' : 'text-[#ff5c72]')}>
               {entryHealthy ? '✓' : '✗'}
             </span>
-            <span className="font-medium w-24 shrink-0">Provider</span>
+            <span className="font-medium w-24 shrink-0">执行链</span>
             <span className={entryHealthy ? 'text-a-muted' : 'text-[#ff5c72]/80'}>
-              {entryHealthy ? 'Caddy 就绪，可正常提供服务' : 'Provider 未就绪，路由无法生效'}
+              {entryHealthy ? '路由与 TLS 能力均已就绪' : !routeChainReady ? '路由执行能力不可用' : 'TLS 执行能力不可用，需要恢复原执行器或显式迁移'}
             </span>
           </div>
 
@@ -181,7 +233,7 @@ export default function EntryPointDetail() {
       </Card>
 
       {/* ── Main info grid ── */}
-      <div className="grid grid-cols-2 gap-4">
+	  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="路由信息">
           <div className="space-y-2 text-xs">
             <Row label="域名" value={route.domain} mono />
@@ -225,7 +277,7 @@ export default function EntryPointDetail() {
                   </span>
                 } />
                 {cert.auto_renew && (
-                  <Row label="续期" value="🔄 Caddy 自动续期，无需干预" />
+				  <Row label="续期" value={cert.source === 'gateway_auto' ? '执行器托管' : 'Aegis ACME 自动续期'} />
                 )}
                 <div className="pt-1">
                   <Link to="/access/certificates" className="text-[10px] text-a-accent hover:underline">
@@ -237,7 +289,7 @@ export default function EntryPointDetail() {
               <>
                 <div className="text-a-muted">
                   {route.cert_id === '' || !route.cert_id
-                    ? (rd.isHTTP ? '由 Provider 自动签发 Let\'s Encrypt 证书' : '独立 TLS 加密，不由 Aegis 管理')
+                    ? (rd.isHTTP ? `由自动 TLS 执行链负责签发和续期${route.tls_provider ? `（${route.tls_provider}）` : ''}` : '独立 TLS 加密，不由 Aegis 管理')
                     : '证书信息加载中...'}
                 </div>
                 <div className="pt-1">
@@ -254,7 +306,7 @@ export default function EntryPointDetail() {
           <div className="space-y-2 text-xs">
             <Row label="当前模式" value={mode} />
             <Row label="组合能力" value={rd.typeLabel} />
-            <Row label="Provider" value={entryHealthy ? '已就绪' : '未就绪'} />
+            <Row label="执行链" value={entryHealthy ? '已就绪' : '未就绪'} />
             <Row label="TLS" value={rd.tlsActive ? `${rd.tlsLabel}${rd.port > 0 ? ` (:${rd.port})` : ''}` : '关闭'} />
             <Row label="创建时间" value={route.created_at || '—'} mono />
             <div className="pt-1">
@@ -265,6 +317,36 @@ export default function EntryPointDetail() {
           </div>
         </Card>
       </div>
+
+	  {showTLSBinding && (
+		<Modal title="TLS 管理方式" onClose={() => setShowTLSBinding(false)}
+		  footer={
+			<>
+			  <Btn onClick={() => setShowTLSBinding(false)}>取消</Btn>
+			  <Btn primary onClick={() => tlsBindingMutation.mutate()}
+				disabled={tlsBindingMutation.isPending || !selectedCertID}>
+				{tlsBindingMutation.isPending ? '应用中...' : '应用绑定'}
+			  </Btn>
+			</>
+		  }>
+		  <div className="space-y-3">
+			<label className="block text-xs font-medium text-a-muted" htmlFor="tls-binding-select">管理方式</label>
+			<select id="tls-binding-select" value={selectedCertID} onChange={e => setSelectedCertID(e.target.value)}
+			  className="min-h-11 w-full rounded-a-sm border border-a-border bg-a-bg px-3 text-sm text-a-fg outline-none focus:border-a-accent">
+			  <option value="__provider_auto__">自动 TLS</option>
+			  {assetCerts.filter((item: any) => certificateCoversDomain(item, route.domain)).map((item: any) => (
+				<option key={item.id} value={item.id}>{parseDomains(item.domains)} · {certSourceLabel(item.source)}</option>
+			  ))}
+			</select>
+			<p className="text-xs leading-5 text-a-muted">
+			  自动 HTTPS 的签发和续期由中间件负责；指定证书由 Aegis 加载，删除前必须先解除所有域名绑定。
+			</p>
+			{assetCerts.filter((item: any) => certificateCoversDomain(item, route.domain)).length === 0 && (
+			  <p className="text-xs text-[#e8b830]">当前没有覆盖 {route.domain} 的证书资产。</p>
+			)}
+		  </div>
+		</Modal>
+	  )}
     </div>
   );
 }
