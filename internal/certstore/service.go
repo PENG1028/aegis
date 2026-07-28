@@ -324,12 +324,33 @@ func (s *Service) replaceFile(path string, content []byte) error {
 	if err := os.Rename(tmpPath, path); err == nil {
 		return nil
 	}
-	// Windows cannot atomically replace an existing file. The fallback retains
-	// the old bytes unless the final write itself succeeds.
-	if err := os.WriteFile(path, content, privateCertFileMode); err != nil {
-		return err
+	// Windows cannot rename over an existing file. Move the old asset aside,
+	// then promote the already-synced, permissioned temp file. If promotion
+	// fails, restore the original path so consumers never see partial bytes.
+	backup, err := os.CreateTemp(filepath.Dir(path), ".aegis-cert-backup-*")
+	if err != nil {
+		return fmt.Errorf("prepare replacement backup: %w", err)
 	}
-	return s.applyFileAccess(path)
+	backupPath := backup.Name()
+	defer os.Remove(backupPath)
+	if err := backup.Close(); err != nil {
+		_ = os.Remove(backupPath)
+		return fmt.Errorf("close replacement backup: %w", err)
+	}
+	if err := os.Remove(backupPath); err != nil {
+		return fmt.Errorf("prepare replacement backup path: %w", err)
+	}
+	if err := os.Rename(path, backupPath); err != nil {
+		return fmt.Errorf("stage existing asset: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		if restoreErr := os.Rename(backupPath, path); restoreErr != nil {
+			return fmt.Errorf("promote replacement: %v; restore original: %w", err, restoreErr)
+		}
+		return fmt.Errorf("promote replacement: %w", err)
+	}
+	_ = os.Remove(backupPath)
+	return nil
 }
 
 // GetPaths returns the cert and key filesystem paths for a certificate ID.

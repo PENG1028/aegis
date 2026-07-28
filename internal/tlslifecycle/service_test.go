@@ -86,6 +86,11 @@ func TestWildcardBindingPreviewAndBatchCommit(t *testing.T) {
 	if len(preview.Candidates) != 2 {
 		t.Fatalf("wildcard candidates = %+v, want two single-label subdomains", preview.Candidates)
 	}
+	for _, candidate := range preview.Candidates {
+		if candidate.AlreadyBound || !candidate.ReplacesAutomaticTLS || candidate.CurrentBindingMode != route.TLSBindingProviderAuto {
+			t.Fatalf("automatic TLS replacement was not explicit in preview: %+v", candidate)
+		}
+	}
 	if _, err := lifecycle.BindCertificateToRoutes(context.Background(), "cert_wild", []string{"rt_api", "rt_deep"}); err == nil {
 		t.Fatal("batch containing an ineligible route should fail")
 	}
@@ -100,6 +105,15 @@ func TestWildcardBindingPreviewAndBatchCommit(t *testing.T) {
 		bound, _ := routes.GetRoute(context.Background(), routeID)
 		if bound.CertID == nil || *bound.CertID != "cert_wild" {
 			t.Fatalf("route %s was not bound: %+v", routeID, bound)
+		}
+	}
+	preview, err = lifecycle.PreviewCertificateBindings(context.Background(), "cert_wild")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range preview.Candidates {
+		if !candidate.AlreadyBound || !candidate.Selected || candidate.ReplacesAutomaticTLS {
+			t.Fatalf("completed binding state was not reflected in preview: %+v", candidate)
 		}
 	}
 }

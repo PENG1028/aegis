@@ -80,7 +80,7 @@ export default function Certificates() {
 		enabled: !!bindingCertId,
 	});
 	useEffect(() => {
-		setBindingSelection(bindingPreview?.candidates.filter(candidate => !candidate.selected).map(candidate => candidate.route_id) || []);
+		setBindingSelection(bindingPreview?.candidates.filter(candidate => !(candidate.already_bound ?? candidate.selected)).map(candidate => candidate.route_id) || []);
 	}, [bindingPreview]);
 	const bindMut = useMutation({
 		mutationFn: () => certApi.bindRoutes(bindingCertId!, bindingSelection),
@@ -382,9 +382,10 @@ export default function Certificates() {
 					<label key={candidate.route_id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
 					  <span className="font-mono text-a-fg">{candidate.domain}</span>
 					  <span className="flex items-center gap-2 text-a-muted">
-						{candidate.selected && <span>已绑定</span>}
-						<input type="checkbox" disabled={candidate.selected}
-						  checked={candidate.selected || bindingSelection.includes(candidate.route_id)}
+						{candidate.replaces_automatic_tls && <span className="text-[#e8b830]">将替换自动 TLS</span>}
+						{(candidate.already_bound ?? candidate.selected) && <span>已绑定</span>}
+						<input type="checkbox" disabled={candidate.already_bound ?? candidate.selected}
+						  checked={(candidate.already_bound ?? candidate.selected) || bindingSelection.includes(candidate.route_id)}
 						  onChange={event => setBindingSelection(current => event.target.checked
 							? [...current, candidate.route_id]
 							: current.filter(id => id !== candidate.route_id))} />

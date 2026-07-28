@@ -74,6 +74,11 @@ Wildcard assets offer a matching-route preview and explicit bulk binding. The
 complete selection is validated before one transactional binding update and one
 Apply.
 
+Matching routes already using automatic TLS remain eligible because selecting
+them is an explicit strategy change, not background auto-binding. Preview marks
+those rows as replacing automatic TLS; `already_bound` means the route already
+uses the previewed certificate and is not a pending selection.
+
 Certificate references are also enforced by SQLite triggers. Preview checks are
 for user guidance; database guards are the final authority under concurrent bind
 and delete requests.

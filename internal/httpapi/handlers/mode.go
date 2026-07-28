@@ -218,7 +218,8 @@ func currentRouteExecutor(rt route.Route) string {
 
 // routeExecutionForMode preserves the current executor when possible, then
 // selects a target executor according to lifecycle semantics. A portable asset
-// may be reloaded elsewhere; provider-managed automatic TLS must be recreated.
+// may be reloaded elsewhere; provider-managed automatic TLS is recreated only
+// when ownership actually moves to another executor.
 func routeExecutionForMode(rt route.Route, mode provider.RuntimeMode, registry *provider.Registry) (string, provider.CapabilitySemantics) {
 	var required provider.Capability
 	preferred := rt.SourceProvider
@@ -249,6 +250,9 @@ func routeExecutionForMode(rt route.Route, mode provider.RuntimeMode, registry *
 		if p := registry.Get(preferred); p != nil {
 			state := p.State()
 			if state.Installed && state.HasCapability(required) {
+				if required == provider.CapAutoCert {
+					semantics.Migration = provider.MigrationRerender
+				}
 				return preferred, semantics
 			}
 		}

@@ -44,3 +44,18 @@ func TestUnknownAPIRouteDoesNotFallThroughToSPA(t *testing.T) {
 		})
 	}
 }
+
+func TestCertificateBindingPreviewSupportsCollectionAndCompatibilityPaths(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterRoutes(mux, &Services{})
+	for _, path := range []string{
+		"/api/admin/v1/certificates/cert_test/bindings",
+		"/api/admin/v1/certificates/cert_test/binding-preview",
+	} {
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusNotImplemented {
+			t.Fatalf("GET %s was not routed to the lifecycle handler: status=%d body=%s", path, response.Code, response.Body.String())
+		}
+	}
+}

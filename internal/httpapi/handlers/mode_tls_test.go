@@ -43,8 +43,12 @@ func TestRouteExecutionForModePreservesThenRecreatesAutomaticTLS(t *testing.T) {
 	if !routeSupportedInMode(rt, provider.RuntimeModeLegacy, registry) {
 		t.Fatal("declared Caddy auto-TLS route was rejected in legacy mode")
 	}
-	rt.TLSProvider = "haproxy"
 	target, semantics := routeExecutionForMode(rt, provider.RuntimeModeLegacy, registry)
+	if target != "caddy" || semantics.StateClass != provider.StateProviderManaged || semantics.Migration != provider.MigrationRerender {
+		t.Fatalf("same-executor automatic TLS should be re-rendered: target=%q semantics=%+v", target, semantics)
+	}
+	rt.TLSProvider = "haproxy"
+	target, semantics = routeExecutionForMode(rt, provider.RuntimeModeLegacy, registry)
 	if target != "caddy" {
 		t.Fatalf("automatic TLS target = %q, want caddy", target)
 	}

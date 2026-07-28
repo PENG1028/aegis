@@ -56,10 +56,11 @@ An executor-discovered automatic certificate is an observation, not a CertStore
 asset. It cannot be bound by `cert_id`, independently deleted, or assumed
 exportable. Its lifecycle is coupled to the route's automatic TLS strategy.
 
-During migration, the route identity remains stable and the target executor
-recreates automatic TLS state. Failure to provision or load target state blocks
-or rolls back the mode switch; Aegis does not silently downgrade to plaintext or
-an unrelated certificate.
+During migration, the route identity remains stable. If automatic TLS ownership
+moves, the target executor recreates its private state. If the executor remains
+the same, Aegis only re-renders its configuration and preserves that state.
+Failure to provision or load target state blocks or rolls back the mode switch;
+Aegis does not silently downgrade to plaintext or an unrelated certificate.
 
 ## Wildcard Binding
 
@@ -97,7 +98,8 @@ and migration strategy:
 
 - route configuration: `declarative / re_render`;
 - certificate asset: `portable_asset / reload_asset`;
-- automatic TLS: `provider_managed / recreate`;
+- automatic TLS: `provider_managed / re_render` when the executor is preserved,
+  otherwise `provider_managed / recreate`;
 - listeners: `runtime / restart`.
 
 Mode switching preserves route IDs, service targets, TLS strategy, and asset
@@ -107,7 +109,8 @@ references. Executor IDs are operational details shown in diagnostics.
 
 - The current executor is preferred when it remains eligible.
 - Same-name capability support never causes an implicit private-state takeover.
-- Automatic TLS migration is reported as recreation, not certificate transfer.
+- Automatic TLS ownership changes are reported as recreation, not certificate
+  transfer; same-executor mode changes are reported as re-rendering.
 - Certificate asset migration is reported as asset reload.
 - Route deletion retains assets unless explicit final-reference cleanup is set.
 - A wildcard batch containing one ineligible route changes no route.

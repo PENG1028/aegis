@@ -1890,6 +1890,9 @@ export interface CertificateBindingCandidate {
   route_id: string;
   domain: string;
   current_cert_id?: string;
+  current_binding_mode: string;
+  already_bound: boolean;
+  replaces_automatic_tls: boolean;
   selected: boolean;
 }
 
@@ -1923,7 +1926,7 @@ export const certApi = {
     get(`/api/admin/v1/certificates/${id}/delete-preview`),
 
   bindingPreview: (id: string): Promise<CertificateBindingPreview> =>
-    get(`/api/admin/v1/certificates/${id}/binding-preview`),
+    get(`/api/admin/v1/certificates/${id}/bindings`),
 
   bindRoutes: (id: string, route_ids: string[]): Promise<any> =>
     post(`/api/admin/v1/certificates/${id}/bindings`, { route_ids }),

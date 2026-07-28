@@ -211,6 +211,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 	mux.HandleFunc("GET /api/admin/v1/routes/safety", h.CheckAllRoutesSafety)
 	mux.HandleFunc("GET /api/admin/v1/routes/{id}/capability-status", h.AdminRouteCapabilityStatus)
 	mux.HandleFunc("GET /api/admin/v1/certificates/{id}/capability-status", h.AdminCertCapabilityStatus)
+	mux.HandleFunc("GET /api/admin/v1/certificates/{id}/bindings", h.AdminPreviewCertificateBindings)
+	// Compatibility alias for clients shipped before the collection endpoint was unified.
 	mux.HandleFunc("GET /api/admin/v1/certificates/{id}/binding-preview", h.AdminPreviewCertificateBindings)
 	mux.HandleFunc("POST /api/admin/v1/certificates/{id}/bindings", h.AdminBindCertificateRoutes)
 	mux.HandleFunc("GET /api/admin/v1/trace/egress", h.TraceEgress)

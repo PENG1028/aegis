@@ -36,10 +36,13 @@ type OperationPreview struct {
 }
 
 type BindingCandidate struct {
-	RouteID       string `json:"route_id"`
-	Domain        string `json:"domain"`
-	CurrentCertID string `json:"current_cert_id,omitempty"`
-	Selected      bool   `json:"selected"`
+	RouteID              string `json:"route_id"`
+	Domain               string `json:"domain"`
+	CurrentCertID        string `json:"current_cert_id,omitempty"`
+	CurrentBindingMode   string `json:"current_binding_mode"`
+	AlreadyBound         bool   `json:"already_bound"`
+	ReplacesAutomaticTLS bool   `json:"replaces_automatic_tls"`
+	Selected             bool   `json:"selected"` // compatibility alias for already_bound
 }
 
 type BindingPreview struct {
@@ -248,9 +251,12 @@ func (s *Service) PreviewCertificateBindings(ctx context.Context, certID string)
 		if rt.CertID != nil {
 			currentCertID = *rt.CertID
 		}
+		alreadyBound := currentCertID == certID
 		preview.Candidates = append(preview.Candidates, BindingCandidate{
 			RouteID: rt.ID, Domain: rt.Domain, CurrentCertID: currentCertID,
-			Selected: currentCertID == certID,
+			CurrentBindingMode: rt.TLSBindingMode,
+			AlreadyBound:       alreadyBound, Selected: alreadyBound,
+			ReplacesAutomaticTLS: rt.TLSBindingMode == route.TLSBindingProviderAuto,
 		})
 	}
 	return preview, nil
