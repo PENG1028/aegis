@@ -190,6 +190,11 @@ export default function NewEntry() {
                 手动指定
               </button>
             </div>
+			{certMode === 'auto' && !hasAutoCert && (
+			  <p className="mt-2 text-[10px] text-[#e8b830]">
+				当前执行链的自动 TLS 能力未就绪，请恢复执行器或改用证书资产。
+			  </p>
+			)}
 			{certMode === 'auto' && bindableCerts.length > 0 && (
 			  <button type="button" onClick={() => setCertMode('manual')}
 				className="mt-2 text-left text-[10px] text-a-accent hover:underline">

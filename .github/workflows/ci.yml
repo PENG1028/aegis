@@ -24,21 +24,31 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ui/package-lock.json
 
+      - name: Install UI dependencies
+        run: |
+          cd ui && npm ci
+
+      - name: Test UI state contracts
+        run: |
+          cd ui && npm test
+
       - name: Build UI
         run: |
-          cd ui && npm ci && npm run build
+          cd ui && npm run build
 
       - name: Embed UI
         run: |
           rm -rf internal/uiassets/dist
           cp -r ui/dist internal/uiassets/dist
 
-      - name: Go vet (clean packages)
-        run: go vet ./cmd/aegis ./pkg/... ./internal/provider/... ./internal/safety/...
+      - name: Go vet
+        run: go vet ./...
 
       - name: Go build (all)
         run: go build ./cmd/aegis ./internal/... ./pkg/...
 
       - name: Go test (all)
-        run: go test ./cmd/aegis ./internal/... ./pkg/... -count=1 -timeout=120s
-        continue-on-error: true
+        run: go test ./... -count=1 -timeout=120s
+
+      - name: Go race tests (lifecycle critical packages)
+        run: go test -race ./internal/certstore ./internal/tlslifecycle ./internal/topology ./internal/apply ./internal/httpapi ./internal/httpapi/handlers -count=1 -timeout=180s

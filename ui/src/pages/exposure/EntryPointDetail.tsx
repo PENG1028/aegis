@@ -88,6 +88,15 @@ export default function EntryPointDetail() {
     queryFn: () => providerApi.list() as Promise<{ providers: ProviderCapabilityView[] }>,
     refetchInterval: 60_000,
   });
+  const { data: routeCapability } = useQuery({
+    queryKey: ['route-capability', entryId],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/v1/routes/${entryId}/capability-status`, { credentials: 'include', headers: authHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+    enabled: !!entryId,
+  });
 
   // ── Mutations ──
   const disableMutation = useMutation({
@@ -115,6 +124,9 @@ export default function EntryPointDetail() {
 		onSuccess: (result: any) => {
 			qc.invalidateQueries({ queryKey: ['route-detail', entryId] });
 			qc.invalidateQueries({ queryKey: ['certificates'] });
+			qc.invalidateQueries({ queryKey: ['route-capability', entryId] });
+			qc.invalidateQueries({ queryKey: ['providers'] });
+			qc.invalidateQueries({ queryKey: ['runtime-mode'] });
 			setShowTLSBinding(false);
 			toast(result?.status === 'pending_apply' ? 'TLS 绑定已保存，等待配置发布' : 'TLS 绑定已更新');
 		},
@@ -241,6 +253,7 @@ export default function EntryPointDetail() {
             <Row label="类型" value={rd.typeLabel} />
             <Row label="状态" badge={<StatusBadge status={active ? 'active' : 'disabled'} />} />
             <Row label="来源" value={route.owner_type === 'system' ? '系统（面板）' : route.owner_type === 'space' ? '服务' : '管理员'} />
+			<Row label="执行归属" value={routeCapability?.provider || route.source_provider || '未分配'} mono />
           </div>
         </Card>
 
