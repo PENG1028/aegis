@@ -27,10 +27,10 @@ type CaddyProvider struct {
 	binaryPath     string // resolved absolute path to caddy binary
 	email          string // ACME email from config
 	commandTimeout time.Duration
-	runCommand     func(context.Context, string, ...string) ([]byte, error)
+	runCommand     providerCommandRunner
 }
 
-const defaultCaddyCommandTimeout = 30 * time.Second
+const defaultCaddyCommandTimeout = defaultProviderCommandTimeout
 
 // NewCaddyProvider creates a Caddy Provider.
 // Resolves the caddy binary path at construction time.
@@ -162,6 +162,20 @@ func (p *CaddyProvider) StageConfig(configs []ConfigFile) error {
 	return nil
 }
 
+// Start, Stop, and Restart implement ServiceController for atomic mode
+// handoff. The workflow owns ordering; the provider owns its service command.
+func (p *CaddyProvider) Start() error {
+	return controlSystemdService("caddy", "start", p.commandTimeout, p.runCommand)
+}
+
+func (p *CaddyProvider) Stop() error {
+	return controlSystemdService("caddy", "stop", p.commandTimeout, p.runCommand)
+}
+
+func (p *CaddyProvider) Restart() error {
+	return controlSystemdService("caddy", "restart", p.commandTimeout, p.runCommand)
+}
+
 // ============================================================================
 // Apply helpers
 // ============================================================================
@@ -254,23 +268,7 @@ func (p *CaddyProvider) reload() error {
 }
 
 func (p *CaddyProvider) runTimedCommand(name string, args ...string) ([]byte, error) {
-	timeout := p.commandTimeout
-	if timeout <= 0 {
-		timeout = defaultCaddyCommandTimeout
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	runner := p.runCommand
-	if runner == nil {
-		runner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return exec.CommandContext(ctx, name, args...).CombinedOutput()
-		}
-	}
-	output, err := runner(ctx, name, args...)
-	if ctx.Err() != nil {
-		return output, fmt.Errorf("command timed out after %s: %w", timeout, ctx.Err())
-	}
-	return output, err
+	return runProviderCommand(p.commandTimeout, p.runCommand, name, args...)
 }
 
 func (p *CaddyProvider) runtimeVerify() bool {
@@ -351,6 +349,8 @@ var _ Provider = (*CaddyProvider)(nil)
 var _ LifecycleProvider = (*CaddyProvider)(nil)
 var _ ReloadableProvider = (*CaddyProvider)(nil)
 var _ ConfigReader = (*CaddyProvider)(nil)
+var _ ConfigStager = (*CaddyProvider)(nil)
+var _ ServiceController = (*CaddyProvider)(nil)
 
 // ─── LifecycleProvider ──────────────────────────────────────────────────────
 

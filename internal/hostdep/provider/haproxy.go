@@ -6,9 +6,10 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
+	"time"
 
 	"aegis/internal/hostdep"
-	"strings"
 )
 
 // ============================================================================
@@ -21,11 +22,13 @@ import (
 // a SINGLE Provider interface. Internal config file management is an
 // implementation detail.
 type HAProxyProvider struct {
-	configPath    string // primary config: /etc/haproxy/haproxy.cfg
-	tcpConfigPath string // TCP forwarding config: /etc/haproxy/haproxy_tcp.cfg
-	backupDir     string
-	binaryPath    string // resolved absolute path to haproxy binary
-	inspectDelay  string
+	configPath     string // primary config: /etc/haproxy/haproxy.cfg
+	tcpConfigPath  string // TCP forwarding config: /etc/haproxy/haproxy_tcp.cfg
+	backupDir      string
+	binaryPath     string // resolved absolute path to haproxy binary
+	inspectDelay   string
+	commandTimeout time.Duration
+	runCommand     providerCommandRunner
 }
 
 // NewHAProxyProvider creates a unified HAProxy Provider.
@@ -44,11 +47,12 @@ func NewHAProxyProvider(configPath, tcpConfigPath, backupDir string) *HAProxyPro
 		bp = resolved
 	}
 	return &HAProxyProvider{
-		configPath:    configPath,
-		tcpConfigPath: tcpConfigPath,
-		backupDir:     backupDir,
-		binaryPath:    bp,
-		inspectDelay:  "5s",
+		configPath:     configPath,
+		tcpConfigPath:  tcpConfigPath,
+		backupDir:      backupDir,
+		binaryPath:     bp,
+		inspectDelay:   "5s",
+		commandTimeout: defaultProviderCommandTimeout,
 	}
 }
 
@@ -193,6 +197,20 @@ func (p *HAProxyProvider) StageConfig(configs []ConfigFile) error {
 	return nil
 }
 
+// Start, Stop, and Restart implement ServiceController for atomic mode
+// handoff. Inactive services are expected when they are outside the active mode.
+func (p *HAProxyProvider) Start() error {
+	return controlSystemdService("haproxy", "start", p.commandTimeout, p.runCommand)
+}
+
+func (p *HAProxyProvider) Stop() error {
+	return controlSystemdService("haproxy", "stop", p.commandTimeout, p.runCommand)
+}
+
+func (p *HAProxyProvider) Restart() error {
+	return controlSystemdService("haproxy", "restart", p.commandTimeout, p.runCommand)
+}
+
 // ============================================================================
 // Apply helpers
 // ============================================================================
@@ -288,6 +306,8 @@ var _ Provider = (*HAProxyProvider)(nil)
 var _ LifecycleProvider = (*HAProxyProvider)(nil)
 var _ ReloadableProvider = (*HAProxyProvider)(nil)
 var _ ConfigReader = (*HAProxyProvider)(nil)
+var _ ConfigStager = (*HAProxyProvider)(nil)
+var _ ServiceController = (*HAProxyProvider)(nil)
 
 // ─── LifecycleProvider ──────────────────────────────────────────────────────
 
