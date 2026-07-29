@@ -17,7 +17,7 @@
 //   Route.Composition → stored as CompKey (e.g. "https_route")
 //   collectIntents() → Lookup(rt.Composition) → fills Transport/Port/TLSMode/AppProtocol
 //   RequirementsOf() → Lookup(ri.Composition) → derives []Capability
-//   RuntimeMode     → buildCompositions(defs, modeID) → UI renders
+//   RuntimeMode     → buildCompositions() → UI renders
 //   Frontend        → GET /api/system/runtime-mode → compositions array
 //
 // Adding a new binding capability:
@@ -103,28 +103,19 @@ func (d CompDef) Requirements() []Capability {
 	return caps
 }
 
-// IsTransparentForwardTarget returns true if this composition can serve as a
+// IsTransparentForwardTarget reports whether this composition can serve as a
 // forward entry for transparent proxy iptables interception.
 //
-// Not all compositions can: Raw TCP/UDP forward to specific ports, not through
-// a shared HTTP router. TLS Passthrough routes by SNI, not by destination.
+// Every composition currently qualifies, each by a different match key: HTTP
+// compositions route by Host header, raw TCP/UDP forward by port, and TLS
+// passthrough routes by SNI. Availability is not decided here — callers filter
+// on the status computed by EvalAllCompositions, so an unavailable composition
+// surfaces as "provider_missing" rather than being silently skipped.
 //
-// Currently only HTTP-based compositions qualify — they provide a shared entry
-// port (Caddy :80/:8443) that routes arbitrary traffic by Host header.
-// When new compositions are added to the registry (e.g. future gRPC proxy),
-// this method is the single place to declare whether they qualify.
+// This method stays as the single declaration point: a future composition that
+// cannot accept intercepted traffic returns false here, and both the planner and
+// the transparent status handler follow with no other changes.
 func (d CompDef) IsTransparentForwardTarget() bool {
-	// All compositions can serve as transparent proxy forward targets.
-	// HTTP compositions route by Host header; raw TCP/UDP forward by port;
-	// TLS passthrough routes by SNI.
-	//
-	// The transparent proxy status endpoint reads mode.Compositions (which
-	// already has status computed by EvalAllCompositions). Only "available"
-	// compositions appear as usable targets — the rest are shown as
-	// "provider_missing" or "unsupported" for diagnosis.
-	//
-	// When a new composition is added to the registry, it automatically
-	// appears here with zero code changes.
 	return true
 }
 
@@ -227,21 +218,21 @@ func (m RuntimeMode) hasAtomBinding(atomKey string) bool {
 // Build compositions for a RuntimeMode from the registry
 // ============================================================================
 
-// buildCompositions generates the mode-specific Composition list from the
-// canonical CompDef registry. A composition with no supported atoms in this
-// mode gets atoms=nil (displayed as grey/unavailable in the frontend).
-func buildCompositions(modeID string) []Composition {
+// buildCompositions projects the canonical CompDef registry into the display
+// shape a RuntimeMode carries. Availability is not decided here — callers run
+// EvalAllCompositions to fill in per-mode status.
+//
+// Every mode currently presents the canonical atom chain. If a mode ever needs
+// to override it (e.g. EdgeMux inserting an SNI step between TCP and TLS), give
+// this function the mode as a parameter at that point; it took a modeID that it
+// never read, which only implied a per-mode behavior that did not exist.
+func buildCompositions() []Composition {
 	var out []Composition
 	for _, def := range AllCompositions() {
-		// For now, all compositions use their canonical atoms.
-		// In the future, a mode can override the atom chain (e.g. EdgeMux
-		// HTTPS Route adds an SNI step between TCP and TLS).
-		atoms := def.Atoms
-		chain := def.Chain
 		out = append(out, Composition{
 			Name:  def.Name,
-			Atoms: atoms,
-			Chain: chain,
+			Atoms: def.Atoms,
+			Chain: def.Chain,
 		})
 	}
 	return out

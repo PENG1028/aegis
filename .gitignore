@@ -45,6 +45,7 @@ Thumbs.db
 # Node
 ui/node_modules/
 ui/dist/
+ui/tsconfig.tsbuildinfo
 
 # Embedded UI copy (build artifact)
 internal/uiassets/dist/

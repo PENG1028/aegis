@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"aegis/internal/httpapi/handlers"
@@ -54,9 +55,9 @@ func TestSafetyEndpointsRequireAuth(t *testing.T) {
 	// The handler wraps errors correctly: returns err code = err.Error()
 
 	tests := []struct {
-		name string
+		name   string
 		method string
-		path string
+		path   string
 	}{
 		{"route safety", "GET", "/api/admin/v1/routes/rt_nonexistent/safety"},
 		{"all routes safety", "GET", "/api/admin/v1/routes/safety"},
@@ -154,8 +155,15 @@ func TestTraceEgressWithDomain(t *testing.T) {
 	t.Logf("TraceEgress response: %s", rr.Body.String())
 }
 
-// TestSafetyEndpointsHaveAuthMiddleware verifies the safety endpoints are under /api/admin/ prefix
-// which is blocked by isSystemRoute() for service API keys.
+// TestSafetyEndpointsAreAdminRoutes verifies the safety endpoints sit behind the
+// admin prefix so the auth middleware denies service-ticket callers.
+//
+// This previously re-implemented the path predicate inside the test body and
+// asserted against that copy, so it passed even though production had no such
+// check at all. The predicate now lives in internal/token (isSystemRoute) and is
+// driven end-to-end by TestServiceTicketDeniedOnSystemAndBusinessRoutes there.
+// What remains useful to assert here is the wiring invariant: these endpoints
+// must stay under /api/admin/, because that prefix is what the guard keys on.
 func TestSafetyEndpointsAreAdminRoutes(t *testing.T) {
 	safetyPaths := []string{
 		"/api/admin/v1/routes/rt_1/safety",
@@ -163,22 +171,10 @@ func TestSafetyEndpointsAreAdminRoutes(t *testing.T) {
 		"/api/admin/v1/trace/egress",
 	}
 
-	importedIsSystemRoute := func(path string) bool {
-		systemPrefixes := []string{
-			"/api/admin/",
-		}
-		for _, prefix := range systemPrefixes {
-			if len(path) >= len(prefix) && path[:len(prefix)] == prefix {
-				return true
-			}
-		}
-		return false
-	}
-
+	const adminPrefix = "/api/admin/"
 	for _, p := range safetyPaths {
-		if !importedIsSystemRoute(p) {
-			t.Errorf("%s should be recognized as a system/admin route", p)
+		if !strings.HasPrefix(p, adminPrefix) {
+			t.Errorf("%s must stay under %s to remain protected from service tickets", p, adminPrefix)
 		}
 	}
-	t.Log("All safety endpoints are under /api/admin/ prefix — protected by isSystemRoute()")
 }

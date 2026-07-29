@@ -15,8 +15,8 @@ func (h *Handlers) GetNodeCapabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"node_id":       n.NodeID,
-		"capabilities":  n.Capabilities,
+		"node_id":          n.NodeID,
+		"capabilities":     n.Capabilities,
 		"disabled_actions": n.Capabilities.DisabledActions(),
 	})
 }

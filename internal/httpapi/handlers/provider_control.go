@@ -52,7 +52,9 @@ func (h *Handlers) ProviderServiceControl(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %s has no service", providerName))
 		return
 	}
-	var req struct{ Action string `json:"action"` }
+	var req struct {
+		Action string `json:"action"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
@@ -146,7 +148,9 @@ func (h *Handlers) ProviderSaveConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unsupported provider: %s", providerName))
 		return
 	}
-	var req struct{ Content string `json:"content"` }
+	var req struct {
+		Content string `json:"content"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return

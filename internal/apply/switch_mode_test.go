@@ -53,9 +53,9 @@ func (m *mockProvider) GetCurrentConfig() (string, error) {
 	}
 	return m.configContent, nil
 }
-func (m *mockProvider) Start() error  { m.started = true; return nil }
-func (m *mockProvider) Stop() error   { m.stopped = true; return nil }
-func (m *mockProvider) Restart() error { return nil }
+func (m *mockProvider) Start() error       { m.started = true; return nil }
+func (m *mockProvider) Stop() error        { m.stopped = true; return nil }
+func (m *mockProvider) Restart() error     { return nil }
 func (m *mockProvider) CleanConfig() error { m.cleaned = true; return nil }
 
 // registryFor uses a direct map since the test providers aren't backed by

@@ -11,10 +11,10 @@
 //
 // # What moved where:
 //
-//	Install / Uninstall      → dimension 3 (lifecycle.Manager)
 //	ID / Name / Type / Path  → dimension 1 (ProviderState fields)
 //	Capabilities             → dimension 1 (ProviderState.Capabilities)
 //	Validate / Reload / etc. → encapsulated inside Apply()
+//	Install / Uninstall      → optional LifecycleProvider, below
 //
 // # To implement a new Provider:
 //
@@ -91,8 +91,12 @@ type ApplyResult struct {
 // ============================================================================
 
 // LifecycleProvider is an optional interface for providers that support
-// install/uninstall operations. This will move to dimension 3 (lifecycle.Manager)
-// in Phase 4.
+// install/uninstall operations.
+//
+// Install/uninstall lives here rather than in a separate lifecycle package: the
+// earlier plan to extract a dimension-3 lifecycle.Manager was never carried out,
+// and the interface has been stable as an optional capability. Treat this as the
+// current home, not a way station.
 type LifecycleProvider interface {
 	Provider
 	CanInstall() bool

@@ -13,12 +13,12 @@ func (h *Handlers) CreateGatewayLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name       string `json:"name"`
-		Host       string `json:"host"`
-		PrivateIP  string `json:"private_ip,omitempty"`
-		Port       int    `json:"port"`
+		Name        string `json:"name"`
+		Host        string `json:"host"`
+		PrivateIP   string `json:"private_ip,omitempty"`
+		Port        int    `json:"port"`
 		GatewayType string `json:"gateway_type"`
-		AutoRoute  bool   `json:"auto_route"`
+		AutoRoute   bool   `json:"auto_route"`
 	}
 	if err := decodeJSON(r, &input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request: "+err.Error())
@@ -46,17 +46,17 @@ func (h *Handlers) CreateGatewayLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"id":            gw.ID,
-		"name":          gw.Name,
-		"host":          gw.Host,
-		"private_ip":    gw.PrivateIP,
-		"port":          gw.Port,
-		"gateway_type":  gw.GatewayType,
-		"auto_route":    gw.AutoRoute,
-		"status":        gw.Status,
-		"auth_type":     gw.AuthType,
-		"secret":        secret, // raw secret returned once
-		"warning":       "store this secret securely — it will not be shown again",
+		"id":           gw.ID,
+		"name":         gw.Name,
+		"host":         gw.Host,
+		"private_ip":   gw.PrivateIP,
+		"port":         gw.Port,
+		"gateway_type": gw.GatewayType,
+		"auto_route":   gw.AutoRoute,
+		"status":       gw.Status,
+		"auth_type":    gw.AuthType,
+		"secret":       secret, // raw secret returned once
+		"warning":      "store this secret securely — it will not be shown again",
 	})
 }
 

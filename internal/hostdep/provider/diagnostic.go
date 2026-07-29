@@ -9,13 +9,13 @@ import (
 
 // Provider diagnostic error codes.
 const (
-	DiagCodeProviderMissing         = "PROVIDER_MISSING"
-	DiagCodeVersionUnsupported      = "PROVIDER_VERSION_UNSUPPORTED"
-	DiagCodeConfigFileMissing       = "CONFIG_FILE_MISSING"
-	DiagCodeConfigValidateFailed    = "CONFIG_VALIDATE_FAILED"
-	DiagCodeServiceNotRunning       = "SERVICE_NOT_RUNNING"
-	DiagCodeListenerConflict        = "LISTENER_CONFLICT"
-	DiagCodeRuntimeVerifyFailed     = "RUNTIME_VERIFY_FAILED"
+	DiagCodeProviderMissing      = "PROVIDER_MISSING"
+	DiagCodeVersionUnsupported   = "PROVIDER_VERSION_UNSUPPORTED"
+	DiagCodeConfigFileMissing    = "CONFIG_FILE_MISSING"
+	DiagCodeConfigValidateFailed = "CONFIG_VALIDATE_FAILED"
+	DiagCodeServiceNotRunning    = "SERVICE_NOT_RUNNING"
+	DiagCodeListenerConflict     = "LISTENER_CONFLICT"
+	DiagCodeRuntimeVerifyFailed  = "RUNTIME_VERIFY_FAILED"
 )
 
 // ProviderDiagnostic is a unified diagnostic result for a provider.

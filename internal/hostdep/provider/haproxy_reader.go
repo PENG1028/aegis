@@ -148,7 +148,7 @@ func (r *HAProxyReader) parseMainConfig() (routes []RouteSpec, unmanaged []Unman
 			parts := strings.Fields(trimmed)
 			if len(parts) >= 6 {
 				sni := parts[len(parts)-2] // 最后一个字段是 hostname
-				backend := parts[1]         // 第二个字段是 backend name
+				backend := parts[1]        // 第二个字段是 backend name
 				sniRules = append(sniRules, sniRule{
 					sni:     sni,
 					backend: backend,

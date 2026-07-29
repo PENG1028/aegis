@@ -10,12 +10,12 @@ import (
 
 // ClusterHealth aggregates health across all nodes for 5-10 node diagnosability.
 type ClusterHealthResponse struct {
-	NodeCount       int                       `json:"node_count"`
-	LeaderNodeID    string                    `json:"leader_node_id"`
-	SplitBrain      bool                      `json:"split_brain"`
-	Nodes           []ClusterNodeHealth       `json:"nodes"`
-	OverallHealthy  bool                      `json:"overall_healthy"`
-	Issues          []string                  `json:"issues,omitempty"`
+	NodeCount      int                 `json:"node_count"`
+	LeaderNodeID   string              `json:"leader_node_id"`
+	SplitBrain     bool                `json:"split_brain"`
+	Nodes          []ClusterNodeHealth `json:"nodes"`
+	OverallHealthy bool                `json:"overall_healthy"`
+	Issues         []string            `json:"issues,omitempty"`
 }
 
 type ClusterNodeHealth struct {
@@ -34,8 +34,8 @@ type ClusterNodeHealth struct {
 // Single endpoint to assess cluster state — critical for 5-10 node diagnosis.
 func (h *Handlers) ClusterHealth(w http.ResponseWriter, r *http.Request) {
 	resp := ClusterHealthResponse{
-		Nodes:   []ClusterNodeHealth{},
-		Issues:  []string{},
+		Nodes:  []ClusterNodeHealth{},
+		Issues: []string{},
 	}
 
 	// 1. Gather all nodes
@@ -71,7 +71,7 @@ func (h *Handlers) ClusterHealth(w http.ResponseWriter, r *http.Request) {
 			IsLeader: n.IsLeader,
 		}
 
-				// Offline detection: heartbeat > 60s
+		// Offline detection: heartbeat > 60s
 		if !n.LastHeartbeatAt.IsZero() && now.Sub(n.LastHeartbeatAt) > 60*time.Second {
 			nh.Status = "offline"
 			nh.HeartbeatAge = now.Sub(n.LastHeartbeatAt).Round(time.Second).String()

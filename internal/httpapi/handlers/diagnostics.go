@@ -23,12 +23,12 @@ func (h *Handlers) DiagnosticsExport(w http.ResponseWriter, r *http.Request) {
 	// Settings (redacted)
 	diag["settings"] = map[string]interface{}{
 		"proxy": map[string]interface{}{
-			"provider":        h.Config.Proxy.Provider,
-			"caddyfile_path":  h.Config.Proxy.CaddyfilePath,
-			"caddy_binary":    h.Config.Proxy.CaddyBinary,
-			"reload_command":  h.Config.Proxy.ReloadCommand,
+			"provider":         h.Config.Proxy.Provider,
+			"caddyfile_path":   h.Config.Proxy.CaddyfilePath,
+			"caddy_binary":     h.Config.Proxy.CaddyBinary,
+			"reload_command":   h.Config.Proxy.ReloadCommand,
 			"validate_command": h.Config.Proxy.ValidateCommand,
-			"backup_dir":      h.Config.Proxy.BackupDir,
+			"backup_dir":       h.Config.Proxy.BackupDir,
 			// email is safe; admin_token intentionally omitted
 		},
 		"store": map[string]interface{}{

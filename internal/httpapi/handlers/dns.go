@@ -18,14 +18,14 @@ type DNSHandler struct {
 
 // DNSStatusResponse is the JSON response for DNS status.
 type DNSStatusResponse struct {
-	Running      bool                       `json:"running"`
-	ListenAddr   string                     `json:"listen_addr"`
-	Upstream     string                     `json:"upstream"`
-	Enabled      bool                       `json:"enabled"`
-	LocalHits    int64                      `json:"local_hits"`
-	UpstreamCalls int64                     `json:"upstream_calls"`
-	ManagedCount int                        `json:"managed_count"`
-	Entries      []dns.ResolvedEntry        `json:"entries,omitempty"`
+	Running       bool                `json:"running"`
+	ListenAddr    string              `json:"listen_addr"`
+	Upstream      string              `json:"upstream"`
+	Enabled       bool                `json:"enabled"`
+	LocalHits     int64               `json:"local_hits"`
+	UpstreamCalls int64               `json:"upstream_calls"`
+	ManagedCount  int                 `json:"managed_count"`
+	Entries       []dns.ResolvedEntry `json:"entries,omitempty"`
 }
 
 // DNSStatus returns the current DNS server status and stats.
@@ -59,14 +59,14 @@ func (h *DNSHandler) DNSStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, DNSStatusResponse{
-		Running:        running,
-		ListenAddr:     listenAddr,
-		Upstream:       upstream,
-		Enabled:        enabled,
-		LocalHits:      localHits,
-		UpstreamCalls:  upstreamCalls,
-		ManagedCount:   managedCount,
-		Entries:        entries,
+		Running:       running,
+		ListenAddr:    listenAddr,
+		Upstream:      upstream,
+		Enabled:       enabled,
+		LocalHits:     localHits,
+		UpstreamCalls: upstreamCalls,
+		ManagedCount:  managedCount,
+		Entries:       entries,
 	})
 }
 

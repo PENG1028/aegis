@@ -189,7 +189,8 @@ func extractDomain(addr string) string {
 
 // extractTarget 从 reverse_proxy 指令中提取目标地址。
 // 格式: "reverse_proxy 127.0.0.1:3000"
-//       "reverse_proxy 127.0.0.1:3000 { ... }"
+//
+//	"reverse_proxy 127.0.0.1:3000 { ... }"
 func extractTarget(line string) string {
 	rest := strings.TrimSpace(strings.TrimPrefix(line, "reverse_proxy"))
 	if idx := strings.Index(rest, "{"); idx >= 0 {
@@ -203,7 +204,8 @@ func extractTarget(line string) string {
 
 // extractHandlePath 从 handle / handle_path 指令中提取路径。
 // 格式: "handle /api/* {" → "/api/*"
-//       "handle {" → ""
+//
+//	"handle {" → ""
 func extractHandlePath(line string) string {
 	line = strings.TrimSpace(line)
 	if strings.HasPrefix(line, "handle_path ") {

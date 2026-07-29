@@ -42,8 +42,8 @@ type DriftedRoute struct {
 
 // DriftedRouteDiff 描述期望和实际不一致的路由（同 domain+path 但 target 不同）。
 type DriftedRouteDiff struct {
-	Domain      string `json:"domain"`
-	Path        string `json:"path,omitempty"`
+	Domain         string `json:"domain"`
+	Path           string `json:"path,omitempty"`
 	ExpectedTarget string `json:"expected_target"`
 	ActualTarget   string `json:"actual_target"`
 }

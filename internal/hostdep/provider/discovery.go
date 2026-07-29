@@ -33,11 +33,11 @@ type DiscoveredProvider struct {
 	GatewayType  GatewayType `json:"gateway_type"`
 
 	// Detection result
-	Detected     bool   `json:"detected"`
-	BinaryPath   string `json:"binary_path,omitempty"`
-	Version      string `json:"version,omitempty"`
-	ConfigPath   string `json:"config_path,omitempty"`
-	ConfigValid  *bool  `json:"config_valid,omitempty"`
+	Detected    bool   `json:"detected"`
+	BinaryPath  string `json:"binary_path,omitempty"`
+	Version     string `json:"version,omitempty"`
+	ConfigPath  string `json:"config_path,omitempty"`
+	ConfigValid *bool  `json:"config_valid,omitempty"`
 
 	// Runtime status
 	ServiceRunning *bool  `json:"service_running,omitempty"`

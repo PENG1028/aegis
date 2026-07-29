@@ -8,8 +8,8 @@ import (
 
 	"aegis/internal/core"
 	"aegis/internal/endpoint"
-	"aegis/internal/project"
 	"aegis/internal/hostdep/provider"
+	"aegis/internal/project"
 	"aegis/internal/route"
 	"aegis/internal/service"
 )

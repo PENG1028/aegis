@@ -337,7 +337,7 @@ var RuntimeModeLegacy = RuntimeMode{
 	Description:  "Caddy 直接暴露 :80 + :443，TLS 终止后路由到 EP",
 	Implemented:  true,
 	Atoms:        AllAtomsInDisplayOrder(),
-	Compositions: buildCompositions("legacy"),
+	Compositions: buildCompositions(),
 	Providers: []ProviderAtoms{
 		{
 			ProviderID: "caddy",
@@ -384,7 +384,7 @@ var RuntimeModeEdgeMux = RuntimeMode{
 	Description:  "HAProxy :443 SNI → Caddy :8443 TLS 终止 + Caddy :80 HTTP",
 	Implemented:  true,
 	Atoms:        AllAtomsInDisplayOrder(),
-	Compositions: buildCompositions("edge_mux"),
+	Compositions: buildCompositions(),
 	Providers: []ProviderAtoms{
 		{
 			ProviderID: "caddy",

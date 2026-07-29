@@ -129,15 +129,15 @@ func (ch *CredentialHandlers) ResolveByAlias(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"alias":    alias,
-		"scheme":   info.Scheme,
-		"host":     info.Host,
-		"port":     info.Port,
-		"user":     info.User,
-		"password": info.Password,
-		"database": info.Database,
+		"alias":     alias,
+		"scheme":    info.Scheme,
+		"host":      info.Host,
+		"port":      info.Port,
+		"user":      info.User,
+		"password":  info.Password,
+		"database":  info.Database,
 		"raw_query": info.RawQuery,
-		"target":   info.TargetAddr(),
+		"target":    info.TargetAddr(),
 	})
 }
 
@@ -164,10 +164,10 @@ func (ch *CredentialHandlers) RevealCredential(w http.ResponseWriter, r *http.Re
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"credential": map[string]interface{}{
-			"id":               c.ID,
-			"alias":            c.Alias,
-			"secret_version":   c.SecretVersion,
-			"raw_conn_string":  raw,
+			"id":              c.ID,
+			"alias":           c.Alias,
+			"secret_version":  c.SecretVersion,
+			"raw_conn_string": raw,
 		},
 		"warning": "raw connection string revealed — store securely, will not be shown again",
 	})
