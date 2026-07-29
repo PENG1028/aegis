@@ -3,7 +3,6 @@ package httpapi
 import (
 	"database/sql"
 
-	"aegis/internal/acme"
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
 	"aegis/internal/apply"
@@ -20,6 +19,7 @@ import (
 	"aegis/internal/gateway"
 	"aegis/internal/health"
 	"aegis/internal/hostdep/provider"
+	"aegis/internal/httpapi/handlers"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/manageddomain"
@@ -76,14 +76,14 @@ type Services struct {
 	CertStore       *certstore.Service           // v1.9C TLS certificate store
 	TLSLifecycle    *tlslifecycle.Service
 	TLSObservers    []certstore.AutomaticTLSObserver
-	ACMEClient      *acme.Client         // v1.9C ACME auto-cert manager
-	TransparentMgr  *transparent.Manager // v1.8H transparent IP:port proxy
-	CredentialSvc   *credential.Service  // v1.8K encrypted connection strings
-	ServiceAuthSvc  *serviceauth.Service // v1.9A
-	EgressSvc       *egress.Service      // v1.9A-5
-	ProvReg         *provider.Registry   // v1.8L-19 — provider registry for install/uninstall/config handlers
-	Version         string               // build-injected version
-	BuildTime       string               // build-injected timestamp
-	DistNode        *distnode.DistNode   // v1.9B distributed node runtime
-	OnShutdown      func()               // graceful shutdown hook — stops DNS, backups, reconcile, proxies
+	ACMEClient      handlers.ACMEProvider // v1.9C ACME auto-cert manager
+	TransparentMgr  *transparent.Manager  // v1.8H transparent IP:port proxy
+	CredentialSvc   *credential.Service   // v1.8K encrypted connection strings
+	ServiceAuthSvc  *serviceauth.Service  // v1.9A
+	EgressSvc       *egress.Service       // v1.9A-5
+	ProvReg         *provider.Registry    // v1.8L-19 — provider registry for install/uninstall/config handlers
+	Version         string                // build-injected version
+	BuildTime       string                // build-injected timestamp
+	DistNode        *distnode.DistNode    // v1.9B distributed node runtime
+	OnShutdown      func()                // graceful shutdown hook — stops DNS, backups, reconcile, proxies
 }

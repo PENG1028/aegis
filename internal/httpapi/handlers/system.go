@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"aegis/internal/acme"
 	"aegis/internal/action"
 	"aegis/internal/adminauth"
 	"aegis/internal/apply"
@@ -72,7 +71,7 @@ type Handlers struct {
 	CertStore       *certstore.Service   // v1.9C TLS certificate store
 	TLSLifecycle    *tlslifecycle.Service
 	TLSObservers    []certstore.AutomaticTLSObserver
-	ACMEClient      *acme.Client                 // v1.9C ACME via lego (replaces certbot)
+	ACMEClient      ACMEProvider                 // v1.9C ACME via lego (replaces certbot)
 	SafetySvc       *safety.Service              // v1.7AB
 	GatewayInvRepo  *gateway.InventoryRepository // v1.8C-2
 	GatewayInvSvc   *gateway.InventoryService    // v1.8C-2
