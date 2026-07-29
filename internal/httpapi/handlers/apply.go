@@ -18,6 +18,10 @@ func redactGatewaySecrets(config string) string {
 // The old AppService is kept for backward compat during migration.
 
 func (h *Handlers) ConfigPreview(w http.ResponseWriter, r *http.Request) {
+	if h.Workflow == nil {
+		writeError(w, http.StatusNotImplemented, "apply workflow not available")
+		return
+	}
 	result, err := h.Workflow.Preview(r.Context(), "")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -40,6 +44,10 @@ func (h *Handlers) ConfigPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ConfigCurrent(w http.ResponseWriter, r *http.Request) {
+	if h.Workflow == nil {
+		writeError(w, http.StatusNotImplemented, "apply workflow not available")
+		return
+	}
 	config, err := h.Workflow.GetCurrentConfig()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -51,6 +59,10 @@ func (h *Handlers) ConfigCurrent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ConfigDiff(w http.ResponseWriter, r *http.Request) {
+	if h.Workflow == nil {
+		writeError(w, http.StatusNotImplemented, "apply workflow not available")
+		return
+	}
 	current, _ := h.Workflow.GetCurrentConfig()
 	result, err := h.Workflow.Preview(r.Context(), "")
 	if err != nil {
@@ -72,6 +84,10 @@ func (h *Handlers) ConfigDiff(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ApplyConfig(w http.ResponseWriter, r *http.Request) {
+	if h.Workflow == nil {
+		writeError(w, http.StatusNotImplemented, "apply workflow not available")
+		return
+	}
 	result, err := h.Workflow.TryApplyCtx(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -85,6 +101,10 @@ func (h *Handlers) ApplyConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ApplyDryRun(w http.ResponseWriter, r *http.Request) {
+	if h.Workflow == nil {
+		writeError(w, http.StatusNotImplemented, "apply workflow not available")
+		return
+	}
 	result, err := h.Workflow.Preview(r.Context(), "")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -106,6 +126,10 @@ func (h *Handlers) ApplyDryRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) Rollback(w http.ResponseWriter, r *http.Request) {
+	if h.Workflow == nil {
+		writeError(w, http.StatusNotImplemented, "apply workflow not available")
+		return
+	}
 	if err := h.Workflow.Rollback(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -114,6 +138,13 @@ func (h *Handlers) Rollback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ApplyHistory(w http.ResponseWriter, r *http.Request) {
+	if h.Workflow == nil {
+		// WHY: every other handler on this surface fails closed on missing wiring.
+		// Dereferencing here panics the request instead, which reaches the operator
+		// as a dropped connection with no server-side explanation.
+		writeError(w, http.StatusNotImplemented, "apply workflow not available")
+		return
+	}
 	history, err := h.Workflow.History(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
