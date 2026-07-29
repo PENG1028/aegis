@@ -110,6 +110,12 @@ internal/
   cluster/      # Leader 选举 + 集群健康聚合（读 distnode.Membership）
   serviceauth/  # ⭐ 服务间认证（Ed25519 ticket + 拓扑发现）
     aegis/      # serviceauth 的 Aegis 适配器（secrets/node/logs 落地）
+  aegisgateway/ # ⭐ 第 3 类对外表面：能力注册表 + 服务调用转发
+                #   GET  /api/service-auth/v1/capabilities        列举能力
+                #   POST /api/service-auth/v1/capabilities/{n}/call 调用
+                #   当前只注册 1 个能力：node.list（node_capabilities.go）
+                #   注：这是控制面 RPC 注册表，不是流量面。CapabilityRequest.Input
+                #   是 json.RawMessage —— 新增能力前先读 docs/design/external-program-integration.md
   egress/       # 出站流量 allow/block 规则
   routingpolicy/# 网关策略路由
   routingtable/ # 路由表
@@ -269,8 +275,14 @@ make update-all
 
 ### 认证机制
 
-- **Admin Session：** Cookie-based，HTTP-only，bcrypt 密码 + rate limiting（5 次/分钟/IP）
-- **API Token：** `Authorization: Bearer <token>`，可按 scope 控制权限
+- **Admin Session：** Cookie-based（`aegis_admin_session`），HttpOnly + SameSite=Strict，
+  bcrypt 密码 + rate limiting（5 次/分钟/IP）。
+  **`Path=/api`（不是 `/api/admin/v1`）** —— admin 专属端点有一部分在 `/api/admin/v1/` 之外
+  （`/api/apply`、`/api/rollback`、`/api/config/*`、`/api/exposures`、`/api/health`），
+  cookie 收窄到 `/api/admin/v1` 时浏览器不会把它发过去，UI 的 Apply/Rollback/Changes 页面全是 401。
+  `SetSessionCookie` 与 `ClearSessionCookie` 的 Path 必须一致，否则登出删不掉 cookie。
+  `adminauth.Middleware` 的闸门同样覆盖整个 `/api/` —— 两侧必须一起改，改一边无效。
+- **API Token：** `Authorization: Bearer <token>`，单一静态 admin token（**无 scope 机制**）
 - **DistNode：** HMAC-SHA256（cluster secret）+ 节点 Identity，保护 `/api/distnode/v1/call`
 - **ServiceAuth：** Ed25519 签名 ticket（`X-Service-Ticket` + `X-Caller-Service` 头），
   由 `pkg/serviceauth` 的 Guard 中间件校验
@@ -279,8 +291,12 @@ make update-all
 
 - 所有 POST/PATCH/PUT 需要 `Content-Type: application/json`
 - 所有 admin mutation 端点必须调用 `MarkPending()`
-- Service API Key 不能访问 `/api/admin/v1/*`（由 `isSystemRoute()` 阻止）
-- 分页：`?limit=&offset=`，默认 limit=50，最大 200
+- **ServiceAuth ticket 只能访问白名单：** `/api/v1/actions/`、`/api/v1/my/`、`/api/service-auth/v1/`。
+  其余一律 `403 SCOPE_DENIED`，包括 `/api/admin/v1/*` 和业务 CRUD（`/api/routes`、`/api/apply` …）。
+  强制点 `internal/token/middleware.go` 的 `isSystemRoute()` + `serviceTicketAllowed()`。
+  **白名单是加法：新增业务路由默认对 service 关闭**，不需要额外动作。
+  没有 per-action scope 机制（无 token 仓库、无 `/api/admin/v1/api-keys*`）—— ticket 是全有或全无。
+- 分页：admin 列表 `?limit=&offset=`，默认 limit=50，最大 200。My Resources 端点不分页。
 
 ---
 

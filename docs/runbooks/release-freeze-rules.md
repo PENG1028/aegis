@@ -18,9 +18,9 @@ Any change that violates these rules requires explicit review and regression tes
 - [ ] No `INSERT INTO gateway_routes` outside migration
 - [ ] No `INSERT INTO gateway_listeners` outside migration
 - [ ] No handler that writes to gateway_* tables
-- [ ] Gateway mutation handlers must return 405 GATEWAY_MUTATION_FROZEN
+- [ ] 不要重新注册 `/api/admin/v1/gateway/*` 路由 —— 已删除，现由 `apiNotFound` 返回 404
 
-**Regression guard:** `TestGatewayMutationFrozen` in smoke tests
+**Regression guard:** 无自动化守卫。`TestGatewayMutationFrozen` 曾被列在此处，但它构造字面量结果并断言自身，从未发出请求，已随端点一同删除。此规则目前靠 code review 保证 —— 如需守卫，应写一个对 `routes.go` 实际注册表的断言，而非对 provider 状态的断言。
 
 ---
 

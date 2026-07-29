@@ -705,37 +705,7 @@ func TestSmokeServiceRunProviderSmoke(t *testing.T) {
 	t.Logf("Provider smoke: %d checks — %s", result.Total, result.Summary)
 }
 
-// =============================================================================
-// Bonus: Gateway Frozen Test
-// =============================================================================
-
-func TestGatewayMutationFrozen(t *testing.T) {
-	// Verify GATEWAY_MUTATION_FROZEN is covered by the failure matrix
-	fp := fake.NewFakeProvider("caddy", "http")
-	// Provider is healthy — the GATEWAY_MUTATION_FROZEN is at the handler layer
-	info := fp.Info()
-
-	if info.Status != "ready" {
-		t.Errorf("expected provider ready for gateway test, got %s", info.Status)
-	}
-
-	result := &SmokeResult{Name: "gateway-frozen"}
-	checks := []CheckResult{
-		{
-			Name: "GATEWAY_MUTATION_FROZEN", Status: "pass",
-			Message: "category=gateway expected_code=GATEWAY_MUTATION_FROZEN POST /api/admin/v1/gateway/domains returns 405",
-			Detail:  "Response: {\"error\":\"GATEWAY_MUTATION_FROZEN\",\"message\":\"Gateway mutations are frozen...\"}",
-		},
-	}
-	result.Checks = checks
-	result.Total = 1
-	result.Passed_ = 1
-	result.Passed = true
-	result.Summary = "Gateway mutation frozen: verified"
-
-	if !result.Passed {
-		t.Error("gateway frozen check should pass")
-	}
-
-	t.Logf("Gateway frozen: code=GATEWAY_MUTATION_FROZEN, status=%d", 405)
-}
+// TestGatewayMutationFrozen was removed along with its failure-matrix case.
+// It constructed a SmokeResult literal with Passed=true and then asserted that
+// Passed was true, never issuing a request. The endpoint it claimed to verify
+// (POST /api/admin/v1/gateway/domains → 405) is no longer registered at all.

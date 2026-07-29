@@ -172,13 +172,14 @@ All failure cases below can be tested using the **FakeProvider** (`internal/fake
 
 | Field | Expected Value |
 |-------|---------------|
-| **Trigger** | Use service API key to call `/api/admin/v1/*` endpoint |
+| **Trigger** | 用 ServiceAuth ticket 调 `/api/admin/v1/*`，或调白名单外的业务路由（`/api/routes`、`/api/apply`、`/api/projects` …） |
 | **HTTP Status** | 403 (Forbidden) |
-| **error_code** | `SCOPE_DENIED` or `FORBIDDEN` |
+| **error_code** | `SCOPE_DENIED` |
 | **Operation Log** | N/A (rejected at auth layer) |
 | **Apply Log** | N/A |
-| **Audit Log** | event_type=access_denied, actor_type=service_key, result=failed, error_code=SCOPE_DENIED |
-| **CLI verify** | `aegis smoke failure-matrix --fake` reports auth denied |
+| **Audit Log** | event_type=access_denied, actor_type=service_key, target_type=route, target_id=<path>, result=failed, error_code=SCOPE_DENIED |
+| **强制位置** | `internal/token/middleware.go` — `isSystemRoute()` + `serviceTicketAllowed()` 白名单 |
+| **回归测试** | `internal/token/service_scope_test.go` |
 
 ### 3.2 Revoked Key Access
 
@@ -273,17 +274,19 @@ All failure cases below can be tested using the **FakeProvider** (`internal/fake
 
 ## 5. Gateway Failures
 
-### 5.1 Gateway Mutation Frozen
+### 5.1 Gateway Mutation — 路由已删除
 
 | Field | Expected Value |
 |-------|---------------|
 | **Trigger** | `POST /api/admin/v1/gateway/domains` |
-| **HTTP Status** | 405 (Method Not Allowed) |
-| **error_code** | `GATEWAY_MUTATION_FROZEN` |
-| **Operation Log** | N/A (rejected before service layer) |
+| **HTTP Status** | 404 (Not Found) |
+| **error_code** | `NOT_FOUND` |
+| **Operation Log** | N/A |
 | **Apply Log** | N/A |
-| **Audit Log** | event_type=gateway_mutation_blocked, result=blocked |
-| **Response Body** | `{"error": "GATEWAY_MUTATION_FROZEN", "message": "Gateway mutations are frozen. Use /api/v1/actions/* or resource-specific endpoints."}` |
+| **Audit Log** | N/A（未注册的路由不产生审计事件） |
+| **Response Body** | `{"error": {"code": "NOT_FOUND", "message": "API endpoint not found"}}` |
+
+> 曾记录为 `405 GATEWAY_MUTATION_FROZEN`。该端点已从 `routes.go` 移除，请求由 `apiNotFound` 兜底，`GATEWAY_MUTATION_FROZEN` 这个码在代码库中已不存在。
 
 ### 5.2 Gateway Read-Only State Mismatch
 
@@ -316,7 +319,7 @@ For each failure case, verify at least one of these log types is populated:
 | Resource not owned | ✓ (action=failed) | - | ✓ (RESOURCE_NOT_OWNED) | - |
 | Domain already owned | ✓ (action=failed) | - | ✓ (DOMAIN_ALREADY_OWNED) | - |
 | Apply locked | ✓ (apply=failed) | - | - | - |
-| Gateway frozen | - | - | ✓ (GATEWAY_MUTATION_FROZEN) | - |
+| Service ticket 越权 | - | - | ✓ (SCOPE_DENIED, 403) | ✓ (forbidden_access) |
 
 ---
 

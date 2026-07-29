@@ -1,8 +1,14 @@
-# Gateway Abstraction Boundary Closure — v1.7T
+# Gateway Abstraction Boundary Closure
 
-## Status: Frozen (mutation), Read-only (query)
+## Status: 路由已删除（不再是"冻结返回 405"）
 
-The gateway abstraction layer (v1.7) was audited in v1.7R and found to create a second source of truth that was invisible to the apply pipeline. v1.7T finalizes the boundary.
+> **更新：** 本文早期版本称 `/api/admin/v1/gateway/*` mutation 端点被冻结并返回 `405 GATEWAY_MUTATION_FROZEN`。这些路由**已从 `routes.go` 完全移除** —— 现在请求走 `apiNotFound`，返回 **404 NOT_FOUND**，不存在 `GATEWAY_MUTATION_FROZEN` 这个响应码。
+>
+> 对应的 smoke 用例与 `TestGatewayMutationFrozen` 也已删除：它们断言 `return true` 而从未发出请求，报告了一个从未被验证的行为。
+>
+> `gateway_*` 表仍作为 schema 残留存在，下文关于"它们不是真理源"的判断依然成立。
+
+The gateway abstraction layer (v1.7) was audited in v1.7R and found to create a second source of truth that was invisible to the apply pipeline. v1.7T froze the boundary; the routes were removed outright afterwards.
 
 ---
 

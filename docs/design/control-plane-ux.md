@@ -2,7 +2,11 @@
 
 ## Overview
 
-This document defines how the Aegis control plane should behave from a UI/UX perspective. The UI does NOT exist yet — these rules define the contract that a future UI would follow.
+This document defines how the Aegis control plane should behave from a UI/UX perspective.
+
+> **更新：UI 已存在。** 本文早期版本称 "The UI does NOT exist yet"。实际有 100 个 `.tsx`，分 8 个路由组（`command-center`、`fabric`、`runtime`、`access`、`release`、`observe`、`exposure`、`settings`），位于 `ui/src/pages/`，由 `internal/uiassets` 以 `go:embed dist` 打进二进制。
+>
+> 下述规则应作为**现有 UI 的验收标准**来读，而不是未来 UI 的契约。若某条规则与当前实现冲突，那是需要修的 bug 或需要更新的规则 —— 不要假设它尚未实现。
 
 ## Core UX Principle
 

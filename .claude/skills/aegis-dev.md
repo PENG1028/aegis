@@ -36,7 +36,7 @@ make vet && make lint
 
 1. **Aegis is NOT in the data path** — Caddy/HAProxy serve traffic independently
 2. **All admin mutation endpoints MUST call `MarkPending()`**
-3. **Service API keys CANNOT access `/api/admin/v1/*`** — blocked by `isSystemRoute()`
+3. **ServiceAuth tickets reach only an allowlist** — `/api/v1/actions/`, `/api/v1/my/`, `/api/service-auth/v1/`. Everything else (admin API *and* business CRUD like `/api/routes`, `/api/apply`) returns `403 SCOPE_DENIED`. Enforced in `internal/token/middleware.go` via `isSystemRoute()` + `serviceTicketAllowed()`. New business routes are closed to services by default — the allowlist is additive.
 4. **Gateway Link is metadata on a route** — NOT a route source of truth
 5. **Only ports 80 and 443 open on cloud security group** — never test with other ports cross-server
 6. **Content-Type enforcement** — all POST/PATCH/PUT must send `application/json`

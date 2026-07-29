@@ -6,19 +6,20 @@
 
 ---
 
-## ⚠️ 历史遗留（待删除）
+## ✅ 旧实现已清除（勿重建）
 
-以下三个包是 distnode 之前的旧分布式实现，**已废弃，不要使用、不要修改、不要新增引用**：
+distnode 之前的旧分布式实现**已从代码库物理删除**，不要重建，不要新增引用：
 
-| 包 | 状态 | 原因 |
-|----|------|------|
-| `internal/nodeagent/` | ❌ 废弃 | distnode.Membership 已替代心跳/发现 |
-| `internal/noderuntime/` | ❌ 废弃 | distnode.Transport 已替代同步 |
-| `internal/nodestate/` | ❌ 废弃 | distnode.Transport.Call 可直接读远程状态 |
-| `internal/cli/node_run.go` | ❌ 废弃 | `aegis serve` + distnode goroutine 替代 |
-| `POST /api/node/v1/*` | ❌ 废弃 | distnode 用静态 peer + Transport.Call |
+| 已删除 | 被谁替代 |
+|----|------|
+| `internal/nodeagent/` | `distnode.Membership` — 心跳/发现 |
+| `internal/noderuntime/` | `distnode.Transport` — 同步 |
+| `internal/nodestate/` | `distnode.Transport.Call` — 直读远程状态 |
+| `internal/proxy/` | `internal/hostdep/provider/` — 配置渲染 |
+| `internal/cli/node_run.go` | `aegis serve` + distnode goroutine |
+| `POST /api/node/v1/*` | 静态 peer + `Transport.Call` |
 
-**等待合适的重构窗口后删除。在此之前，这 5 个组件是冻结代码。**
+如果在文档里读到这些路径，那份文档是陈旧的 —— 以本文件和 `CLAUDE.md` 为准。
 
 ---
 

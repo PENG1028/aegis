@@ -66,7 +66,7 @@ func (h *Handlers) AdminLogin(w http.ResponseWriter, r *http.Request) {
 
 // AdminLogout handles POST /api/admin/v1/auth/logout
 func (h *Handlers) AdminLogout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("aegis_admin_session")
+	cookie, err := r.Cookie(adminauth.SessionCookieName)
 	if err == nil && cookie.Value != "" {
 		ip := r.RemoteAddr
 		userAgent := r.Header.Get("User-Agent")
@@ -112,7 +112,7 @@ func (h *Handlers) AdminChangePassword(w http.ResponseWriter, r *http.Request) {
 
 // AdminMe handles GET /api/admin/v1/auth/me
 func (h *Handlers) AdminMe(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("aegis_admin_session")
+	cookie, err := r.Cookie(adminauth.SessionCookieName)
 	if err != nil || cookie.Value == "" {
 		writeError(w, http.StatusUnauthorized, "session required")
 		return

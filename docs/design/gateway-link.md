@@ -132,7 +132,10 @@ POST   /api/admin/v1/gateway-links/{id}/rotate # 轮换（返回新 token 一次
 
 | 模块 | 文件 |
 |------|------|
-| HMAC 签名/验证 | `internal/gateway_link/crypto.go` |
-| 路由绑定 | `internal/apply/planner.go` |
-| Caddy 渲染 | `internal/hostdep/provider/caddy_http.go` |
-| 跨节���路由解析 | `internal/noderuntime/caddy_applier.go` |
+| HMAC 签名/验证 | `internal/gateway/crypto.go` |
+| 链接模型 / 服务 | `internal/gateway/gwlink_model.go`、`gwlink_service.go`、`gwlink_repository.go` |
+| header 注入（planner 侧） | `internal/topology/planner.go` → `RouteIntent.ExtraHeaders` |
+| Intent → RouteSpec 传递 | `internal/topology/plan.go` |
+| Caddy 渲染 | `internal/hostdep/provider/caddy_render.go` → `writeReverseProxy()` |
+
+> 路径更新：`internal/gateway_link/` 已并入 `internal/gateway/`；`internal/noderuntime/`（含 `caddy_applier.go`）与 `internal/apply/planner.go` 已删除，规划职责移至 `internal/topology/`。

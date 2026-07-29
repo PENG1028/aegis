@@ -435,14 +435,12 @@ func (s *Service) RunFailureMatrix(ctx context.Context) *SmokeResult {
 				return s.Running && s.Installed
 			},
 		},
-		{
-			name: "GATEWAY_MUTATION_FROZEN", category: "gateway",
-			expectedCode: "GATEWAY_MUTATION_FROZEN",
-			setup:        func(fp *fake.FakeProvider) { fp.ResetErrors() },
-			verify: func(fp *fake.FakeProvider) bool {
-				return true // Verified by handler returning 405; fake provider is healthy
-			},
-		},
+		// GATEWAY_MUTATION_FROZEN was removed: the /api/admin/v1/gateway/*
+		// mutation routes it described no longer exist (requests now 404 via
+		// apiNotFound, not 405), and the case asserted `return true`
+		// unconditionally — it reported a verified behavior that was never
+		// exercised. Do not re-add a case without a real request against a
+		// registered route.
 	}
 
 	for _, tc := range cases {

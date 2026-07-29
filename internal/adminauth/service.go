@@ -41,8 +41,8 @@ const (
 
 // loginRate tracks login attempts per IP.
 type loginRate struct {
-	attempts   int
-	firstSeen  time.Time
+	attempts    int
+	firstSeen   time.Time
 	lockedUntil time.Time
 }
 
@@ -232,7 +232,7 @@ func (s *Service) EnsureAdmin(username, password string) (*AdminUser, error) {
 // logAudit writes an audit log entry if a logger is configured.
 // This is a no-op until wired in main.go.
 var (
-	auditLogger   logs.AuditLogger
+	auditLogger     logs.AuditLogger
 	auditLoggerOnce sync.Once
 )
 

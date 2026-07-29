@@ -30,8 +30,8 @@
 
 | 属性 | 值 |
 |------|-----|
-| 实现 | `internal/proxy/caddy/render.go` — `renderCaddyfile()` + `writeReverseProxy()` |
-| 路由匹配 | `internal/apply/planner.go:189-201` — `Route → UpstreamURL` |
+| 实现 | `internal/hostdep/provider/caddy_render.go` — `(*CaddyProvider).renderCaddyfile()` + `writeReverseProxy()` |
+| 路由匹配 | `internal/topology/planner.go` — `collectIntents()` → `resolveIntents()` → `RouteSpec.Upstream` |
 | 状态 | ✅ 已实现，E2E 测试通过 |
 
 ### 1.2 域名 :80 → 远程机器后端 (Gateway Link)
@@ -307,8 +307,8 @@ Machine A 进程 → curl http://b-service.internal:9100/data
 
 | 模块 | 文件 | 功能 |
 |------|------|------|
-| Caddy 渲染 | `internal/proxy/caddy/render.go` | `renderCaddyfile()` — 域名→reverse_proxy |
-| 路由规划 | `internal/apply/planner.go` | `Plan()` — Route→UpstreamURL, Gateway Link 改写 |
+| Caddy 渲染 | `internal/hostdep/provider/caddy_render.go` | `renderCaddyfile()` — 域名→reverse_proxy |
+| 路由规划 | `internal/topology/planner.go` | `PlanForMode()` — Route→RouteSpec, Gateway Link header 注入 |
 | DNS 服务器 | `internal/dns/server.go` | UDP :53 监听，拦截 A 记录查询 |
 | DNS 解析器 | `internal/dns/resolver.go` | `resolveBestIP()` — 同机/内网/公网选择 |
 | 可达性检测 | `internal/dns/reachability.go` | TCP :80 探活 |

@@ -127,8 +127,8 @@ curl -H "X-Service-Ticket: <base64_ed25519_ticket>" http://host:7380/api/v1/acti
 | `/api/admin/v1/service-auth/blocklist/{id}/unblock` | POST | 解封 |
 | `/api/admin/v1/service-auth/topology` | GET | 调用拓扑（`?window=1h`） |
 | `/api/admin/v1/service-auth/call-logs` | GET | 调用日志（`?since=&limit=`） |
-| `/api/admin/v1/service-auth/groups` | GET/POST | 服务组管理 |
-| `/api/admin/v1/service-auth/policies` | GET/POST | 权限策略管理（⚠️ 仅展示，引擎已移除） |
+
+> 已移除：`service-auth/groups`、`service-auth/policies`、`/api/admin/v1/api-keys*` 曾在本文列出，但从未在 `routes.go` 注册（请求返回 404）。不要按它们编写客户端。
 
 ### 管理员
 
@@ -232,17 +232,23 @@ curl -H "X-Service-Ticket: <base64_ed25519_ticket>" http://host:7380/api/v1/acti
   ├─ isPublicPath? → 放行（healthz, login, service-auth SDK 等）
   │
   ├─ AdminSession Cookie? → ActionContext{admin} → 放行
+  │     （cookie Path=/api，adminauth 闸门覆盖 /api/ 全域 —— 所以
+  │      /api/apply、/api/rollback、/api/config/* 这些 prefix 之外的
+  │      admin 端点也能拿到 AdminContext）
   │
   ├─ Bearer Token 匹配? → ActionContext{admin} → 放行
   │
-  ├─ X-Service-Ticket? → VerifyTicket() → ActionContext{service, space=服务名}
+  ├─ X-Service-Ticket? → VerifyTicket() 通过
   │     │
-  │     ├─ Action API? → requireOwnership() 检查空间归属 → 放行/拒绝
+  │     ├─ isSystemRoute(path)?           → 403 SCOPE_DENIED + 审计日志
+  │     ├─ !serviceTicketAllowed(path)?   → 403 SCOPE_DENIED + 审计日志
   │     │
-  │     └─ Admin API? → AdminAuthMiddleware 拒绝（需要 cookie）
+  │     └─ 白名单内 → ActionContext{service, space=服务名}
+  │            └─ handler 内 requireOwnership() 检查空间归属 → 放行/拒绝
   │
   └─ 无认证 → 401
 ```
 
-ServiceAuth ticket 只适用于 Action API 和 My Resources。
-Admin API 和 Exposure API 需要 admin 权限。
+**强制点在 `internal/token/middleware.go`，不是 AdminAuthMiddleware。** `adminauth.Middleware` 在无 cookie 时是放行（`next.ServeHTTP`）而非拒绝 —— 它只负责注入 AdminContext，判定权在内层 Auth 中间件。曾有一段时期两层都不拦 ticket，导致有效 ticket 可达 admin 与业务 handler；现由白名单封闭，回归测试见 `internal/token/service_scope_test.go`。
+
+ServiceAuth ticket 只适用于 Action API（`/api/v1/actions/`）、My Resources（`/api/v1/my/`）和 SDK 面（`/api/service-auth/v1/`）。Admin API、业务 CRUD（`/api/routes` 等）、Apply/Rollback 均需 admin 权限。

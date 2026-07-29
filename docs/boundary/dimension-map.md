@@ -16,7 +16,7 @@ This document maps all current boundary dimensions, their capabilities, and inte
 | API key (Bearer token) | ✅ real | Scope-based, SHA-256 hashed storage |
 | Scope isolation | ✅ real | Space-scoped keys only see own resources |
 | Ownership enforcement | ✅ real | requireOwnership() in ActionService |
-| Admin → service key blocking | ✅ real | isSystemRoute() covers all admin + CRUD routes |
+| Admin → service ticket blocking | ✅ real | `isSystemRoute()` + `serviceTicketAllowed()` 白名单，`internal/token/middleware.go`；覆盖 admin 与业务 CRUD，403 SCOPE_DENIED |
 | Login bypass (no Bearer) | ✅ real | Auth middleware bypasses POST /auth/login |
 | Gateway Link auth | 🛠️ implemented | HMAC-SHA256 shared secret between gateways |
 

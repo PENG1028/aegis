@@ -3,6 +3,7 @@ package token
 import (
 	"encoding/json"
 	"net/http"
+	"path"
 	"strings"
 
 	"aegis/internal/action"
@@ -53,7 +54,18 @@ func NewAuthMiddleware(adminToken string) *AuthMiddleware {
 }
 
 // isPublicPath returns true for paths that don't require authentication.
-func isPublicPath(path, method string) bool {
+// isPublicPath reports whether a path may be served without authentication.
+//
+// The caller passes the raw request path, which this function normalizes first.
+// Without cleaning, a dot segment could claim a public prefix while denoting a
+// protected route — e.g. "/api/service-auth/v1/../admin/v1/scopes" matches the
+// SDK prefix below, and the exact-match exclusion for
+// "/api/service-auth/v1/services" is sidestepped by
+// "/api/service-auth/v1/./services". Normalizing makes every comparison here
+// operate on the path that actually gets routed.
+func isPublicPath(rawPath, method string) bool {
+	path := normalizeGuardPath(rawPath)
+
 	if path == "/api/admin/v1/auth/login" && method == "POST" {
 		return true
 	}
@@ -100,6 +112,67 @@ func isPublicPath(path, method string) bool {
 	return false
 }
 
+// isSystemRoute reports whether a path is an administrative/system surface that
+// service callers must never reach.
+//
+// Service tickets authenticate a *workload*, not an operator. A workload may
+// manage its own resources through the Action API, but it must not read cluster
+// inventory, mutate providers, or drive Apply. Keeping this as a path predicate
+// (rather than per-handler checks) means a newly added admin route is protected
+// the moment it is registered — the previous per-handler approach left most
+// admin handlers unguarded because each one had to remember to check.
+func isSystemRoute(path string) bool {
+	return strings.HasPrefix(path, "/api/admin/")
+}
+
+// serviceTicketAllowlist is the complete set of surfaces a ServiceAuth ticket
+// may reach. This is an allowlist, not a denylist: a route that is not named
+// here is denied for service callers.
+//
+// WHY an allowlist: the business API (/api/routes, /api/apply, /api/projects…)
+// performs no space-ownership checks of its own. A service reaching those paths
+// could create arbitrary routes and trigger Apply, bypassing the ownership
+// enforcement that only exists inside the Action API handlers. Enumerating what
+// is permitted keeps new business routes closed by default.
+var serviceTicketAllowlist = []string{
+	"/api/v1/actions/",      // self-service resource operations (ownership enforced per-handler)
+	"/api/v1/my/",           // read-only view of caller's own resources
+	"/api/service-auth/v1/", // SDK surface: sync, report, heartbeat, call, capabilities
+}
+
+// serviceTicketAllowed reports whether a service-ticket caller may reach path.
+func serviceTicketAllowed(p string) bool {
+	for _, prefix := range serviceTicketAllowlist {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeGuardPath resolves dot segments before the allowlist sees a path.
+//
+// This middleware runs ahead of http.ServeMux, so r.URL.Path is still exactly
+// what the client sent: "/api/v1/my/../admin/v1/scopes" carries an allowed
+// prefix but denotes an admin route. ServeMux happens to answer such requests
+// with a 301 to the cleaned path (which then re-enters this guard and is
+// denied), so prefix matching is not currently bypassable — but that safety
+// belongs to the router, not to this check. Cleaning here keeps the guard
+// correct on its own terms.
+//
+// path.Clean drops a trailing slash, so restore it: the allowlist entries are
+// directory prefixes and "/api/v1/my/" must keep matching itself.
+func normalizeGuardPath(raw string) string {
+	if raw == "" {
+		return "/"
+	}
+	cleaned := path.Clean(raw)
+	if strings.HasSuffix(raw, "/") && !strings.HasSuffix(cleaned, "/") {
+		cleaned += "/"
+	}
+	return cleaned
+}
+
 // Middleware returns an HTTP middleware that authenticates requests.
 func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +182,9 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// ① Admin session cookie (set by AdminAuthMiddleware for /api/admin/v1/*)
+		// ① Admin session cookie — AdminAuthMiddleware injects AdminContext for
+		// any /api/ path, so this covers admin-only endpoints outside the
+		// /api/admin/v1/ prefix too (/api/apply, /api/rollback, /api/config/*).
 		if adminCtx := adminauth.GetAdminContext(r.Context()); adminCtx != nil {
 			ac := &action.ActionContext{
 				SpaceID:   "",
@@ -142,6 +217,22 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 			if ticket != "" {
 				serviceName, err := serviceAuthChecker.VerifyTicketAndGetSpace(ticket)
 				if err == nil {
+					// A valid ticket proves identity, not authority. Admin and
+					// unlisted business routes stay closed to service callers.
+					// Match on the cleaned path so dot segments cannot smuggle an
+					// admin route in behind an allowed prefix.
+					guardPath := normalizeGuardPath(r.URL.Path)
+					if isSystemRoute(guardPath) || !serviceTicketAllowed(guardPath) {
+						// actor_type matches the unauthorized_access call below and
+						// docs/design/failure-matrix.md §3.1 so audit queries on
+						// actor_type=service_key see both denial kinds.
+						// Log the cleaned path: it is what the decision used.
+						logAuditEvent("service_key", serviceName, "access_denied", r,
+							"route", guardPath, "failed", "SCOPE_DENIED")
+						writeAuthError(w, http.StatusForbidden, "SCOPE_DENIED",
+							"service tickets may only access the Action API and their own resources")
+						return
+					}
 					ac := &action.ActionContext{
 						SpaceID:   serviceName,
 						TokenType: "service",

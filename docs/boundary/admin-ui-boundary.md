@@ -1,4 +1,10 @@
-# Admin/UI Boundary — v1.7AA
+# Admin/UI Boundary
+
+> **⚠️ 本文的 "Page UI: ❌ Not implemented / CLI-only" 标注已全面过期。**
+> UI 已实现并嵌入二进制：100 个 `.tsx`，8 个路由组在 `ui/src/pages/`（`command-center`、`fabric`、`runtime`、`access`、`release`、`observe`、`exposure`、`settings`），
+> 由 `internal/uiassets`（`go:embed dist`）提供，SPA 路由经 `routes.go` 的 `/{path...}` 兜底。
+>
+> 下表的 **API 列仍然有效**（可作为端点→控件的映射速查），**UI 状态列不要采信** —— 请直接查 `ui/src/lib/real-api-client.ts` 确认某端点是否已被前端调用。
 
 ## Dashboard Page
 
