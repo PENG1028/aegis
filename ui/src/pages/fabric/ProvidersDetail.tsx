@@ -245,7 +245,21 @@ function ProviderCard({ provider, universe, toast }: {
 
           {provider.installed ? (
             <div className="flex gap-2 pt-1 border-t border-a-border/30">
-              <Btn onClick={() => { providerApi.reload(provider.id).then(() => toast(`${provider.name} 重载成功`)).catch((e: Error) => toast(`失败: ${e.message}`, 'error')); }} className="text-[10px]">热重载</Btn>
+              {/* The reload endpoint answers 200 for a valid request and reports the
+                  outcome in the body, so a refused reload resolves rather than
+                  rejects. Reading only the promise state would report success while
+                  the gateway keeps serving its old config. */}
+              <Btn onClick={() => {
+                providerApi.reload(provider.id)
+                  .then((r: { status?: string; error?: string }) => {
+                    if (r?.status === 'failed') {
+                      toast(`失败: ${r.error || '重载被拒绝'}`, 'error');
+                      return;
+                    }
+                    toast(`${provider.name} 重载成功`);
+                  })
+                  .catch((e: Error) => toast(`失败: ${e.message}`, 'error'));
+              }} className="text-[10px]">热重载</Btn>
               <Btn onClick={() => { providerApi.getConfig(provider.id).then(c => toast(JSON.stringify(c))).catch((e: Error) => toast(`失败: ${e.message}`, 'error')); }} className="text-[10px]">查看配置</Btn>
               <Btn onClick={() => { providerApi.diagnoseAll().then(() => toast('诊断完成')).catch((e: Error) => toast(`失败: ${e.message}`, 'error')); }} className="text-[10px]">诊断</Btn>
             </div>
