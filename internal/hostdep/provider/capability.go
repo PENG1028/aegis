@@ -78,6 +78,17 @@ func SemanticsOf(capability Capability) CapabilitySemantics {
 			Migration:   MigrationReloadAsset,
 			CoupledWith: []Capability{CapTLSTerminate},
 		}
+	// WHY: mTLS consumes a client-CA bundle on disk. Falling through to the
+	// default would classify it declarative/re_render, so a mode-switch preview
+	// would promise a pure config re-render and silently omit the CA reload the
+	// new executor needs. Stated now, while the capability is still unreachable,
+	// so wiring it later cannot inherit the wrong contract.
+	case CapMTLSTerminate:
+		return CapabilitySemantics{
+			StateClass: StatePortableAsset, Affinity: AffinityNone,
+			Migration:   MigrationReloadAsset,
+			CoupledWith: []Capability{CapTLSTerminate},
+		}
 	case CapListenTCP, CapListenUDP:
 		return CapabilitySemantics{
 			StateClass: StateRuntime, Affinity: AffinityBundleSticky,
@@ -151,11 +162,17 @@ const (
 	// CapMTLSTerminate — can terminate TLS with mutual (client-certificate) authentication.
 	// The gateway verifies the client's certificate before forwarding.
 	// Supported by: HAProxy (client-cert verify), Nginx (ssl_client_certificate), Caddy.
+	//
+	// NOT IMPLEMENTED: no provider declares it and no renderer emits a ca-file or
+	// verify directive. The key exists so semantics and onboarding can be written
+	// against it; it is unreachable from any Composition today.
 	CapMTLSTerminate Capability = "mtls_terminate"
 
 	// CapTLSMasquerade — presents TLS to the outside world but forwards plaintext
 	// to the upstream (TLS-offloading at the edge).
 	// This is effectively CapTLSTerminate + upstream over cleartext.
+	//
+	// NOT IMPLEMENTED: declared by no provider, emitted by no renderer.
 	CapTLSMasquerade Capability = "tls_masquerade"
 
 	// ==========================================================================

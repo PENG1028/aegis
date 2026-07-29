@@ -7,6 +7,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,37 @@ const (
 	privateCertFileMode = os.FileMode(0600)
 	sharedCertFileMode  = os.FileMode(0640)
 )
+
+// RollbackStatus reports whether a failed in-place replace restored the previous
+// PEM pair. Mirrors apply.RollbackStatus deliberately: an operator reading either
+// error should not have to learn two vocabularies for the same question.
+type RollbackStatus string
+
+const (
+	RollbackComplete   RollbackStatus = "complete"
+	RollbackIncomplete RollbackStatus = "incomplete"
+)
+
+// ReplaceError carries recovery state out of ReplaceWith.
+//
+// WHY a typed error: a renewal that fails after the certificate file is written
+// but before the key is can leave a mismatched pair on disk, which every gateway
+// refuses to load. The caller must be able to distinguish "renewal failed, disk
+// untouched" from "renewal failed and the asset is now broken" without parsing
+// error strings — the first is a retry, the second needs a human.
+type ReplaceError struct {
+	Reason           string
+	RollbackStatus   RollbackStatus
+	RollbackFailures []string
+}
+
+func (e *ReplaceError) Error() string {
+	if e.RollbackStatus == RollbackIncomplete {
+		return fmt.Sprintf("%s; rollback incomplete, certificate and key on disk may not match: %s",
+			e.Reason, strings.Join(e.RollbackFailures, "; "))
+	}
+	return fmt.Sprintf("%s; previous certificate restored", e.Reason)
+}
 
 // NewService creates a certificate service.
 func NewService(repo *Repository, certDir string) *Service {
@@ -227,8 +259,20 @@ func (s *Service) ReplaceWith(existingID, replacementID string) error {
 		return fmt.Errorf("replace certificate file: %w", err)
 	}
 	if err := s.replaceFile(existing.KeyPath, newKeyPEM); err != nil {
-		_ = s.replaceFile(existing.CertPath, oldCertPEM)
-		return fmt.Errorf("replace key file: %w", err)
+		// The certificate file is already the new one. If restoring it fails, the
+		// pair on disk is mismatched — the gateway will refuse to load it, and the
+		// caller must know that rather than seeing only the key-write failure.
+		if rbErr := s.replaceFile(existing.CertPath, oldCertPEM); rbErr != nil {
+			return &ReplaceError{
+				Reason:           fmt.Sprintf("replace key file: %v", err),
+				RollbackStatus:   RollbackIncomplete,
+				RollbackFailures: []string{fmt.Sprintf("restore certificate %s: %v", existing.CertPath, rbErr)},
+			}
+		}
+		return &ReplaceError{
+			Reason:         fmt.Sprintf("replace key file: %v", err),
+			RollbackStatus: RollbackComplete,
+		}
 	}
 
 	existing.Domains = replacement.Domains
@@ -238,9 +282,25 @@ func (s *Service) ReplaceWith(existingID, replacementID string) error {
 	existing.Note = replacement.Note
 	existing.UpdatedAt = time.Now()
 	if err := s.repo.Update(existing); err != nil {
-		_ = s.replaceFile(existing.CertPath, oldCertPEM)
-		_ = s.replaceFile(existing.KeyPath, oldKeyPEM)
-		return fmt.Errorf("update renewed certificate: %w", err)
+		// Both files are already the new pair while the database still describes the
+		// old one. A failed restore here leaves record and disk disagreeing, which no
+		// later read can detect — it must be reported, not swallowed.
+		var failures []string
+		if rbErr := s.replaceFile(existing.CertPath, oldCertPEM); rbErr != nil {
+			failures = append(failures, fmt.Sprintf("restore certificate %s: %v", existing.CertPath, rbErr))
+		}
+		if rbErr := s.replaceFile(existing.KeyPath, oldKeyPEM); rbErr != nil {
+			failures = append(failures, fmt.Sprintf("restore key %s: %v", existing.KeyPath, rbErr))
+		}
+		status := RollbackComplete
+		if len(failures) > 0 {
+			status = RollbackIncomplete
+		}
+		return &ReplaceError{
+			Reason:           fmt.Sprintf("update renewed certificate: %v", err),
+			RollbackStatus:   status,
+			RollbackFailures: failures,
+		}
 	}
 
 	if err := s.repo.Delete(replacementID); err != nil {

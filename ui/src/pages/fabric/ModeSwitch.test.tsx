@@ -19,11 +19,12 @@ const preview: ModeSwitchPreviewResponse = {
   ],
 };
 
-function registerHandlers(body = preview, switchStatus = 200) {
+function registerHandlers(body = preview, switchStatus = 200, modeExtra: Record<string, unknown> = {}) {
   server.use(
     http.get('*/api/system/runtime-mode', () => HttpResponse.json({
       current: { id: 'legacy', label: 'Legacy', compositions: [{ name: 'HTTPS Route', status: 'available' }] },
       available_modes: [{ id: 'legacy', label: 'Legacy', implemented: true }, { id: 'edge_mux', label: 'Edge Mux', description: 'Target', implemented: true }],
+      ...modeExtra,
     })),
     http.get('*/api/admin/v1/providers', () => HttpResponse.json({ providers: [] })),
     http.post('*/api/admin/v1/mode/preview', () => HttpResponse.json(body)),
@@ -57,6 +58,28 @@ describe('ModeSwitch lifecycle preview', () => {
 
     expect(await screen.findByText('1 条入口无法迁移')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '确认切换' })).toBeDisabled();
+  });
+
+  // Detection decides the mode from process liveness alone, so a gateway left
+  // running by systemd after a switch back makes it report the abandoned mode.
+  // Switching from a misidentified current mode is how that becomes an outage,
+  // so the conflict has to be visible on this page, not just in the API payload.
+  it('surfaces a mode/port inconsistency reported by the backend', async () => {
+    registerHandlers(preview, 200, {
+      evidence_warning: '检测为 legacy 模式，但 :8443 上有监听，但当前模式不需要它（edge_mux 模式的 caddy/tls_terminate）',
+    });
+    renderPage(<ModeSwitch />, '/fabric/mode');
+
+    expect(await screen.findByText(/模式识别与实际端口占用不一致/)).toBeInTheDocument();
+    expect(screen.getByText(/:8443 上有监听/)).toBeInTheDocument();
+  });
+
+  it('shows no inconsistency banner when the backend reports none', async () => {
+    registerHandlers();
+    renderPage(<ModeSwitch />, '/fabric/mode');
+
+    await screen.findByRole('button', { name: '切换到 Edge Mux' });
+    expect(screen.queryByText(/模式识别与实际端口占用不一致/)).not.toBeInTheDocument();
   });
 
   it('shows automatic rollback status without suggesting a manual rollback', async () => {

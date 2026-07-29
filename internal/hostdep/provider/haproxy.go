@@ -287,7 +287,12 @@ func haproxyCapabilities() []Capability {
 		// L5
 		CapTLSPassthrough,
 		CapTLSTerminate,
-		CapMTLSTerminate,
+		// CapMTLSTerminate is deliberately NOT declared: haproxy_render.go emits
+		// no ca-file / "verify required" directive, so nothing would honour it.
+		// A declared capability reads as ready to ProviderState.HasCapability and
+		// to the UI's capabilityIsReady — declaring an unrendered capability
+		// makes both report a capability that cannot execute. Re-add it here in
+		// the same change that renders it. See docs/design/capability-onboarding.md.
 		// L6
 		CapSNIPreread,
 		// L7 protocols

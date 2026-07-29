@@ -4,9 +4,27 @@
 /aegis-dev.exe
 /aegis-linux
 /aegis-linux.gz
+/aegis-linux.zip
 /simulated-acceptance
 /simulated-acceptance.exe
 *~
+
+# Ad-hoc live-instance probe scripts. One-off tools written to poke a running
+# instance during a debugging round; whatever they established belongs in a test,
+# not in history. Committed tooling lives under scripts/ with a real name.
+scripts/r[0-9]-*
+scripts/r[0-9][0-9]-*
+scripts/round2-*
+scripts/staging*.py
+scripts/debug-*
+scripts/bind-test*.py
+scripts/check-*.py
+scripts/regression*.py
+scripts/verify-binding.py
+scripts/verify-cert.sh
+scripts/test-route.py
+scripts/diag.py
+scripts/state.py
 
 # Development data
 .aegis/

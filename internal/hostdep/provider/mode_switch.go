@@ -8,19 +8,19 @@ import "fmt"
 
 // ModeSwitchPreview describes the impact of switching from one RuntimeMode to another.
 type ModeSwitchPreview struct {
-	CurrentMode     string                `json:"current_mode"`      // "edge_mux"
-	TargetMode      string                `json:"target_mode"`       // "legacy"
-	TotalRoutes     int                   `json:"total_routes"`
-	RouteBreakdown  []CompositionSummary  `json:"route_breakdown"`   // per-composition stats
-	AffectedRoutes  AffectedRouteCounts   `json:"affected_routes"`
-	ProviderChanges []ProviderChange      `json:"provider_changes"`  // what happens to each provider
-	Risks           []string              `json:"risks"`             // human-readable warnings
+	CurrentMode     string               `json:"current_mode"` // "edge_mux"
+	TargetMode      string               `json:"target_mode"`  // "legacy"
+	TotalRoutes     int                  `json:"total_routes"`
+	RouteBreakdown  []CompositionSummary `json:"route_breakdown"` // per-composition stats
+	AffectedRoutes  AffectedRouteCounts  `json:"affected_routes"`
+	ProviderChanges []ProviderChange     `json:"provider_changes"` // what happens to each provider
+	Risks           []string             `json:"risks"`            // human-readable warnings
 }
 
 // CompositionSummary shows route counts and support status for one composition.
 type CompositionSummary struct {
-	Key           string `json:"key"`            // "https_route"
-	Name          string `json:"name"`           // "HTTPS Route"
+	Key           string `json:"key"`  // "https_route"
+	Name          string `json:"name"` // "HTTPS Route"
 	RouteCount    int    `json:"route_count"`
 	CurrentModeOK bool   `json:"current_mode_ok"`
 	TargetModeOK  bool   `json:"target_mode_ok"`
@@ -29,8 +29,8 @@ type CompositionSummary struct {
 
 // AffectedRouteCounts summarizes how routes survive the switch.
 type AffectedRouteCounts struct {
-	Kept        int `json:"kept"`         // works in both modes
-	Unsupported int `json:"unsupported"`  // target mode can't serve these
+	Kept        int `json:"kept"`        // works in both modes
+	Unsupported int `json:"unsupported"` // target mode can't serve these
 }
 
 // ProviderChange describes how a provider is affected by the switch.
@@ -52,7 +52,7 @@ func AnalyseModeSwitch(routes []RouteSpec, currentMode, targetMode RuntimeMode) 
 
 	// Group routes by composition key
 	type compGroup struct {
-		key   string
+		key    string
 		routes []RouteSpec
 	}
 	groups := make(map[string]*compGroup)
@@ -154,11 +154,23 @@ func AnalyseModeSwitch(routes []RouteSpec, currentMode, targetMode RuntimeMode) 
 			preview.Risks = append(preview.Risks,
 				fmt.Sprintf("%s 将停止，已有连接将被断开", providerLabel(pc.ProviderID)))
 		}
+		// WHY not "重新加载": the executor stops every provider of the current
+		// mode — including ones the target mode keeps — before starting the
+		// target set (apply.Workflow.SwitchMode phase 2). A provider that keeps
+		// serving under a new port is still stopped and started, not reloaded.
+		// Calling it a reload understated the interruption to whoever ticks the
+		// confirmation box.
 		if pc.Action == "reconfig" {
 			preview.Risks = append(preview.Risks,
-				fmt.Sprintf("%s 配置将重新加载，可能有秒级连接中断", providerLabel(pc.ProviderID)))
+				fmt.Sprintf("%s 将停止并以新配置重启（不是热重载），期间该端口不可用", providerLabel(pc.ProviderID)))
 		}
 	}
+
+	// The switch always rebinds listeners, so the edge is unavailable between
+	// the stop loop and the last successful start. Stated unconditionally: it is
+	// a property of the mechanism, not of any particular route or provider.
+	preview.Risks = append(preview.Risks,
+		"切换过程中所有入口短暂中断——端口需要重新绑定，无法做到零停机；失败时自动回滚到当前模式")
 
 	return preview
 }
@@ -228,7 +240,12 @@ func reconfigReason(id string, current, target RuntimeMode) string {
 }
 
 // providerLabel returns a display label for a provider ID.
-// Uses the registry when available; falls back to the raw ID.
+//
+// Currently the identity function: provider IDs ("caddy", "haproxy") are already
+// the names operators use, so there is nothing to map. The indirection exists so
+// a future provider needing a different display name has one place to add it —
+// AnalyseModeSwitch is a pure function with no registry handle, so resolving
+// labels from the registry would mean threading one through.
 func providerLabel(id string) string {
 	return id
 }
@@ -242,4 +259,3 @@ func unsupportedGroupCount(breakdown []CompositionSummary) int {
 	}
 	return count
 }
-

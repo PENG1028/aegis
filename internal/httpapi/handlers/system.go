@@ -86,6 +86,11 @@ type Handlers struct {
 	BuildTime       string                       // build-injected timestamp
 	DistNode        *distnode.DistNode           // v1.9B distributed node runtime
 	proxyMux        *http.ServeMux               // v1.9B cross-node view proxy
+
+	// PortProbe cross-checks the detected runtime mode against bound ports.
+	// nil means provider.DialPortProbe — injected so tests do not depend on
+	// whatever happens to be listening on the host running them.
+	PortProbe provider.PortProbe
 }
 
 // SystemStatus returns enhanced system status.
@@ -205,7 +210,17 @@ func (h *Handlers) SystemStatus(w http.ResponseWriter, r *http.Request) {
 // The frontend uses this to render the binding matrix without hand-coded data.
 func (h *Handlers) RuntimeMode(w http.ResponseWriter, r *http.Request) {
 	states := h.ProvReg.List()
-	current := provider.DetectRuntimeMode(states)
+
+	// Cross-check the liveness verdict against what is actually bound. Detection
+	// itself is unchanged — this endpoint is where an operator reads the mode, so
+	// it is worth the socket probes to say when the ports disagree (a gateway left
+	// running by systemd after a switch back makes detection report the mode that
+	// was abandoned). Reported only; nothing is restarted to force agreement.
+	probe := h.PortProbe
+	if probe == nil {
+		probe = provider.DialPortProbe
+	}
+	current, evidence := provider.DetectRuntimeModeWithEvidence(states, probe)
 	allModes := provider.AllRuntimeModes()
 
 	// Evaluate live composition status for each mode
@@ -214,10 +229,15 @@ func (h *Handlers) RuntimeMode(w http.ResponseWriter, r *http.Request) {
 	}
 	current.EvalAllCompositions(states)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"current":         current,
 		"available_modes": allModes,
-	})
+		"evidence":        evidence,
+	}
+	if s := evidence.Summary(); s != "" {
+		resp["evidence_warning"] = s
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // Compositions returns the canonical composition registry.

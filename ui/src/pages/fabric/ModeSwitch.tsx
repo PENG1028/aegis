@@ -78,6 +78,11 @@ export default function ModeSwitch() {
   });
 
   const currentMode = modeData?.current;
+  // Set when the detected mode disagrees with the ports actually bound — e.g. a
+  // gateway systemd restarted after a switch back, which makes detection report
+  // the mode that was abandoned. Surfaced here because switching from a
+  // misidentified current mode is what turns the inconsistency into an outage.
+  const evidenceWarning = (modeData as any)?.evidence_warning as string | undefined;
   const availableModes = modeData?.available_modes || [];
   const providers = provData?.providers || [];
   const currentCompositions: CompStatus[] = currentMode?.compositions || [];
@@ -110,7 +115,13 @@ export default function ModeSwitch() {
   const executeSwitch = async () => {
     if (!previewData) return;
     setExecuting(true);
-    setExecStep('正在备份当前配置...');
+    // WHY a single neutral message: /mode/switch is one blocking request with no
+    // progress stream, so the frontend cannot observe which phase the backend is
+    // in. The previous text named a backup step and never changed — a progress
+    // indicator that reports a phase it cannot see is worse than one that admits
+    // it doesn't know, because it invites cancelling at what looks like a safe
+    // moment. Wire real phases only if the endpoint starts streaming them.
+    setExecStep('正在切换，入口短暂中断中——请勿关闭页面');
     try {
       const result = await adminApi.modeSwitch(previewData.preview.target_mode, true);
       setExecResult(result);
@@ -153,6 +164,12 @@ export default function ModeSwitch() {
         title="运行时模式"
         subtitle={`当前: ${currentMode.label} · ${currentCompositions.filter((c: CompStatus) => c.status === 'available').length} 个组合能力可用`}
       />
+
+      {evidenceWarning && (
+        <ErrorBanner
+          message={`模式识别与实际端口占用不一致：${evidenceWarning}。先确认端口归属再切换——从被误判的当前模式切换可能导致端口冲突。`}
+        />
+      )}
 
       {/* Section 1: Capability Usage */}
       <Card title="能力使用概览" subtitle="每个组合能力的路由数及当前状态">

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	aerrors "aegis/internal/core"
 	"aegis/internal/core"
+	aerrors "aegis/internal/core"
 	"aegis/internal/logs"
 )
 
@@ -65,9 +65,11 @@ func (s *AppService) CreateManagedDomain(ctx context.Context, input CreateManage
 		VerificationName:  verifyName,
 		VerificationValue: verifyValue,
 		Status:            "pending_verification",
-		TLSStatus:         "pending",
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		// Never advances — managed domains do not drive certificate issuance.
+		// See the TLSStatus field comment in model.go.
+		TLSStatus: TLSStatusNotRequested,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
 	if err := s.repo.Create(md); err != nil {

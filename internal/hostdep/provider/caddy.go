@@ -318,7 +318,9 @@ func caddyCapabilities() []Capability {
 		CapUpstreamUDP,
 		// L5
 		CapTLSTerminate,
-		CapTLSMasquerade,
+		// CapTLSMasquerade is deliberately NOT declared: caddy_render.go emits
+		// nothing for it. Same reason as CapMTLSTerminate on haproxy — see the
+		// note there and docs/design/capability-onboarding.md.
 		// L6
 		CapALPNMatch,
 		CapProtoDetect,

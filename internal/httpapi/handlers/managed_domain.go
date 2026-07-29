@@ -103,6 +103,9 @@ func managedDomainToMap(md manageddomain.ManagedDomain) map[string]interface{} {
 		"verification_name":  md.VerificationName,
 		"verification_value": md.VerificationValue,
 		"status":             md.Status,
+		// Always "not_requested". Managed domains verify DNS ownership only;
+		// they never request certificates. Kept in the response so existing
+		// clients keep parsing, but it is not live TLS state.
 		"tls_status":         md.TLSStatus,
 		"last_check_message": md.LastCheckMessage,
 		"created_at":         md.CreatedAt.Format("2006-01-02T15:04:05Z"),
