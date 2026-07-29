@@ -52,7 +52,7 @@ type Handlers struct {
 	Route           *route.AppService
 	ManagedDomain   *manageddomain.AppService
 	Exposure        *exposure.AppService
-	Apply           *apply.AppService
+	Apply           ApplyService
 	Workflow        *apply.Workflow // v1.8L: new orchestrator
 	Health          *health.AppService
 	Logs            logs.Logger

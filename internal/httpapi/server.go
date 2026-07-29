@@ -50,7 +50,7 @@ type Services struct {
 	Route           *route.AppService
 	ManagedDomain   *manageddomain.AppService
 	Exposure        *exposure.AppService
-	Apply           *apply.AppService
+	Apply           handlers.ApplyService
 	Workflow        *apply.Workflow // v1.8L: new orchestrator (replaces Apply)
 	Health          *health.AppService
 	Logs            logs.Logger

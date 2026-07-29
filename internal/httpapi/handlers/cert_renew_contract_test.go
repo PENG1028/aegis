@@ -152,20 +152,7 @@ func TestRenewFailsClosedWithoutCertStore(t *testing.T) {
 	}
 }
 
-// NOTE on the 202 path: when a renewal succeeds but the provider reload does not,
-// the handler returns 202 and marks pending state. That distinction is the most
-// consequential one on this endpoint — 200 means the gateway serves the new
-// certificate, 202 means it still serves the old one.
-//
-// ACMEClient is now an interface (see acme_provider.go), so a renewal can be made
-// to succeed in a test. The remaining blocker is h.Apply: AdminRenewCert calls
-// prepareACMEHTTP01 first, which requires a concrete *apply.AppService, so a
-// local-ACME renewal stops at 503 before the renewer is reached. That ordering is
-// itself correct and is pinned by TestRenewReachesTheACMEClientForLocalACMECerts —
-// placing an order with no challenge route would burn a rate-limit slot.
-//
-// The service-level equivalents of the 202 state are covered in certstore:
-// TestRenewReportsReloadFailureWithoutLosingRenewedState and
-// TestRenewReportsCoordinatedApplyFailureWithoutLosingRenewedState. The HTTP status
-// mapping stays unpinned until h.Apply has a seam — 24 call sites across 7 methods,
-// including the mode-switch and apply surfaces.
+// The paths above are the ones reachable with no ACME client and no apply service
+// wired. The 202 case — renewal succeeded, provider reload did not, so the gateway
+// still serves the old pair — needs both seams and lives in
+// cert_renew_pending_test.go.

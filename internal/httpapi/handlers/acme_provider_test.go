@@ -206,13 +206,13 @@ func TestACMEHTTPChallengeServesOnlyKnownTokens(t *testing.T) {
 	})
 }
 
-// TestRenewReachesTheACMEClientForLocalACMECerts confirms the seam works end to
-// end: a local-ACME certificate now actually drives the injected renewer.
+// TestRenewReachesTheACMEClientForLocalACMECerts covers renewal with ACME wired but
+// no apply service: HTTP-01 preparation fails, so the order is never placed.
 //
-// It also records where the 202 still stops. The handler calls prepareACMEHTTP01
-// first, which requires h.Apply — a concrete *apply.AppService. So with ACME
-// injectable but Apply absent this returns 503 and never reaches the renewal.
-// The 202 is gated on Apply, not on ACMEClient.
+// The same ordering with a working apply service is pinned in
+// cert_renew_pending_test.go, which also covers the 202. Both are needed — this one
+// proves the request stops when the challenge route cannot be installed, that one
+// proves it proceeds when it can.
 func TestRenewReachesTheACMEClientForLocalACMECerts(t *testing.T) {
 	f := &fakeACME{available: true, renewedID: "cert_renewed"}
 	h, db := acmeHarness(t, f)
