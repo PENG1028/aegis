@@ -2,9 +2,11 @@ package trace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
+	"syscall"
 	"time"
 
 	"aegis/internal/edgemux"
@@ -469,13 +471,25 @@ func (s *Service) checkTargetConnectivity(target *TargetInfo) {
 	target.Reachable = &reachable
 }
 
-// isConnRefused checks if the error is a connection refused error.
+// wsaeConnRefused is Windows' WSAECONNREFUSED. Windows reports it instead of the
+// Unix ECONNREFUSED that errors.Is matches, and its syscall.ECONNREFUSED is a
+// synthetic value (536870934) that never appears in a real dial error, so the errno
+// has to be compared numerically.
+const wsaeConnRefused = 10061
+
+// isConnRefused reports whether a dial error was a refused connection.
+//
+// This used to compare error strings. On Linux the error is an *os.SyscallError
+// whose Error() is "connect: connection refused" — the syscall name is part of the
+// string — so it never equalled the "connection refused" literal, and every refused
+// connection on Linux was classified as TARGET_UNREACHABLE instead. The Windows
+// literal happened to match exactly, which is why local runs looked correct.
 func isConnRefused(err error) bool {
-	if opErr, ok := err.(*net.OpError); ok {
-		return opErr.Err.Error() == "connectex: No connection could be made because the target machine actively refused it." ||
-			opErr.Err.Error() == "connection refused"
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return true
 	}
-	return false
+	var errno syscall.Errno
+	return errors.As(err, &errno) && uintptr(errno) == wsaeConnRefused
 }
 
 // parseHostPort splits an address like "host:port" or "1.2.3.4:8080".

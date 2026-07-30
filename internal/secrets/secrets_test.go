@@ -1,9 +1,29 @@
 package secrets
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
+
+// tamperB64 decodes a base64 value, flips one bit, and re-encodes, so the result is
+// guaranteed to differ from the input. Substituting a fixed leading character is not
+// good enough: base64 output is uniformly distributed over 64 characters, so a
+// "A" + s[1:] tamper leaves the value untouched roughly one run in 64. Decrypt then
+// legitimately succeeds and the test fails for a reason that has nothing to do with
+// the AEAD check it is meant to cover.
+func tamperB64(t *testing.T, s string) string {
+	t.Helper()
+	raw, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		t.Fatalf("decode %q: %v", s, err)
+	}
+	if len(raw) == 0 {
+		t.Fatalf("nothing to tamper with in %q", s)
+	}
+	raw[0] ^= 0x01
+	return base64.StdEncoding.EncodeToString(raw)
+}
 
 func TestEncryptDecryptRoundtrip(t *testing.T) {
 	mk := DevMasterKey()
@@ -207,8 +227,10 @@ func TestTamperedCiphertext(t *testing.T) {
 		t.Fatalf("Encrypt failed: %v", err)
 	}
 
-	// Tamper with ciphertext
-	tampered := "A" + enc[1:]
+	tampered := tamperB64(t, enc)
+	if tampered == enc {
+		t.Fatal("tamper produced an identical ciphertext")
+	}
 	_, err = Decrypt(mk, tampered, nonce)
 	if err == nil {
 		t.Fatal("Decrypt with tampered ciphertext should fail")
@@ -224,7 +246,10 @@ func TestTamperedNonce(t *testing.T) {
 		t.Fatalf("Encrypt failed: %v", err)
 	}
 
-	tamperedNonce := "B" + nonce[1:]
+	tamperedNonce := tamperB64(t, nonce)
+	if tamperedNonce == nonce {
+		t.Fatal("tamper produced an identical nonce")
+	}
 	_, err = Decrypt(mk, enc, tamperedNonce)
 	if err == nil {
 		t.Fatal("Decrypt with tampered nonce should fail")
