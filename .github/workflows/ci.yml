@@ -3,7 +3,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Feature branches run here too, so a branch gets validated on Linux before it
+    # reaches a PR or a real host. Local runs are typically on Windows.
+    branches: [main, 'codex/**']
   pull_request:
     branches: [main]
 
