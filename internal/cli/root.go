@@ -83,7 +83,7 @@ v1.8K — Production-hardened gateway control with HTTP API.`,
 	cmd.AddCommand(newBootstrapCommand(svcs.Config, svcs.ListenerSvc))
 	cmd.AddCommand(newDoctorCommand(svcs.Config, svcs.ListenerSvc))
 	cmd.AddCommand(newSnapshotCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc, svcs.LeaderSvc, svcs.NodeRepo, svcs.StateVer))
-	cmd.AddCommand(newVerifyCommand(svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc))
+	cmd.AddCommand(newVerifyCommand(svcs.Config, svcs.Apply, svcs.Route, svcs.EdgeSvc, svcs.ListenerSvc))
 	cmd.AddCommand(newCleanupCommand(svcs.DB))
 	cmd.AddCommand(newProjectCommand(svcs.Project))
 	cmd.AddCommand(newServiceCommand(svcs.Service, svcs.Project))

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"aegis/internal/apply"
+	"aegis/internal/config"
 	"aegis/internal/edgemux"
 	"aegis/internal/listener"
 	"aegis/internal/route"
@@ -13,6 +14,7 @@ import (
 )
 
 func newVerifyCommand(
+	cfg *config.Config,
 	applySvc *apply.AppService,
 	routeSvc *route.AppService,
 	edgeSvc *edgemux.AppService,
@@ -29,6 +31,17 @@ func newVerifyCommand(
 			issues := 0
 
 			fmt.Println("=== Aegis Verify ===")
+			// State the config and database this run reads. Without it, a count that
+			// disagrees with the API looks like a counting bug when the real cause is
+			// that this process resolved a different config: the search path checks
+			// ./.aegis/ and ~/.aegis/ before /etc/aegis/config.yaml, and sqlite_path
+			// comes from whichever won.
+			if src := cfg.SourcePath(); src != "" {
+				fmt.Printf("config:   %s\n", src)
+			} else {
+				fmt.Println("config:   (development defaults — no config file loaded)")
+			}
+			fmt.Printf("database: %s\n", cfg.Store.SQLitePath)
 			fmt.Println()
 
 			// Basic checks (always run)

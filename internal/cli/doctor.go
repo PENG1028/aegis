@@ -21,6 +21,15 @@ func newDoctorCommand(cfg *config.Config, listenerSvc *listener.Service) *cobra.
 		Long:  "Checks OS, binaries, permissions, ports, and provider status for EdgeMux deployment.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Println("=== Aegis Doctor ===")
+			// Same reason as verify: everything below is relative to whichever config
+			// this process resolved, and that is not necessarily the one the running
+			// service loaded.
+			if src := cfg.SourcePath(); src != "" {
+				fmt.Printf("config:   %s\n", src)
+			} else {
+				fmt.Println("config:   (development defaults — no config file loaded)")
+			}
+			fmt.Printf("database: %s\n", cfg.Store.SQLitePath)
 			fmt.Println()
 
 			// OS
