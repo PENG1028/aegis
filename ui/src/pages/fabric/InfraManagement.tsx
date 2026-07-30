@@ -225,8 +225,20 @@ export default function InfraManagement() {
                         </Btn>
                       )}
                       {item.installed && item.hasReload && (
-                        <Btn onClick={() => { setActingId(item.id); fetch(`/api/admin/v1/providers/${item.id}/reload`, { method: 'POST', credentials: 'include' })
-                          .then(() => { setActingId(null); toast('已重载'); }).catch(() => { setActingId(null); toast('重载失败','error'); }); }}
+                        <Btn onClick={() => {
+                          // fetch() resolves on 4xx/5xx, and this endpoint also answers
+                          // 200 with the outcome in the body, so both have to be checked
+                          // — otherwise a refused reload reads as done.
+                          setActingId(item.id);
+                          fetch(`/api/admin/v1/providers/${item.id}/reload`, { method: 'POST', credentials: 'include' })
+                            .then(async res => {
+                              const body = await res.json().catch(() => ({} as { status?: string; error?: string }));
+                              if (!res.ok || body?.status === 'failed') {
+                                throw new Error(body?.error || `HTTP ${res.status}`);
+                              }
+                            })
+                            .then(() => { setActingId(null); toast('已重载'); })
+                            .catch((e: Error) => { setActingId(null); toast(`重载失败: ${e.message}`, 'error'); }); }}
                           className="text-[9px]">重载</Btn>
                       )}
                       {item.installed && item.hasService && (
