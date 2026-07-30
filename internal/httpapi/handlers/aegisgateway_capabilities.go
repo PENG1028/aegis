@@ -8,7 +8,8 @@ import (
 )
 
 func (h *Handlers) ServiceCapabilities(w http.ResponseWriter, r *http.Request) {
-	if !isServiceCaller(r) {
+	caller, ok := callerScope(r)
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "service auth required")
 		return
 	}
@@ -18,12 +19,13 @@ func (h *Handlers) ServiceCapabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"capabilities": reg.List(),
+		"capabilities": reg.List(caller),
 	})
 }
 
 func (h *Handlers) ServiceCapabilityCall(w http.ResponseWriter, r *http.Request) {
-	if !isServiceCaller(r) {
+	caller, ok := callerScope(r)
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "service auth required")
 		return
 	}
@@ -40,7 +42,7 @@ func (h *Handlers) ServiceCapabilityCall(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	resp, err := reg.Invoke(r.Context(), name, req)
+	resp, err := reg.Invoke(r.Context(), name, req, caller)
 	if err != nil {
 		writeError(w, aegisgateway.ErrorStatus(err), err.Error())
 		return
@@ -48,15 +50,34 @@ func (h *Handlers) ServiceCapabilityCall(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// newCapabilityRegistry builds the capability set for one request.
+//
+// The mutation recorder is wired here rather than inside the registry so
+// aegisgateway keeps no dependency on cluster state. When PendingState is absent
+// the recorder is nil, and Register then refuses any capability declaring
+// ReadOnly=false — a startup-visible failure instead of mutations that leave no
+// pending marker behind.
 func (h *Handlers) newCapabilityRegistry() (*aegisgateway.CapabilityRegistry, error) {
-	reg := aegisgateway.NewCapabilityRegistry()
+	var opts []aegisgateway.RegistryOption
+	if h.PendingState != nil {
+		opts = append(opts, aegisgateway.WithMutationRecorder(func(capability string) error {
+			return h.PendingState.MarkPending("capability invoked: " + capability)
+		}))
+	}
+	reg := aegisgateway.NewCapabilityRegistry(opts...)
 	if err := aegisgateway.RegisterNodeCapabilities(reg, h.NodeSvc); err != nil {
 		return nil, err
 	}
 	return reg, nil
 }
 
-func isServiceCaller(r *http.Request) bool {
+// callerScope resolves the request's authenticated caller class into a capability
+// scope. A request with no action context, or one whose token type the capability
+// layer does not recognize, gets no scope — the registry then denies everything.
+func callerScope(r *http.Request) (aegisgateway.Scope, bool) {
 	ac := action.GetActionContext(r.Context())
-	return ac != nil && ac.IsService()
+	if ac == nil {
+		return "", false
+	}
+	return aegisgateway.ScopeFor(ac.TokenType)
 }

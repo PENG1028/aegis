@@ -20,18 +20,22 @@ func (l fakeNodeLister) ListAll() ([]node.NodeRecord, error) {
 
 func TestCapabilityRegistryListsCapabilitiesInNameOrder(t *testing.T) {
 	reg := NewCapabilityRegistry()
-	if err := reg.Register(Capability{Name: "z.capability"}, func(context.Context, CapabilityRequest) (interface{}, error) {
+	if err := reg.Register(Capability{
+		Name: "z.capability", ReadOnly: true, Scopes: []Scope{ScopeService},
+	}, func(context.Context, CapabilityRequest) (interface{}, error) {
 		return nil, nil
 	}); err != nil {
 		t.Fatalf("register z: %v", err)
 	}
-	if err := reg.Register(Capability{Name: "a.capability"}, func(context.Context, CapabilityRequest) (interface{}, error) {
+	if err := reg.Register(Capability{
+		Name: "a.capability", ReadOnly: true, Scopes: []Scope{ScopeService},
+	}, func(context.Context, CapabilityRequest) (interface{}, error) {
 		return nil, nil
 	}); err != nil {
 		t.Fatalf("register a: %v", err)
 	}
 
-	list := reg.List()
+	list := reg.List(ScopeService)
 	if len(list) != 2 {
 		t.Fatalf("len = %d, want 2", len(list))
 	}
@@ -42,13 +46,15 @@ func TestCapabilityRegistryListsCapabilitiesInNameOrder(t *testing.T) {
 
 func TestCapabilityRegistryInvokesCapability(t *testing.T) {
 	reg := NewCapabilityRegistry()
-	if err := reg.Register(Capability{Name: "echo"}, func(_ context.Context, req CapabilityRequest) (interface{}, error) {
+	if err := reg.Register(Capability{
+		Name: "echo", ReadOnly: true, Scopes: []Scope{ScopeService},
+	}, func(_ context.Context, req CapabilityRequest) (interface{}, error) {
 		return string(req.Input), nil
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 
-	resp, err := reg.Invoke(context.Background(), "echo", CapabilityRequest{Input: json.RawMessage(`{"ok":true}`)})
+	resp, err := reg.Invoke(context.Background(), "echo", CapabilityRequest{Input: json.RawMessage(`{"ok":true}`)}, ScopeService)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -58,7 +64,7 @@ func TestCapabilityRegistryInvokesCapability(t *testing.T) {
 }
 
 func TestCapabilityRegistryMissingCapability(t *testing.T) {
-	_, err := NewCapabilityRegistry().Invoke(context.Background(), "missing", CapabilityRequest{})
+	_, err := NewCapabilityRegistry().Invoke(context.Background(), "missing", CapabilityRequest{}, ScopeService)
 	if err == nil {
 		t.Fatal("Invoke succeeded, want missing capability error")
 	}
@@ -75,11 +81,11 @@ func TestRegisterNodeCapabilities(t *testing.T) {
 		t.Fatalf("RegisterNodeCapabilities: %v", err)
 	}
 
-	list := reg.List()
+	list := reg.List(ScopeService)
 	if len(list) != 1 || list[0].Name != "node.list" || !list[0].ReadOnly {
 		t.Fatalf("capabilities = %+v", list)
 	}
-	resp, err := reg.Invoke(context.Background(), "node.list", CapabilityRequest{})
+	resp, err := reg.Invoke(context.Background(), "node.list", CapabilityRequest{}, ScopeService)
 	if err != nil {
 		t.Fatalf("Invoke node.list: %v", err)
 	}

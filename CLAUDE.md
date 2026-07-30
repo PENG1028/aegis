@@ -111,11 +111,18 @@ internal/
   serviceauth/  # ⭐ 服务间认证（Ed25519 ticket + 拓扑发现）
     aegis/      # serviceauth 的 Aegis 适配器（secrets/node/logs 落地）
   aegisgateway/ # ⭐ 第 3 类对外表面：能力注册表 + 服务调用转发
-                #   GET  /api/service-auth/v1/capabilities        列举能力
-                #   POST /api/service-auth/v1/capabilities/{n}/call 调用
+                #   GET  /api/service-auth/v1/capabilities        列举能力（按调用方 scope 过滤）
+                #   POST /api/service-auth/v1/capabilities/{n}/call 调用（scope 不符 → 403）
                 #   当前只注册 1 个能力：node.list（node_capabilities.go）
                 #   注：这是控制面 RPC 注册表，不是流量面。CapabilityRequest.Input
                 #   是 json.RawMessage —— 新增能力前先读 docs/design/external-program-integration.md
+                #   ⚠️ Capability 的两个声明字段都是强制的，注册期校验，不是文档：
+                #     Scopes   必填且必须是 admin|service|space（= ActionContext.TokenType）
+                #              Invoke 前置检查 + List 按 scope 过滤，两者一致
+                #     ReadOnly false 表示改集群状态 → 成功后自动 MarkPending
+                #              没有 MutationRecorder 时注册直接失败（启动即报错）
+                #   scope 词汇表与 action.ActionContext 的 Is*() 由 reflection 测试钉住
+                #   （capability_guardrail_test.go）—— 任一侧新增都会让测试红
   egress/       # 出站流量 allow/block 规则
   routingpolicy/# 网关策略路由
   routingtable/ # 路由表
@@ -295,7 +302,12 @@ make update-all
   其余一律 `403 SCOPE_DENIED`，包括 `/api/admin/v1/*` 和业务 CRUD（`/api/routes`、`/api/apply` …）。
   强制点 `internal/token/middleware.go` 的 `isSystemRoute()` + `serviceTicketAllowed()`。
   **白名单是加法：新增业务路由默认对 service 关闭**，不需要额外动作。
-  没有 per-action scope 机制（无 token 仓库、无 `/api/admin/v1/api-keys*`）—— ticket 是全有或全无。
+  没有 per-route 的 token 仓库/scope 配置（无 `/api/admin/v1/api-keys*`）—— 路由层面 ticket 是全有或全无。
+- **能力层有 per-capability scope**（`internal/aegisgateway/capability.go`）。
+  路由白名单放 service ticket 进 `/api/service-auth/v1/capabilities/*` 之后，
+  由 `Capability.Scopes` 决定它能调哪些能力：不符 → `403`，且 List 里根本不出现。
+  scope 取值 = `action.ActionContext.TokenType`（`admin|service|space`），**同一套词汇表**。
+  注册期强制：无 scope / 未知 scope / `ReadOnly:false` 但没有 MutationRecorder → 注册失败。
 - 分页：admin 列表 `?limit=&offset=`，默认 limit=50，最大 200。My Resources 端点不分页。
 
 ---
