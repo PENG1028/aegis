@@ -26,11 +26,16 @@ scripts/test-route.py
 scripts/diag.py
 scripts/state.py
 
-# Development data
+# Development data.
+# Leading slashes matter here: without one, "acme/" matches a directory of that
+# name at any depth, which silently swallowed three source files under
+# internal/acme/ and left CI unable to build from a clean checkout. These entries
+# are meant for the runtime data directories at the repo root only — /acme holds
+# the ACME account key and must stay ignored.
 .aegis/
 .aegis-test/
-acme/
-data/
+/acme/
+/data/
 
 # IDE
 .vscode/
