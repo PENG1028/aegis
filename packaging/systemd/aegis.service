@@ -38,7 +38,12 @@ ExecStartPre=/usr/bin/test -d /etc/aegis
 #   1. /etc/aegis/config.yaml (production)
 #   2. $HOME/.aegis/config.yaml
 #   3. DefaultConfig() fallback
-ExecStart=/usr/local/bin/aegis serve
+# --config is explicit on purpose. Without it the binary walks a search path that
+# checks ./.aegis/ and ~/.aegis/ before /etc/aegis/config.yaml, so which file wins
+# depends on the working directory. The service happened to resolve correctly because
+# /var/lib/aegis holds no .aegis/, but an operator running `aegis settings` from
+# elsewhere could read a different file than the one the service is using.
+ExecStart=/usr/local/bin/aegis serve --config /etc/aegis/config.yaml
 
 # Restart behavior
 Restart=on-failure

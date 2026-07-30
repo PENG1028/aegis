@@ -16,6 +16,15 @@ func newSettingsCommand(cfg *config.Config) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Println("Current Aegis Settings")
 			fmt.Println("======================")
+			// Which file these values came from. Without it, a blank field is
+			// ambiguous between "not set" and "you are looking at a different
+			// config than the service loaded" — the search path checks ./.aegis/
+			// and ~/.aegis/ before /etc/aegis/config.yaml.
+			if src := cfg.SourcePath(); src != "" {
+				fmt.Printf("source: %s\n", src)
+			} else {
+				fmt.Println("source: (development defaults — no config file loaded)")
+			}
 			fmt.Println()
 			fmt.Println("[proxy]")
 			fmt.Printf("  provider:        %s\n", cfg.Proxy.Provider)

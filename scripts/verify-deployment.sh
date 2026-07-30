@@ -52,11 +52,16 @@ done
 # per domain set per week, so hitting production here costs a week of waiting.
 # This is a hard gate, not a warning.
 step "3. ACME directory"
-ACME=$(${SSH} "sudo ${BIN} settings 2>/dev/null | grep acme_server | awk '{print \$2}'" || echo "")
+# Read the config file, not `aegis settings`: that command prints acme_server as
+# blank even when it is set (r7 report bug #1), so trusting it would report a
+# staging host as production and abort the run.
+ACME=$(${SSH} "sudo grep -E '^\s*acme_server:' /etc/aegis/config.yaml 2>/dev/null | head -1 | sed 's/.*acme_server:[[:space:]]*//; s/[\"'\\'']//g'" || echo "")
 case "${ACME}" in
-  *acme-staging*) pass "acme_server points at staging" ;;
-  "")             fail "acme_server is empty — that means production Let's Encrypt" \
-                       "Set acme_server in /etc/aegis/config.yaml to https://acme-staging-v02.api.letsencrypt.org/directory, then: sudo systemctl restart aegis" ;;
+  *acme-staging*) pass "acme_server points at staging: ${ACME}" ;;
+  "")             fail "acme_server is unset — that means production Let's Encrypt" \
+                       "Add to the proxy: block in /etc/aegis/config.yaml (4-space indent):
+        acme_server: \"https://acme-staging-v02.api.letsencrypt.org/directory\"
+        then: sudo systemctl restart aegis" ;;
   *)              fail "acme_server is ${ACME}, expected a staging URL" \
                        "Only run the cert steps against production once staging has passed end to end." ;;
 esac
@@ -73,18 +78,25 @@ restore_caddyfile() {
 trap restore_caddyfile EXIT
 
 ${SSH} "echo 'this is not valid caddy config {{{' | sudo tee -a /etc/caddy/Caddyfile >/dev/null"
-BODY=$(${SSH} "sudo curl -s -X POST --unix-socket /dev/null http://127.0.0.1/api/admin/v1/providers/caddy/reload" 2>/dev/null || echo "")
-if [ -z "${BODY}" ]; then
-  echo "  SKIP  needs an authenticated session; verify this one in the UI instead:"
-  echo "        open the panel, break the Caddyfile, click 热重载 on the Caddy card."
-  echo "        Expected: a failure toast carrying Caddy's reason. A success toast is the bug."
-else
-  case "${BODY}" in
-    *failed*|*error*) pass "reload reported the failure: ${BODY}" ;;
-    *success*)        fail "reload reported success for a broken config" "body: ${BODY}" ;;
-    *)                echo "  WARN  unexpected body: ${BODY}" ;;
-  esac
-fi
+
+# The API port comes from config rather than being assumed; 7380 is only the default.
+PORT=$(${SSH} "sudo grep -A5 '^server:' /etc/aegis/config.yaml 2>/dev/null | grep -oE '[0-9]{4,5}' | head -1" || echo "7380")
+PORT="${PORT:-7380}"
+BODY=$(${SSH} "sudo curl -s -m 15 -X POST http://127.0.0.1:${PORT}/api/admin/v1/providers/caddy/reload" 2>/dev/null || echo "")
+
+case "${BODY}" in
+  "")               echo "  WARN  empty response from :${PORT} — check the API port and auth, then verify in the UI" ;;
+  *'"failed"'*)     pass "reload reported the failure: ${BODY}" ;;
+  *'"success"'*)    fail "reload reported success for a broken config" "body: ${BODY}" ;;
+  *)                echo "  WARN  unexpected body: ${BODY}" ;;
+esac
+
+# NOTE: this only proves the backend contract, which was already correct. The bug
+# fixed in 7c3245a and 55c6ca0 is in the frontend — it showed a success toast for
+# exactly this status:"failed" body. That has to be checked in a browser:
+#   ProvidersDetail -> expand the Caddy card -> 热重载
+#   InfraManagement -> 重载
+# Expect a failure message carrying Caddy's reason. A success message is the bug.
 restore_caddyfile
 trap - EXIT
 ${SSH} "sudo ${BIN} provider reload caddy" >/dev/null 2>&1 || true

@@ -13,6 +13,10 @@ import (
 
 // Config represents the full Aegis configuration.
 type Config struct {
+	// sourcePath is the file this config was loaded from, or empty for defaults.
+	// Unexported and yaml-invisible so it never round-trips into a written file.
+	sourcePath string
+
 	Proxy         ProxyConfig         `yaml:"proxy"`
 	Store         StoreConfig         `yaml:"store"`
 	Server        ServerConfig        `yaml:"server"`
@@ -195,6 +199,15 @@ func ProductionConfig() *Config {
 
 // Load reads a YAML config file and returns a Config.
 // Returns an error if the file is empty, unreadable, or missing required fields.
+// SourcePath returns the file this config was loaded from. Empty means the config
+// was built from defaults rather than read from disk.
+func (c *Config) SourcePath() string {
+	if c == nil {
+		return ""
+	}
+	return c.sourcePath
+}
+
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -209,6 +222,11 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config file %s: %w", path, err)
 	}
+	// Record where this came from. The default search path checks ./.aegis/ and
+	// ~/.aegis/ before /etc/aegis/config.yaml, so two invocations from different
+	// directories can load different files. Reporting the path turns that from a
+	// silent discrepancy into something visible in `aegis settings`.
+	cfg.sourcePath = path
 
 	// Validate required fields after load — a missing proxy provider or DB path
 	// would cause obscure failures later. Catch them early.
