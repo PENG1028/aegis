@@ -21,9 +21,10 @@ type BackupManager struct {
 	interval  time.Duration
 	keepCount int
 
-	mu     sync.Mutex
-	stopCh chan struct{}
-	doneCh chan struct{}
+	mu       sync.Mutex
+	stopCh   chan struct{}
+	doneCh   chan struct{}
+	stopOnce sync.Once
 }
 
 // NewBackupManager creates a new backup manager.
@@ -53,12 +54,20 @@ func (b *BackupManager) Start() {
 }
 
 // Stop gracefully stops the backup loop.
+//
+// Safe to call multiple times: subsequent calls are no-ops. The idempotency
+// matters because cmd/aegis/main.go registers Stop via defer AND invokes it
+// from the OnShutdown callback. Without this, the second close(stopCh) panics
+// and the process exits with a non-zero status, which systemd interprets as a
+// crash and may try to Restart=on-failure.
 func (b *BackupManager) Stop() {
 	if b == nil {
 		return
 	}
-	close(b.stopCh)
-	<-b.doneCh
+	b.stopOnce.Do(func() {
+		close(b.stopCh)
+		<-b.doneCh
+	})
 }
 
 func (b *BackupManager) loop() {
