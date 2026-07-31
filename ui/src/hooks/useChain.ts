@@ -3,7 +3,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { ObjectChain } from '@/types/workspace';
-import { fetchRouteDetail, fetchServiceDetail, fetchGatewayDetail, fetchNodeDetail, fetchEndpoints } from '@/lib/api-bridge';
+import { fetchRouteDetail, fetchServiceDetail, fetchNodeDetail, fetchEndpoints } from '@/lib/api-bridge';
 
 async function fetchChain(type: string, id: string): Promise<ObjectChain> {
   const chain: ObjectChain = {
@@ -30,9 +30,6 @@ async function fetchChain(type: string, id: string): Promise<ObjectChain> {
       const svc = await fetchServiceDetail(id);
       chain.service = svc;
       chain.endpoints = svc?.endpoints || [];
-    } else if (type === 'gateway') {
-      const gw = await fetchGatewayDetail(id);
-      chain.gateway = gw;
     } else if (type === 'node') {
       const node = await fetchNodeDetail(id);
       if (node) {

@@ -27,10 +27,7 @@ import ProvidersDetail from '@/pages/fabric/ProvidersDetail';
 import EgressGateway from '@/pages/fabric/EgressGateway';
 import ModeSwitch from '@/pages/fabric/ModeSwitch';
 import GatewayServicePanel from '@/pages/fabric/GatewayServicePanel';
-import Gateways from '@/pages/fabric/Gateways';
-import GatewayDetail from '@/pages/fabric/GatewayDetail';
 import GatewayLinks from '@/pages/fabric/GatewayLinks';
-import Listeners from '@/pages/fabric/Listeners';
 import Topology from '@/pages/fabric/Topology';
 import RoutingTable from '@/pages/fabric/RoutingTable';
 import InfraManagement from '@/pages/fabric/InfraManagement';
@@ -46,7 +43,6 @@ import NodeDetail from '@/pages/runtime/NodeDetail';
 import ClusterHealth from '@/pages/runtime/ClusterHealth';
 import DeployNode from '@/pages/runtime/DeployNode';
 import Updates from '@/pages/runtime/Updates';
-import SyncStatus from '@/pages/runtime/SyncStatus';
 
 // ── Release ──
 import Changes from '@/pages/release/Changes';
@@ -148,10 +144,7 @@ export default function App() {
                   <Route path="egress" element={<EgressGateway />} />
                   <Route path="mode" element={<ModeSwitch />} />
                   <Route path="service" element={<GatewayServicePanel />} />
-                  <Route path="gateways" element={<Gateways />} />
-                  <Route path="gateway/:gatewayId" element={<GatewayDetail />} />
                   <Route path="links" element={<GatewayLinks />} />
-                  <Route path="listeners" element={<Listeners />} />
                   <Route path="topology" element={<Topology />} />
                   <Route path="routing-table" element={<RoutingTable />} />
                   <Route path="infra" element={<InfraManagement />} />
@@ -171,7 +164,6 @@ export default function App() {
                   <Route path="cluster" element={<ClusterHealth />} />
                   <Route path="deploy" element={<DeployNode />} />
                   <Route path="updates" element={<Updates />} />
-                  <Route path="sync" element={<SyncStatus />} />
                 </Route>
 
                 {/* ── Workspace 5: Release / 配置发布 ── */}

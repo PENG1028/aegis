@@ -16,18 +16,16 @@ import { API_CONFIG, apiUrl } from './api-config';
 import { viewStore } from './view-store';
 import { tlsMode } from './route-display';
 import type {
-  Node, NodeDetail, Gateway, GatewayDetail,
+  Node, NodeDetail,
   TopologyEdge, TopologyPathResult, TopologyPathHop,
   Service, ServiceDetail, RouteSummary,
   Route, RouteDetail,
   Endpoint, EndpointDetail,
   GatewayPolicy,
   RoutingEntry, RoutingCandidate, RoutingPreviewResult, RoutingValidationResult,
-  SyncStatus, SyncComponentStatus,
-  LocalGatewayStatus, LocalGatewayDiagnostic,
   AcceptanceStatus, VerificationLabel, AcceptanceSummary, AcceptanceRun, AcceptanceTest,
   JoinToken, DashboardData, DashboardError,
-  NodeCapabilities, NodeDiagnostic, SyncStatusDetail, LocalGatewayRuntimeStatus,
+  NodeCapabilities, NodeDiagnostic, SyncStatusDetail,
 } from '@/types';
 
 // ─── Error class ───
@@ -298,16 +296,15 @@ export async function fetchDashboard(): Promise<DashboardData> {
     system.status().catch(() => null),
   ]);
 
-  // Fetch gateways and nodes for richer data
-  const [nodesRes, gatewaysRes] = await Promise.all([
-    get<{ nodes: any[]; count: number }>('/api/admin/v1/nodes').catch(() => ({ nodes: [], count: 0 })),
-    get<{ gateways: any[]; count: number }>('/api/admin/v1/gateways').catch(() => ({ gateways: [], count: 0 })),
-  ]);
+  // Fetch nodes for richer data
+  const nodesRes = await get<{ nodes: any[]; count: number }>('/api/admin/v1/nodes').catch(() => ({ nodes: [], count: 0 }));
 
   const nodes = nodesRes.nodes || [];
-  const gateways = gatewaysRes.gateways || [];
   const nodesOnline = nodes.filter((n: any) => n.status === 'online').length;
-  const gatewaysOnline = gateways.filter((g: any) => g.status === 'online' || g.status === 'active').length;
+  // gateways endpoints were never implemented on the backend — see C-block
+  // commit. Gateways dashboard counts are reported as 0 until those endpoints
+  // are designed and added.
+  const gatewaysOnline = 0;
 
   // Build pending capabilities from nodes with issues
   const pendingCapabilities: string[] = [];
@@ -319,7 +316,7 @@ export async function fetchDashboard(): Promise<DashboardData> {
     nodes_online: nodesOnline,
     nodes_total: nodes.length,
     gateways_online: gatewaysOnline,
-    gateways_total: gateways.length,
+    gateways_total: 0,
     managed_routes: ov.route_count,
     routing_tables_synced: 0,
     routing_tables_total: 0,
@@ -405,12 +402,6 @@ export const nodeApi = {
   refreshCapabilities: (id: string): Promise<any> =>
     post(`/api/admin/v1/nodes/${id}/refresh-capabilities`),
 
-  gateways: (id: string): Promise<{ gateways: any[]; count: number }> =>
-    get(`/api/admin/v1/nodes/${id}/gateways`),
-
-  syncStatus: (id: string): Promise<any> =>
-    get(`/api/admin/v1/nodes/${id}/sync-status`),
-
   routingTable: (id: string): Promise<any> =>
     get(`/api/admin/v1/nodes/${id}/routing-table`),
 
@@ -435,27 +426,14 @@ export async function fetchNodes(): Promise<Node[]> {
 }
 
 export async function fetchNodeDetail(nodeId: string): Promise<NodeDetail> {
-  const [nodeRes, gatewaysRes, syncRes] = await Promise.all([
-    nodeApi.get(nodeId),
-    nodeApi.gateways(nodeId).catch(() => ({ gateways: [] })),
-    nodeApi.syncStatus(nodeId).catch(() => null),
-  ]);
-
-  const raw = nodeRes.node;
+  const raw = (await nodeApi.get(nodeId)).node;
   const node = mapNode(raw);
 
-  // Map synced state
-  const syncDetail: SyncStatusDetail = syncRes ? {
-    status: syncRes.status || 'unknown',
-    desired_revision: syncRes.desired_revision ?? node.desired_revision,
-    applied_revision: syncRes.applied_revision ?? node.applied_revision,
-    desired_hash: syncRes.desired_hash || '',
-    actual_hash: syncRes.actual_hash || '',
-    last_apply_at: syncRes.last_apply_at || null,
-    last_success_at: syncRes.last_success_at || null,
-    last_error: syncRes.last_error || null,
-  } : {
-    status: 'unknown',
+  // Sync detail: the dedicated /sync-status endpoint was never implemented on
+  // the backend (see C-block commit). Derive the visible sync state from the
+  // node's own desired/applied_revision fields.
+  const syncDetail: SyncStatusDetail = {
+    status: node.desired_revision === node.applied_revision ? 'in_sync' : 'outdated',
     desired_revision: node.desired_revision,
     applied_revision: node.applied_revision,
     desired_hash: '',
@@ -465,11 +443,9 @@ export async function fetchNodeDetail(nodeId: string): Promise<NodeDetail> {
     last_error: raw.last_error || null,
   };
 
-  const gateways: Gateway[] = (gatewaysRes.gateways || []).map(mapGateway);
-
   return {
     ...node,
-    gateways,
+    gateways: [],
     sync: syncDetail,
     routing_table_entries: 0,
     last_error: raw.last_error || null,
@@ -490,61 +466,6 @@ function buildDiagnostics(raw: any): NodeDiagnostic[] {
     diag.push({ name: 'last_error', status: 'error', message: raw.last_error });
   }
   return diag;
-}
-
-// ─── Gateways ───
-
-function mapGateway(raw: any): Gateway {
-  return {
-    gateway_id: raw.gateway_id || raw.id,
-    node_id: raw.node_id,
-    node_name: raw.node_name || '',
-    name: raw.name || raw.gateway_id || raw.id,
-    type: raw.type || 'local',
-    provider: raw.provider || 'aegis',
-    bind_addr: raw.bind_addr || '0.0.0.0',
-    host: raw.host || '',
-    port: raw.port || 0,
-    scheme: raw.scheme || 'http',
-    public_accessible: !!raw.public_accessible,
-    private_accessible: !!raw.private_accessible,
-    enabled: raw.enabled !== false,
-    priority: raw.priority ?? 50,
-    status: raw.status || 'unknown',
-    last_verified_at: raw.last_verified_at || null,
-    last_error: raw.last_error || null,
-    created_at: raw.created_at || '',
-    updated_at: raw.updated_at || '',
-  };
-}
-
-export const gatewayApi = {
-  list: (nodeId?: string): Promise<{ gateways: any[]; count: number }> =>
-    get(`/api/admin/v1/gateways${nodeId ? '?node_id=' + encodeURIComponent(nodeId) : ''}`),
-
-  get: (id: string): Promise<any> =>
-    get(`/api/admin/v1/gateways/${id}`),
-
-  update: (id: string, data: any): Promise<any> =>
-    patch(`/api/admin/v1/gateways/${id}`, data),
-};
-
-export async function fetchGateways(): Promise<Gateway[]> {
-  const res = await gatewayApi.list();
-  const items = (res as any).data || res.gateways || [];
-  return items.map(mapGateway);
-}
-
-export async function fetchGatewayDetail(id: string): Promise<GatewayDetail> {
-  const raw = await gatewayApi.get(id);
-  // AdminGetGateway returns {gateway: {...}}; handle both wrapped and bare
-  const gwRaw = raw.gateway || raw;
-  const gw = mapGateway(gwRaw);
-  return {
-    ...gw,
-    routes_served: gwRaw.routes_served ?? 0,
-    gateway_links: gwRaw.gateway_links || [],
-  };
 }
 
 // ─── Topology ───
@@ -643,7 +564,11 @@ export const serviceApi = {
     get(`/api/admin/v1/services/${id}/gateway-policy`),
 
   setPolicy: (id: string, policy: any): Promise<any> =>
-    patch(`/api/admin/v1/services/${id}/gateway-policy`, policy),
+    // Backend registers PUT /api/admin/v1/services/{id}/gateway-policy
+    // (see routes.go AdminSetServicePolicy). Earlier the UI sent PATCH, which
+    // Go's mux routes to the apiNotFound fallback rather than a 405, so the
+    // mismatch was silently swallowed.
+    put(`/api/admin/v1/services/${id}/gateway-policy`, policy),
 };
 
 export async function fetchServices(): Promise<Service[]> {
@@ -984,92 +909,10 @@ export async function validateRouting(nodeId?: string): Promise<RoutingValidatio
 }
 
 // ─── Sync Status ───
-
-export const syncApi = {
-  getNodeSync: (nodeId: string): Promise<any> =>
-    get(`/api/admin/v1/nodes/${nodeId}/sync-status`),
-};
-
-export async function fetchSyncStatus(nodeId?: string): Promise<SyncStatus[]> {
-  const nodes = await fetchNodes();
-
-  if (nodeId) {
-    const node = nodes.find((n) => n.node_id === nodeId);
-    const sync = await syncApi.getNodeSync(nodeId).catch(() => null);
-    return [{
-      node_id: nodeId,
-      node_name: node?.name || nodeId,
-      desired_revision: sync?.desired_revision ?? 0,
-      applied_revision: sync?.applied_revision ?? 0,
-      desired_hash: sync?.desired_hash || '',
-      actual_hash: sync?.actual_hash || '',
-      status: sync?.status || 'unknown',
-      last_apply_at: sync?.last_apply_at || null,
-      last_success_at: sync?.last_success_at || null,
-      last_error: sync?.last_error || null,
-      provider_status: { status: 'unknown', message: '' },
-      relay_status: { status: 'unknown', message: '' },
-      gateway_status: { status: 'unknown', message: '' },
-      diagnostics_status: { status: 'unknown', message: '' },
-    }];
-  }
-
-  const results = await Promise.all(
-    nodes.map(async (n) => {
-      const sync = await syncApi.getNodeSync(n.node_id).catch(() => null);
-      return {
-        node_id: n.node_id,
-        node_name: n.name,
-        desired_revision: sync?.desired_revision ?? 0,
-        applied_revision: sync?.applied_revision ?? 0,
-        desired_hash: sync?.desired_hash || '',
-        actual_hash: sync?.actual_hash || '',
-        status: sync?.status || 'unknown',
-        last_apply_at: sync?.last_apply_at || null,
-        last_success_at: sync?.last_success_at || null,
-        last_error: sync?.last_error || null,
-        provider_status: { status: 'unknown' as const, message: '' },
-        relay_status: { status: 'unknown' as const, message: '' },
-        gateway_status: { status: 'unknown' as const, message: '' },
-        diagnostics_status: { status: 'unknown' as const, message: '' },
-      };
-    }),
-  );
-
-  return results;
-}
-
-// ─── Local Gateway ───
-// Backend doesn't have a direct local-gateway API yet, derive from nodes/gateways
-
-export async function fetchLocalGatewayStatus(nodeId?: string): Promise<LocalGatewayStatus[]> {
-  const nodes = await fetchNodes();
-  const gateways = await fetchGateways();
-
-  const localGws = gateways.filter((g) => g.type === 'local');
-  const results: LocalGatewayStatus[] = [];
-
-  for (const gw of localGws) {
-    const node = nodes.find((n) => n.node_id === gw.node_id);
-    if (nodeId && gw.node_id !== nodeId) continue;
-
-    results.push({
-      node_id: gw.node_id,
-      node_name: node?.name || gw.node_id,
-      bind_addr: gw.bind_addr,
-      port: gw.port,
-      status: gw.enabled ? 'running' : 'stopped',
-      routing_table_loaded: false,
-      routing_table_revision: null,
-      entries_count: 0,
-      cache_status: 'empty',
-      diagnostics: [],
-      last_error: gw.last_error,
-    });
-  }
-
-  return results;
-}
+// Note: /api/admin/v1/nodes/{id}/sync-status was never implemented on the
+// backend. SyncStatus types are kept for future use; no fetch function is
+// exported. NodeDetail derives a coarse sync state from the node's own
+// desired/applied_revision fields.
 
 // ─── Acceptance ───
 // Backend doesn't have a consolidated acceptance endpoint; build from verification status
@@ -1782,20 +1625,10 @@ export const healthCheckApi = {
 };
 
 // ─── Listeners ───
-// Derived from gateways
-
-export async function fetchListeners(): Promise<any[]> {
-  const gateways = await fetchGateways();
-  return gateways.map((gw) => ({
-    bind_ip: gw.bind_addr,
-    port: gw.port,
-    provider: gw.provider,
-    purpose: gw.type === 'local' ? 'local_gateway' : gw.type === 'private' ? 'private_gateway' : 'public_gateway',
-    status: gw.enabled ? 'active' : 'disabled',
-    gateway_id: gw.gateway_id,
-    node_id: gw.node_id,
-  }));
-}
+// Listener data was derived from the never-implemented /api/admin/v1/gateways
+// endpoint. Listeners.tsx (which used fetchListeners) has been removed in the
+// same C-block commit. Re-add a listener-specific endpoint when there is a
+// design for it.
 
 // ─── DistNode API ───
 
