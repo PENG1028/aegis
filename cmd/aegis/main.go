@@ -25,6 +25,7 @@ import (
 	"aegis/internal/egress"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
+	"aegis/internal/flowbridge"
 	"aegis/internal/gateway"
 	"aegis/internal/health"
 	"aegis/internal/hostdep/provider"
@@ -254,6 +255,10 @@ func main() {
 		acmeClient = nil
 	}
 
+	// ── FlowBridge instances (v1.9C-2) — managed data-plane entities ──
+	flowbridgeRepo := flowbridge.NewRepository(db)
+	flowbridgeSvc := flowbridge.NewService(flowbridgeRepo, logSvc)
+
 	// --- v1.8L: Topology Planner (dimension 2) + Workflow orchestrator ---
 	_, controlPort := safety.SplitHostPort(cfg.Server.Addr) // aegis API port, exposed cross-node via the ingress edge
 	topoPlanner := topology.NewPlanner(templates.Default(), topology.Dependencies{
@@ -264,6 +269,7 @@ func main() {
 		SafetySvc:        safetySvc,
 		MasterKey:        masterKey,
 		CertStore:        certStoreSvc,
+		FlowBridgeRepo:   flowbridgeRepo,
 		ControlPort:      controlPort,
 	})
 	workflow := apply.NewWorkflow(topoPlanner, provRegistry, applyRepo, cfg, logSvc)
@@ -300,6 +306,27 @@ func main() {
 			}
 			if _, err := applySvc.TryApply(context.Background()); err != nil && !strings.Contains(err.Error(), "APPLY_LOCKED") {
 				fmt.Fprintf(os.Stderr, "pending-apply: retry failed: %v\n", err)
+			}
+		}
+	}()
+	// Periodic flowbridge instance health checks. Enabled instances are probed
+	// against their control-plane /health every 30s; results are persisted for
+	// the UI and route-binding decisions.
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			instances, err := flowbridgeSvc.List(context.Background())
+			if err != nil {
+				continue
+			}
+			for _, inst := range instances {
+				if !inst.Enabled {
+					continue
+				}
+				if _, err := flowbridgeSvc.Check(context.Background(), inst.ID); err != nil {
+					fmt.Fprintf(os.Stderr, "flowbridge-health: check %s failed: %v\n", inst.ID, err)
+				}
 			}
 		}
 	}()
@@ -357,6 +384,7 @@ func main() {
 	endpointSvc := endpoint.NewAppService(endpointRepo, logSvc)
 	actionSvc := action.NewActionService(serviceSvc, routeSvc, edgeSvc, endpointRepo, endpointSvc, applySvc, spaceRepo, logSvc, listenerSvc)
 	actionSvc.SetCertificateStore(certStoreSvc)
+	actionSvc.SetFlowBridgeService(flowbridgeSvc)
 
 	routingPolicyRepo := routingpolicy.NewRepository(db)
 	routingPolicySvc := routingpolicy.NewService(routingPolicyRepo)
@@ -623,6 +651,7 @@ func main() {
 		ServiceAuthSvc:  serviceAuthSvc,
 		EgressSvc:       egressSvc,
 		CertStore:       certStoreSvc,
+		FlowBridgeSvc:   flowbridgeSvc,
 		TLSLifecycle:    tlsLifecycleSvc,
 		TLSObservers:    tlsObservers,
 		ACMEClient:      acmeClient,

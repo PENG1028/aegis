@@ -106,6 +106,11 @@ type RouteIntent struct {
 
 	// serviceID is the service to resolve endpoint for (internal use).
 	serviceID string
+
+	// flowbridgeID is the FlowBridge instance to forward to (internal use).
+	// When set, the instance's machine_ip:data_plane_port replaces endpoint
+	// resolution entirely — traffic follows the instance, never the service.
+	flowbridgeID string
 }
 
 // RequirementsOf extracts the Capabilities required to serve this intent.

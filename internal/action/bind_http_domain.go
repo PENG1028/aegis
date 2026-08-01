@@ -21,7 +21,8 @@ type BindHTTPDomainInput struct {
 	TargetHost    string `json:"target_host"`
 	TargetPort    int    `json:"target_port"`
 	GatewayLinkID string `json:"gateway_link_id,omitempty"`
-	CertID        string `json:"cert_id,omitempty"` // certstore ID for custom TLS cert
+	CertID        string `json:"cert_id,omitempty"`       // certstore ID for custom TLS cert
+	FlowBridgeID  string `json:"flowbridge_id,omitempty"` // v1.9C-2: forward to a FlowBridge instance
 }
 
 // BindHTTPDomain binds an HTTP domain to a backend target.
@@ -45,11 +46,28 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 	}
 
 	// 3. Validate target
-	if input.TargetHost == "" {
-		return nil, NewError(ErrCodeTargetNotAllowed, "target_host is required")
-	}
-	if input.TargetPort <= 0 || input.TargetPort > 65535 {
-		return nil, NewError(ErrCodeTargetNotAllowed, fmt.Sprintf("invalid target_port: %d", input.TargetPort))
+	if input.FlowBridgeID != "" {
+		// FlowBridge-bound domains forward to the instance; a bare target is not needed.
+		if input.TargetHost != "" || input.TargetPort > 0 {
+			return nil, NewError(ErrCodeTargetNotAllowed, "target_host/target_port must be empty when flowbridge_id is set")
+		}
+		if s.flowbridgeSvc == nil {
+			return nil, NewError(ErrCodeTargetNotAllowed, "flowbridge support is unavailable")
+		}
+		inst, err := s.flowbridgeSvc.Get(ctx, input.FlowBridgeID)
+		if err != nil {
+			return nil, NewError(ErrCodeTargetNotAllowed, fmt.Sprintf("flowbridge instance: %v", err))
+		}
+		if !inst.Enabled {
+			return nil, NewError(ErrCodeTargetNotAllowed, fmt.Sprintf("flowbridge instance %q is disabled", inst.Name))
+		}
+	} else {
+		if input.TargetHost == "" {
+			return nil, NewError(ErrCodeTargetNotAllowed, "target_host is required")
+		}
+		if input.TargetPort <= 0 || input.TargetPort > 65535 {
+			return nil, NewError(ErrCodeTargetNotAllowed, fmt.Sprintf("invalid target_port: %d", input.TargetPort))
+		}
 	}
 	if err := s.validateCertificateBinding(input.CertID, input.Domain); err != nil {
 		return nil, NewError(ErrCodeTargetNotAllowed, err.Error())
@@ -91,14 +109,17 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 		return nil, fmt.Errorf("create service: %w", err)
 	}
 
-	// 5. Create endpoint
-	_, err = s.endpointSvc.CreateEndpoint(ctx, endpoint.CreateEndpointInput{
-		ServiceID: svc.ID,
-		Type:      "private",
-		Address:   net.JoinHostPort(input.TargetHost, strconv.Itoa(input.TargetPort)),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create endpoint: %w", err)
+	// 5. Create endpoint — skipped for flowbridge-bound domains: traffic follows
+	// the instance address, and the endpoint resolver is bypassed by the planner.
+	if input.FlowBridgeID == "" {
+		_, err = s.endpointSvc.CreateEndpoint(ctx, endpoint.CreateEndpointInput{
+			ServiceID: svc.ID,
+			Type:      "private",
+			Address:   net.JoinHostPort(input.TargetHost, strconv.Itoa(input.TargetPort)),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create endpoint: %w", err)
+		}
 	}
 
 	// 6. Create route — fields derived from composition registry
@@ -112,6 +133,7 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 		TLSEnabled:       compDef.TLSMode != "none",
 		GatewayLinkID:    input.GatewayLinkID,
 		CertID:           certIDPtr(input.CertID),
+		FlowBridgeID:     strPtr(input.FlowBridgeID),
 		Status:           "active",
 		SpaceID:          spaceID,
 		OwnerType:        ownerType,
@@ -131,18 +153,6 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 			fmt.Sprintf("edge rule auto-create warning: %v", err), "system")
 	}
 
-	// 8. Set ownership on the auto-created edge rule
-	edgeRule, _ := s.edgeSvc.FindBySNIHost(ctx, rt.Domain)
-	if edgeRule != nil {
-		edgeRule.SpaceID = spaceID
-		edgeRule.OwnerType = ownerType
-		edgeRule.OwnerID = ownerID
-		edgeRule.CreatedByTokenID = tokenID
-		// Update ownership via repo — need the edge repo directly.
-		// For now, ownership is set via route lifecycle sync.
-		_ = edgeRule
-	}
-
 	// 9. Trigger safe apply
 	if err := s.safeApply(ctx); err != nil {
 		s.logSvc.Log(ctx, "action.bind-http-domain", "action", opID, "failed",
@@ -155,14 +165,20 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 		}, nil
 	}
 
+	targetDesc := fmt.Sprintf("%s:%d", input.TargetHost, input.TargetPort)
+	if input.FlowBridgeID != "" {
+		if inst, err := s.flowbridgeSvc.Get(ctx, input.FlowBridgeID); err == nil {
+			targetDesc = fmt.Sprintf("flowbridge %q (%s:%d)", inst.Name, inst.MachineIP, inst.DataPlanePort)
+		}
+	}
 	s.logSvc.Log(ctx, "action.bind-http-domain", "action", opID, "success",
-		fmt.Sprintf("bound HTTP domain %s -> %s:%d", input.Domain, input.TargetHost, input.TargetPort), ac.Actor)
+		fmt.Sprintf("bound HTTP domain %s -> %s", input.Domain, targetDesc), ac.Actor)
 	s.reportCall(ctx, ac, "bind-http-domain")
 
 	return &ActionResult{
 		OperationID: opID,
 		Status:      "success",
-		Message:     fmt.Sprintf("bound HTTP domain %s -> %s:%d", input.Domain, input.TargetHost, input.TargetPort),
+		Message:     fmt.Sprintf("bound HTTP domain %s -> %s", input.Domain, targetDesc),
 		Details:     fmt.Sprintf("service_id=%s route_id=%s", svc.ID, rt.ID),
 	}, nil
 }
@@ -210,4 +226,11 @@ func certIDPtr(id string) *string {
 		return nil
 	}
 	return &id
+}
+
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

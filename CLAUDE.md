@@ -136,6 +136,7 @@ internal/
   credential/   # 凭证加密管理（AES-256-GCM）
   secrets/      # 加密/解密（AES-256-GCM MasterKey）
   certstore/    # 证书存储 + 生命周期（v1.9C）
+  flowbridge/   # FlowBridge 数据面实例管理（v1.9C-2：CRUD + 控制面 /health 探活 + 启用禁用）
   acme/         # 内嵌 lego ACME 客户端（v1.9C，替代 certbot）
   deploy/       # 可复用 SSH 部署工具箱
   deployment/   # 部署记录 + 快照（model/repository/snapshot）
@@ -266,6 +267,14 @@ make update-all
 - `POST /api/admin/v1/distnode/ping/{id}` — ping 指定 peer
 - `GET /api/admin/v1/distnode/aggregate?path=...` — 聚合所有节点某个 API 的返回
 - `GET /api/admin/v1/nodes/{id}/distnode-overview` — 指定节点 distnode 概览
+
+**FlowBridge 实例（v1.9C-2）：**
+- `GET /api/admin/v1/flowbridge` — 实例列表（含健康状态 + 引用路由数）
+- `POST /api/admin/v1/flowbridge` — 创建（触发初始健康检查）
+- `GET/PATCH/DELETE /api/admin/v1/flowbridge/{id}` — 详情 / 更新（含 enabled 切换）/ 删除（被路由引用 → 409）
+- `POST /api/admin/v1/flowbridge/{id}/check` — 手动健康检查（GET 控制面 /health）
+- 绑定：`POST /api/v1/actions/bind-http-domain` 带 `flowbridge_id`（域名 → 实例数据面端口，Aegis 只做 TLS 终止 + 转发；planner 不回退 endpoint）
+- 规则：所有 mutation 走 MarkPending；health 探控制面 `/health`（免认证），不探业务 target；详情见 `docs/flowbridge-integration.md`
 
 **服务间认证（serviceauth）：**
 - `POST /api/service-auth/v1/register` — 服务注册（上报公钥 + listen_port）

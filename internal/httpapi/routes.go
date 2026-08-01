@@ -43,7 +43,8 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		TransparentMgr:  svcs.TransparentMgr,
 		ProvReg:         svcs.ProvReg,   // v1.8L-19 — provider registry for install/uninstall/config handlers
 		EgressSvc:       svcs.EgressSvc, // v1.9A-5 — egress rule engine
-		CertStore:       svcs.CertStore, // v1.9C — TLS certificate store
+		CertStore:       svcs.CertStore,
+		FlowBridgeSvc:   svcs.FlowBridgeSvc, // v1.9C-2 managed FlowBridge instances // v1.9C — TLS certificate store
 		TLSLifecycle:    svcs.TLSLifecycle,
 		TLSObservers:    svcs.TLSObservers,
 		ACMEClient:      svcs.ACMEClient, // v1.9C — ACME auto-cert manager
@@ -388,6 +389,17 @@ func RegisterRoutes(mux *http.ServeMux, svcs *Services) {
 		mux.HandleFunc("GET /api/admin/v1/infra/status", h.AdminInfraStatus)
 		mux.HandleFunc("POST /api/admin/v1/infra/{name}/install", h.InfraInstall)
 		mux.HandleFunc("DELETE /api/admin/v1/infra/{name}", h.InfraUninstall)
+	}
+
+	// v1.9C-2 FlowBridge instances — managed data-plane entities that routes can
+	// target instead of a plain service endpoint.
+	if svcs.FlowBridgeSvc != nil {
+		mux.HandleFunc("GET /api/admin/v1/flowbridge", h.AdminListFlowBridge)
+		mux.HandleFunc("POST /api/admin/v1/flowbridge", h.AdminCreateFlowBridge)
+		mux.HandleFunc("GET /api/admin/v1/flowbridge/{id}", h.AdminGetFlowBridge)
+		mux.HandleFunc("PATCH /api/admin/v1/flowbridge/{id}", h.AdminUpdateFlowBridge)
+		mux.HandleFunc("POST /api/admin/v1/flowbridge/{id}/check", h.AdminCheckFlowBridge)
+		mux.HandleFunc("DELETE /api/admin/v1/flowbridge/{id}", h.AdminDeleteFlowBridge)
 	}
 
 	// WHY: API typos and unsupported methods must never look successful by

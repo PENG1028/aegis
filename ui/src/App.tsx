@@ -31,6 +31,7 @@ import GatewayLinks from '@/pages/fabric/GatewayLinks';
 import Topology from '@/pages/fabric/Topology';
 import RoutingTable from '@/pages/fabric/RoutingTable';
 import InfraManagement from '@/pages/fabric/InfraManagement';
+import FlowBridge from '@/pages/fabric/FlowBridge';
 
 // ── Service Auth ──
 import AuthServices from '@/pages/fabric/AuthServices';
@@ -148,6 +149,7 @@ export default function App() {
                   <Route path="topology" element={<Topology />} />
                   <Route path="routing-table" element={<RoutingTable />} />
                   <Route path="infra" element={<InfraManagement />} />
+                  <Route path="flowbridge" element={<FlowBridge />} />
                 </Route>
 
                 {/* ── Workspace 3b: Service Auth / 服务认证 ── */}

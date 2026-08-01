@@ -252,6 +252,11 @@ func AllMigrations() []Migration {
 			Name:    "certificate_reference_integrity",
 			UpSQL:   migration047,
 		},
+		{
+			Version: "048",
+			Name:    "flowbridge_instances",
+			UpSQL:   migration048,
+		},
 	}
 }
 
@@ -1411,5 +1416,65 @@ WHEN EXISTS (
 )
 BEGIN
   SELECT RAISE(ABORT, 'CERTIFICATE_REFERENCED');
+END;
+`
+
+// migration048 adds flowbridge instances — the managed data-plane entities that
+// routes can point at instead of a plain service endpoint. A route referencing
+// a flowbridge instance forwards (after TLS termination) to the instance's
+// machine IP and data-plane port; the instance itself is a first-class
+// managed entity with its own enable/disable and control-plane health state.
+const migration048 = `
+CREATE TABLE IF NOT EXISTS flowbridge_instances (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    machine_ip TEXT NOT NULL DEFAULT '',
+    data_plane_port INTEGER NOT NULL DEFAULT 0,
+    control_address TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_health_status TEXT NOT NULL DEFAULT 'unknown',
+    last_health_latency_ms INTEGER NOT NULL DEFAULT 0,
+    last_health_message TEXT NOT NULL DEFAULT '',
+    last_checked_at TEXT NOT NULL DEFAULT '',
+    space_id TEXT NOT NULL DEFAULT '',
+    owner_type TEXT NOT NULL DEFAULT 'admin',
+    owner_id TEXT NOT NULL DEFAULT '',
+    created_by_token_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT ''
+);
+
+ALTER TABLE routes ADD COLUMN flowbridge_id TEXT NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_flowbridge_instances_enabled ON flowbridge_instances(enabled);
+CREATE INDEX IF NOT EXISTS idx_routes_flowbridge_id ON routes(flowbridge_id);
+
+-- Routes may only reference instances that exist.
+CREATE TRIGGER IF NOT EXISTS trg_routes_flowbridge_insert_guard
+BEFORE INSERT ON routes
+WHEN NEW.flowbridge_id <> '' AND NOT EXISTS (
+  SELECT 1 FROM flowbridge_instances WHERE id = NEW.flowbridge_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'FLOWBRIDGE_NOT_FOUND');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_routes_flowbridge_update_guard
+BEFORE UPDATE OF flowbridge_id ON routes
+WHEN NEW.flowbridge_id <> '' AND NOT EXISTS (
+  SELECT 1 FROM flowbridge_instances WHERE id = NEW.flowbridge_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'FLOWBRIDGE_NOT_FOUND');
+END;
+
+-- Instances referenced by routes cannot be deleted.
+CREATE TRIGGER IF NOT EXISTS trg_flowbridge_delete_reference_guard
+BEFORE DELETE ON flowbridge_instances
+WHEN EXISTS (
+  SELECT 1 FROM routes WHERE flowbridge_id = OLD.id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'FLOWBRIDGE_REFERENCED');
 END;
 `

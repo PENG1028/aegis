@@ -16,13 +16,13 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{DB: db}
 }
 
-const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, source_provider, source_capabilities, tls_binding_mode, tls_provider, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at`
+const routeSelectCols = `id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, source_provider, source_capabilities, tls_binding_mode, tls_provider, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, flowbridge_id, created_at, updated_at`
 
 // scanRoute scans a single row into a Route. Handles nullable columns.
 func scanRoute(scanner interface{ Scan(...interface{}) error }) (*Route, error) {
 	var rt Route
 	var createdAt, updatedAt string
-	var pathPrefix, composition, sourceProvider, sourceCaps, tlsBindingMode, tlsProvider, certID, gatewayLinkID sql.NullString
+	var pathPrefix, composition, sourceProvider, sourceCaps, tlsBindingMode, tlsProvider, certID, flowbridgeID, gatewayLinkID sql.NullString
 	var tlsVal, maintVal, stripVal int
 	var maintMsg sql.NullString
 
@@ -31,7 +31,7 @@ func scanRoute(scanner interface{ Scan(...interface{}) error }) (*Route, error) 
 		&composition, &sourceProvider, &sourceCaps, &tlsBindingMode, &tlsProvider,
 		&rt.Status, &maintVal, &maintMsg,
 		&rt.SpaceID, &rt.OwnerType, &rt.OwnerID, &rt.CreatedByTokenID,
-		&gatewayLinkID, &certID, &createdAt, &updatedAt,
+		&gatewayLinkID, &certID, &flowbridgeID, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -46,6 +46,10 @@ func scanRoute(scanner interface{ Scan(...interface{}) error }) (*Route, error) 
 	if certID.Valid {
 		id := certID.String
 		rt.CertID = &id
+	}
+	if flowbridgeID.Valid && flowbridgeID.String != "" {
+		id := flowbridgeID.String
+		rt.FlowBridgeID = &id
 	}
 	rt.StripPrefix = stripVal == 1
 	rt.TLSEnabled = tlsVal == 1
@@ -87,15 +91,19 @@ func (r *Repository) Create(rt *Route) error {
 	if rt.CertID != nil {
 		certID = *rt.CertID
 	}
+	flowbridgeID := ""
+	if rt.FlowBridgeID != nil {
+		flowbridgeID = *rt.FlowBridgeID
+	}
 
 	_, err := r.DB.Exec(
-		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, source_provider, source_capabilities, tls_binding_mode, tls_provider, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO routes (id, domain, path_prefix, strip_prefix, service_id, tls_enabled, composition, source_provider, source_capabilities, tls_binding_mode, tls_provider, status, maintenance_enabled, maintenance_message, space_id, owner_type, owner_id, created_by_token_id, gateway_link_id, cert_id, flowbridge_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rt.ID, rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal,
 		rt.Composition, rt.SourceProvider, rt.SourceCapabilities, rt.TLSBindingMode, rt.TLSProvider,
 		rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
-		rt.GatewayLinkID, certID,
+		rt.GatewayLinkID, certID, flowbridgeID,
 		rt.CreatedAt.Format(time.RFC3339), rt.UpdatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -230,14 +238,18 @@ func (r *Repository) Update(rt *Route) error {
 	if rt.CertID != nil {
 		certID = *rt.CertID
 	}
+	flowbridgeID := ""
+	if rt.FlowBridgeID != nil {
+		flowbridgeID = *rt.FlowBridgeID
+	}
 
 	_, err := r.DB.Exec(
-		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, composition=?, source_provider=?, source_capabilities=?, tls_binding_mode=?, tls_provider=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, gateway_link_id=?, cert_id=?, updated_at=? WHERE id=?`,
+		`UPDATE routes SET domain=?, path_prefix=?, strip_prefix=?, service_id=?, tls_enabled=?, composition=?, source_provider=?, source_capabilities=?, tls_binding_mode=?, tls_provider=?, status=?, maintenance_enabled=?, maintenance_message=?, space_id=?, owner_type=?, owner_id=?, created_by_token_id=?, gateway_link_id=?, cert_id=?, flowbridge_id=?, updated_at=? WHERE id=?`,
 		rt.Domain, rt.PathPrefix, stripVal, rt.ServiceID, tlsVal,
 		rt.Composition, rt.SourceProvider, rt.SourceCapabilities, rt.TLSBindingMode, rt.TLSProvider,
 		rt.Status, maintVal, rt.MaintenanceMessage,
 		rt.SpaceID, rt.OwnerType, rt.OwnerID, rt.CreatedByTokenID,
-		rt.GatewayLinkID, certID,
+		rt.GatewayLinkID, certID, flowbridgeID,
 		rt.UpdatedAt.Format(time.RFC3339), rt.ID,
 	)
 	if err != nil {
@@ -261,6 +273,17 @@ func (r *Repository) FindByCertID(certID string) ([]Route, error) {
 		`SELECT `+routeSelectCols+` FROM routes WHERE cert_id = ? ORDER BY domain`, certID)
 	if err != nil {
 		return nil, fmt.Errorf("query routes by cert_id: %w", err)
+	}
+	defer rows.Close()
+	return scanRoutes(rows)
+}
+
+// FindByFlowBridgeID returns all routes that reference a flowbridge instance.
+func (r *Repository) FindByFlowBridgeID(flowbridgeID string) ([]Route, error) {
+	rows, err := r.DB.Query(
+		`SELECT `+routeSelectCols+` FROM routes WHERE flowbridge_id = ? ORDER BY domain`, flowbridgeID)
+	if err != nil {
+		return nil, fmt.Errorf("query routes by flowbridge_id: %w", err)
 	}
 	defer rows.Close()
 	return scanRoutes(rows)

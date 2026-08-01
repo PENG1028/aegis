@@ -1279,6 +1279,41 @@ export const exposureApi = {
     post(`/api/exposures/${id}/disable`),
 };
 
+// ─── FlowBridge API (v1.9C-2 — managed FlowBridge data-plane instances) ───
+export interface FlowBridgeInstance {
+  id: string;
+  name: string;
+  machine_ip: string;
+  data_plane_port: number;
+  control_address: string;
+  enabled: boolean;
+  last_health_status: string; // unknown | healthy | unhealthy
+  last_health_latency_ms: number;
+  last_health_message: string;
+  last_checked_at: string;
+  route_ref_count?: number;
+}
+
+export const flowbridgeApi = {
+  list: (): Promise<{ data: FlowBridgeInstance[]; meta: { total: number } }> =>
+    get('/api/admin/v1/flowbridge'),
+
+  get: (id: string): Promise<FlowBridgeInstance> =>
+    get(`/api/admin/v1/flowbridge/${id}`),
+
+  create: (input: { name: string; machine_ip: string; data_plane_port: number; control_address: string }): Promise<FlowBridgeInstance> =>
+    post('/api/admin/v1/flowbridge', input),
+
+  update: (id: string, input: any): Promise<FlowBridgeInstance> =>
+    patch(`/api/admin/v1/flowbridge/${id}`, input),
+
+  check: (id: string): Promise<FlowBridgeInstance> =>
+    post(`/api/admin/v1/flowbridge/${id}/check`),
+
+  del: (id: string): Promise<any> =>
+    del(`/api/admin/v1/flowbridge/${id}`),
+};
+
 // ─── Credential API (encrypted connection strings) ───
 export const credentialApi = {
   list: (): Promise<{ credentials: any[]; count: number }> =>

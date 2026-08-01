@@ -5,21 +5,22 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
-	"aegis/internal/endpoint"
 	"aegis/internal/core"
+	"aegis/internal/endpoint"
 	"aegis/internal/logs"
 	"aegis/internal/service"
 )
 
 // Checker performs health checks on services via their endpoints.
 type Checker struct {
-	httpClient  *http.Client
-	repo        *Repository
-	svcRepo     *service.Repository
+	httpClient   *http.Client
+	repo         *Repository
+	svcRepo      *service.Repository
 	endpointRepo *endpoint.Repository
-	logSvc      logs.Logger
+	logSvc       logs.Logger
 }
 
 // NewChecker creates a new health checker.
@@ -143,8 +144,9 @@ func parseAddress(addr string) (host string, port string, err error) {
 
 	h, p, e := net.SplitHostPort(cleaned)
 	if e != nil {
-		// No port specified, try common defaults
-		if addr[:5] == "https" {
+		// No port specified, try common defaults.
+		// HasPrefix (not slicing) so short addresses cannot panic.
+		if strings.HasPrefix(addr, "https") {
 			return cleaned, "443", nil
 		}
 		return cleaned, "80", nil

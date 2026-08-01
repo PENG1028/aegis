@@ -117,6 +117,7 @@ export default function EntryList() {
         isHTTP: rd.isHTTP,
         certSource: r.cert_id ? (certMap[r.cert_id] || '') : '',
 		tlsBindingMode: r.tls_binding_mode || (r.cert_id ? 'certificate' : 'provider_auto'),
+        flowbridgeId: r.flowbridge_id || '',
       };
     }),
     ...exposures.map((e: any) => ({
@@ -208,7 +209,12 @@ export default function EntryList() {
                             : null
                       )}
                     </td>
-                    <td className="py-2.5 px-3 text-[10px] text-a-muted">{item.type}</td>
+                    <td className="py-2.5 px-3 text-[10px] text-a-muted">
+                      {item.type}
+                      {(item as any).flowbridgeId && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-blue-500/10 text-blue-400 border-blue-500/20">flowbridge</span>
+                      )}
+                    </td>
                     <td className="py-2.5 px-3">
                       {item._t === 'route'
 						? <span className="text-[10px] text-a-muted">系统编排</span>

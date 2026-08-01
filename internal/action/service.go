@@ -9,6 +9,7 @@ import (
 	"aegis/internal/core"
 	"aegis/internal/edgemux"
 	"aegis/internal/endpoint"
+	"aegis/internal/flowbridge"
 	"aegis/internal/listener"
 	"aegis/internal/logs"
 	"aegis/internal/route"
@@ -31,23 +32,29 @@ type CallReporter func(ctx context.Context, callerService, targetService, target
 // ActionService is the unified entry point for all v1.6 actions.
 // Both CLI and HTTP API call this same service to ensure consistent behavior.
 type ActionService struct {
-	serviceSvc   *service.AppService
-	routeSvc     *route.AppService
-	edgeSvc      *edgemux.AppService
-	endpointRepo *endpoint.Repository
-	endpointSvc  *endpoint.AppService
-	applySvc     *apply.AppService
-	spaceRepo    *space.Repository
-	logSvc       logs.Logger
-	listenerSvc  *listener.Service
-	certStore    *certstore.Service
-	callReporter CallReporter // optional, set via SetCallReporter
+	serviceSvc    *service.AppService
+	routeSvc      *route.AppService
+	edgeSvc       *edgemux.AppService
+	endpointRepo  *endpoint.Repository
+	endpointSvc   *endpoint.AppService
+	applySvc      *apply.AppService
+	spaceRepo     *space.Repository
+	logSvc        logs.Logger
+	listenerSvc   *listener.Service
+	certStore     *certstore.Service
+	flowbridgeSvc *flowbridge.Service
+	callReporter  CallReporter // optional, set via SetCallReporter
 }
 
 // SetCertificateStore enables certificate ownership and domain validation for
 // actions that create certificate-bound routes.
 func (s *ActionService) SetCertificateStore(store *certstore.Service) {
 	s.certStore = store
+}
+
+// SetFlowBridgeService enables flowbridge-targeted domain binding.
+func (s *ActionService) SetFlowBridgeService(svc *flowbridge.Service) {
+	s.flowbridgeSvc = svc
 }
 
 // NewActionService creates a new ActionService.

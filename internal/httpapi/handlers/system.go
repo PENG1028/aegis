@@ -13,6 +13,7 @@ import (
 	"aegis/internal/egress"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
+	"aegis/internal/flowbridge"
 	"aegis/internal/gateway"
 	"aegis/internal/health"
 	"aegis/internal/hostdep/provider"
@@ -69,6 +70,7 @@ type Handlers struct {
 	ServiceAuthSvc  *serviceauth.Service // v1.9A
 	EgressSvc       *egress.Service      // v1.9A-5
 	CertStore       *certstore.Service   // v1.9C TLS certificate store
+	FlowBridgeSvc   *flowbridge.Service  // v1.9C-2 managed FlowBridge instances
 	TLSLifecycle    *tlslifecycle.Service
 	TLSObservers    []certstore.AutomaticTLSObserver
 	ACMEClient      ACMEProvider                 // v1.9C ACME via lego (replaces certbot)

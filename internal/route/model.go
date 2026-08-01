@@ -30,6 +30,7 @@ type Route struct {
 	CreatedByTokenID   string    `json:"created_by_token_id"`
 	GatewayLinkID      string    `json:"gateway_link_id,omitempty"` // v1.7AB
 	CertID             *string   `json:"cert_id,omitempty"`         // v1.9C — custom TLS certificate reference
+	FlowBridgeID       *string   `json:"flowbridge_id,omitempty"`   // v1.9C-2 — target a FlowBridge instance instead of a service endpoint
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }

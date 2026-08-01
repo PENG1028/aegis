@@ -192,6 +192,11 @@ func (s *AppService) FindRoutesByCertID(ctx context.Context, certID string) ([]R
 	return s.repo.FindByCertID(certID)
 }
 
+// FindRoutesByFlowBridgeID returns all routes that reference a flowbridge instance.
+func (s *AppService) FindRoutesByFlowBridgeID(ctx context.Context, flowbridgeID string) ([]Route, error) {
+	return s.repo.FindByFlowBridgeID(flowbridgeID)
+}
+
 // SetTLSBinding changes how a TLS-terminating route obtains its certificate.
 func (s *AppService) SetTLSBinding(ctx context.Context, idOrDomain, mode, providerID, certID string) (*Route, error) {
 	rt, err := s.GetRoute(ctx, idOrDomain)

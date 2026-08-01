@@ -7,6 +7,7 @@ import (
 
 	"aegis/internal/certstore"
 	"aegis/internal/endpoint"
+	"aegis/internal/flowbridge"
 	gatewaylink "aegis/internal/gateway"
 	"aegis/internal/hostdep/provider"
 	"aegis/internal/route"
@@ -41,6 +42,9 @@ type Dependencies struct {
 	SafetySvc        *safety.Service
 	MasterKey        *secrets.MasterKey
 	CertStore        *certstore.Service // v1.9C: resolve CertID → file paths
+	// FlowBridgeRepo resolves flowbridge-bound routes to instance addresses.
+	// nil disables flowbridge routing (e.g. tests that do not exercise it).
+	FlowBridgeRepo *flowbridge.Repository
 	// ControlPort is the aegis API/control port (parsed from cfg.Server.Addr).
 	// When > 0, the Planner exposes this node's control plane through the ingress
 	// HTTP provider so cross-node distnode traffic traverses the 80/443 edge.
@@ -132,6 +136,7 @@ func (p *Planner) collectIntents() ([]RouteIntent, []string, error) {
 			TLSExecutor:        rt.TLSProvider,
 			gatewayLinkID:      rt.GatewayLinkID,
 			serviceID:          rt.ServiceID,
+			flowbridgeID:       flowbridgeIDStr(rt.FlowBridgeID),
 			CertID:             certIDStr(rt.CertID),
 		}
 		// WHY: a certificate binding is an explicit security choice. Missing local
@@ -183,6 +188,34 @@ func (p *Planner) resolveIntents(intents []RouteIntent) ([]RouteIntent, []string
 	var warnings []string
 
 	for _, ri := range intents {
+		// FlowBridge-bound routes resolve the instance directly: traffic follows
+		// the instance's machine_ip:data_plane_port, never the service endpoint.
+		// A missing or disabled instance skips the route with a warning — the
+		// same degradation policy as a disabled service. No fallback.
+		if ri.flowbridgeID != "" {
+			if p.deps.FlowBridgeRepo == nil {
+				warnings = append(warnings, fmt.Sprintf("%s: flowbridge resolution unavailable", ri.Domain))
+				continue
+			}
+			inst, err := p.deps.FlowBridgeRepo.FindByID(ri.flowbridgeID)
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("%s: flowbridge instance lookup failed: %v", ri.Domain, err))
+				continue
+			}
+			if inst == nil {
+				warnings = append(warnings, fmt.Sprintf("%s: flowbridge instance %s not found", ri.Domain, ri.flowbridgeID))
+				continue
+			}
+			if !inst.Enabled {
+				warnings = append(warnings, fmt.Sprintf("%s: flowbridge instance %s is disabled", ri.Domain, inst.Name))
+				continue
+			}
+			ri.Upstream = fmt.Sprintf("http://%s:%d", inst.MachineIP, inst.DataPlanePort)
+			ri.ExtraHeaders = ensureHeader(ri.ExtraHeaders, "Host", ri.Domain)
+			resolved = append(resolved, ri)
+			continue
+		}
+
 		// Resolve endpoint → find best upstream address
 		result := p.deps.EndpointResolver.ResolveWithResult(nil, ri.serviceID)
 		if result.Endpoint == nil {
@@ -558,4 +591,22 @@ func certIDStr(certID *string) string {
 		return ""
 	}
 	return *certID
+}
+
+func flowbridgeIDStr(id *string) string {
+	if id == nil {
+		return ""
+	}
+	return *id
+}
+
+// ensureHeader returns the header map with key set to value (if absent).
+func ensureHeader(h map[string]string, key, value string) map[string]string {
+	if h == nil {
+		h = make(map[string]string)
+	}
+	if _, ok := h[key]; !ok {
+		h[key] = value
+	}
+	return h
 }

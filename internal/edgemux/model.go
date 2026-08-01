@@ -10,10 +10,10 @@ import (
 
 // Kind constants for edge mux rules.
 const (
-	KindHTTPSApp        = "https_app"
-	KindProxyNode       = "proxy_node"
-	KindDBProxy         = "db_proxy"
-	KindTunnel          = "tunnel"
+	KindHTTPSApp          = "https_app"
+	KindProxyNode         = "proxy_node"
+	KindDBProxy           = "db_proxy"
+	KindTunnel            = "tunnel"
 	KindUnknownTLSBackend = "unknown_tls_backend"
 )
 
@@ -30,8 +30,8 @@ type Rule struct {
 	Status           string    `json:"status"`     // active | disabled | failed
 	Message          string    `json:"message"`
 	SpaceID          string    `json:"space_id"`
-	OwnerType        string    `json:"owner_type"`         // space | admin
-	OwnerID          string    `json:"owner_id"`           // space_id when owner_type=space
+	OwnerType        string    `json:"owner_type"` // space | admin
+	OwnerID          string    `json:"owner_id"`   // space_id when owner_type=space
 	CreatedByTokenID string    `json:"created_by_token_id"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
@@ -75,7 +75,7 @@ func ValidateTarget(host string) (bool, string) {
 		strings.HasPrefix(host, "192.168.") {
 		return true, "private IP allowed"
 	}
-		if net.ParseIP(host) != nil {
+	if net.ParseIP(host) != nil {
 		return true, "public IP allowed"
 	}
 	return false, "target must be a valid IP address"

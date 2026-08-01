@@ -16,6 +16,7 @@ import (
 	"aegis/internal/egress"
 	"aegis/internal/endpoint"
 	"aegis/internal/exposure"
+	"aegis/internal/flowbridge"
 	"aegis/internal/gateway"
 	"aegis/internal/health"
 	"aegis/internal/hostdep/provider"
@@ -74,6 +75,7 @@ type Services struct {
 	RoutingTableSvc *routingtable.Service        // v1.8C-3
 	DNSMgmt         *dns.Manager                 // v1.8E DNS resolver
 	CertStore       *certstore.Service           // v1.9C TLS certificate store
+	FlowBridgeSvc   *flowbridge.Service          // v1.9C-2 managed FlowBridge instances
 	TLSLifecycle    *tlslifecycle.Service
 	TLSObservers    []certstore.AutomaticTLSObserver
 	ACMEClient      handlers.ACMEProvider // v1.9C ACME auto-cert manager
