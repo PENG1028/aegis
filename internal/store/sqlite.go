@@ -22,7 +22,14 @@ func OpenSQLite(path string) (*sql.DB, error) {
 
 	// busy_timeout=5000: wait up to 5s on SQLITE_BUSY instead of failing immediately.
 	// Critical for multi-node setups where concurrent writes collide.
-	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000")
+	//
+	// NOTE: DSN pragmas must use modernc's `_pragma=` syntax. The mattn-style
+	// `_busy_timeout=` / `_journal_mode=` parameters are silently ignored by
+	// modernc.org/sqlite, and `PRAGMA busy_timeout` executed on one pooled
+	// connection does NOT apply to the others — every connection without the
+	// timeout fails instantly on write contention (observed as periodic
+	// "database is locked" from peer heartbeats).
+	db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database %s: %w", path, err)
 	}
