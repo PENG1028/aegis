@@ -18,6 +18,10 @@ type Logger interface {
 	// Log records an operational event.
 	Log(ctx context.Context, action, targetType, targetID, result, message, actor string)
 
+	// LogWithSpace records an operational event attributed to an action
+	// space, so space-scoped callers can be isolated from each other.
+	LogWithSpace(ctx context.Context, spaceID, action, targetType, targetID, result, message, actor string)
+
 	// LogAudit records a security-relevant audit event.
 	LogAudit(actorType, actorID, eventType, ip, userAgent, targetType, targetID, result, errorCode string)
 
@@ -28,9 +32,11 @@ type Logger interface {
 	LogNodeEvent(e *NodeEvent)
 
 	// ── Read methods ──
-
 	// ListLogs returns recent operation logs, optionally filtered.
 	ListLogs(ctx context.Context, action, targetID string) ([]OperationLog, error)
+
+	// ListLogsBySpace returns operation logs for one action space.
+	ListLogsBySpace(ctx context.Context, spaceID string, limit int) ([]OperationLog, error)
 
 	// ListApplyLogs returns recent apply logs.
 	ListApplyLogs(limit int) ([]ApplyLog, error)

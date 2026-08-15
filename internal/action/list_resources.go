@@ -76,17 +76,22 @@ func (s *ActionService) ListMyOperations(ctx context.Context, limit int) ([]logs
 	}
 
 	if ac.IsAdmin() {
-		return s.logSvc.ListLogs(ctx, "", "")
+		ops, err := s.logSvc.ListLogs(ctx, "", "")
+		if err != nil {
+			return nil, fmt.Errorf("list operations: %w", err)
+		}
+		if len(ops) > limit {
+			ops = ops[:limit]
+		}
+		return ops, nil
 	}
 
-	// For space tokens, filter by space-related actions
-	ops, err := s.logSvc.ListLogs(ctx, "action.", "")
+	// Space tokens must only see their own space's operations — the old
+	// "action." prefix filter returned every space's action logs (info leak
+	// across tenants).
+	ops, err := s.logSvc.ListLogsBySpace(ctx, ac.SpaceID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list my operations: %w", err)
-	}
-	// Truncate to limit
-	if len(ops) > limit {
-		ops = ops[:limit]
 	}
 	return ops, nil
 }

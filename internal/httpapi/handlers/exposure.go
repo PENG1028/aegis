@@ -63,7 +63,7 @@ func (h *Handlers) GetExposure(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	e, err := h.Exposure.GetExposure(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, exposureToMap(*e))
@@ -89,7 +89,7 @@ func (h *Handlers) UpdateExposure(w http.ResponseWriter, r *http.Request) {
 		Status: input.Status, Message: input.Message,
 	}, callerOwner)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, exposureToMap(*e))
@@ -100,7 +100,7 @@ func (h *Handlers) ActivateExposure(w http.ResponseWriter, r *http.Request) {
 	callerOwner := r.URL.Query().Get("caller_owner")
 	e, err := h.Exposure.ActivateExposure(r.Context(), id, callerOwner)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, exposureToMap(*e))
@@ -111,7 +111,7 @@ func (h *Handlers) DisableExposure(w http.ResponseWriter, r *http.Request) {
 	callerOwner := r.URL.Query().Get("caller_owner")
 	e, err := h.Exposure.DisableExposure(r.Context(), id, callerOwner)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, exposureToMap(*e))

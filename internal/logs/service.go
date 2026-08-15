@@ -31,6 +31,13 @@ func (s *AppService) SetNodeEventRepo(r *NodeEventRepository) { s.nodeEventRepo 
 
 // Log records an operation log entry.
 func (s *AppService) Log(ctx context.Context, action, targetType, targetID, result, message, actor string) {
+	s.LogWithSpace(ctx, "", action, targetType, targetID, result, message, actor)
+}
+
+// LogWithSpace records an operation log entry attributed to an action space.
+// Space attribution is what makes ListMyOperations able to isolate one
+// space's activity from the cluster's.
+func (s *AppService) LogWithSpace(ctx context.Context, spaceID, action, targetType, targetID, result, message, actor string) {
 	if actor == "" {
 		actor = "system"
 	}
@@ -42,6 +49,7 @@ func (s *AppService) Log(ctx context.Context, action, targetType, targetID, resu
 		Result:     result,
 		Message:    message,
 		Actor:      actor,
+		SpaceID:    spaceID,
 		CreatedAt:  time.Now(),
 	}
 	// Best-effort logging; don't fail the parent operation
@@ -49,6 +57,14 @@ func (s *AppService) Log(ctx context.Context, action, targetType, targetID, resu
 		return
 	}
 	_ = s.repo.Create(entry)
+}
+
+// ListLogsBySpace returns operation logs for one action space, newest first.
+func (s *AppService) ListLogsBySpace(ctx context.Context, spaceID string, limit int) ([]OperationLog, error) {
+	if s.repo == nil {
+		return []OperationLog{}, nil
+	}
+	return s.repo.FindBySpace(spaceID, limit)
 }
 
 // ListLogs returns recent operation logs.

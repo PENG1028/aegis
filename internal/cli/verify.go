@@ -123,9 +123,12 @@ func newVerifyCommand(
 			fmt.Println()
 			if issues > 0 {
 				fmt.Printf("⚠ %d issue(s) found.\n", issues)
-			} else {
-				fmt.Println("✓ System consistent.")
+				// Non-zero exit: scripts and CI must be able to tell that the
+				// acceptance check failed (previously exit 0 made `aegis
+				// verify` a decorative command).
+				return fmt.Errorf("%d issue(s) found", issues)
 			}
+			fmt.Println("✓ System consistent.")
 			return nil
 		},
 	}

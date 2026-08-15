@@ -1,4 +1,4 @@
-package action
+﻿package action
 
 import (
 	"context"
@@ -69,7 +69,7 @@ func (s *ActionService) disableRouteDomain(ctx context.Context, ac *ActionContex
 		}, nil
 	}
 
-	s.logSvc.Log(ctx, "action.disable-domain", "route", rt.ID, "success",
+	s.logSvc.LogWithSpace(ctx, ac.SpaceID, "action.disable-domain", "route", rt.ID, "success",
 		fmt.Sprintf("disabled route for domain %s", domain), ac.Actor)
 	s.reportCall(ctx, ac, "disable-domain")
 
@@ -111,7 +111,7 @@ func (s *ActionService) disableEdgeRuleDomain(ctx context.Context, ac *ActionCon
 		}, nil
 	}
 
-	s.logSvc.Log(ctx, "action.disable-domain", "edge_rule", rule.ID, "success",
+	s.logSvc.LogWithSpace(ctx, ac.SpaceID, "action.disable-domain", "edge_rule", rule.ID, "success",
 		fmt.Sprintf("disabled edge rule for SNI %s", sniHost), ac.Actor)
 	s.reportCall(ctx, ac, "disable-domain")
 

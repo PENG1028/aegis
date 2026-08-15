@@ -1,4 +1,4 @@
-package action
+﻿package action
 
 import (
 	"context"
@@ -149,13 +149,13 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 
 	// 7. Auto-create managed edge rule: SNI domain -> 127.0.0.1:8443
 	if _, err := s.edgeSvc.EnsureRuleForHTTPRoute(ctx, rt.Domain, rt.ID); err != nil {
-		s.logSvc.Log(ctx, "action.bind-http-domain.edge", "edge_mux_rule", "", "warning",
+		s.logSvc.LogWithSpace(ctx, ac.SpaceID, "action.bind-http-domain.edge", "edge_mux_rule", "", "warning",
 			fmt.Sprintf("edge rule auto-create warning: %v", err), "system")
 	}
 
 	// 9. Trigger safe apply
 	if err := s.safeApply(ctx); err != nil {
-		s.logSvc.Log(ctx, "action.bind-http-domain", "action", opID, "failed",
+		s.logSvc.LogWithSpace(ctx, ac.SpaceID, "action.bind-http-domain", "action", opID, "failed",
 			fmt.Sprintf("apply failed: %v", err), ac.Actor)
 		return &ActionResult{
 			OperationID: opID,
@@ -171,7 +171,7 @@ func (s *ActionService) BindHTTPDomain(ctx context.Context, input BindHTTPDomain
 			targetDesc = fmt.Sprintf("flowbridge %q (%s:%d)", inst.Name, inst.MachineIP, inst.DataPlanePort)
 		}
 	}
-	s.logSvc.Log(ctx, "action.bind-http-domain", "action", opID, "success",
+	s.logSvc.LogWithSpace(ctx, ac.SpaceID, "action.bind-http-domain", "action", opID, "success",
 		fmt.Sprintf("bound HTTP domain %s -> %s", input.Domain, targetDesc), ac.Actor)
 	s.reportCall(ctx, ac, "bind-http-domain")
 

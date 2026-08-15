@@ -261,38 +261,66 @@ func (h *Handlers) AdminCreateSpace(w http.ResponseWriter, r *http.Request) {
 
 // AdminListOperations handles GET /api/admin/v1/operations
 func (h *Handlers) AdminListOperations(w http.ResponseWriter, r *http.Request) {
-	ops, _ := h.Logs.ListLogs(r.Context(), "", "")
+	ops, err := h.Logs.ListLogs(r.Context(), "", "")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list operations: "+err.Error())
+		return
+	}
 	if ops == nil {
 		ops = []logs.OperationLog{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"operations": ops, "count": len(ops)})
+	limit, offset := paginationParams(r)
+	total := len(ops)
+	page := paginateSlice(ops, limit, offset)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"operations": page, "count": total, "meta": paginationMeta{Total: total, Limit: limit, Offset: offset}})
 }
 
 // AdminListApplyLogs handles GET /api/admin/v1/apply-logs
 func (h *Handlers) AdminListApplyLogs(w http.ResponseWriter, r *http.Request) {
-	al, _ := h.Logs.ListApplyLogs(50)
+	limit, offset := paginationParams(r)
+	al, err := h.Logs.ListApplyLogs(limit + offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list apply logs: "+err.Error())
+		return
+	}
 	if al == nil {
 		al = []logs.ApplyLog{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"apply_logs": al, "count": len(al)})
+	total := len(al)
+	page := paginateSlice(al, limit, offset)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"apply_logs": page, "count": total, "meta": paginationMeta{Total: total, Limit: limit, Offset: offset}})
 }
 
 // AdminListAuditLogs handles GET /api/admin/v1/audit-logs
 func (h *Handlers) AdminListAuditLogs(w http.ResponseWriter, r *http.Request) {
-	al, _ := h.Logs.ListAuditLogs(100)
+	limit, offset := paginationParams(r)
+	al, err := h.Logs.ListAuditLogs(limit + offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list audit logs: "+err.Error())
+		return
+	}
 	if al == nil {
 		al = []logs.AuditLog{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"audit_logs": al, "count": len(al)})
+	total := len(al)
+	page := paginateSlice(al, limit, offset)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"audit_logs": page, "count": total, "meta": paginationMeta{Total: total, Limit: limit, Offset: offset}})
 }
 
 // AdminListNodeEvents handles GET /api/admin/v1/node-events
 func (h *Handlers) AdminListNodeEvents(w http.ResponseWriter, r *http.Request) {
-	events, _ := h.Logs.ListNodeEvents(100)
+	limit, offset := paginationParams(r)
+	events, err := h.Logs.ListNodeEvents(limit + offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list node events: "+err.Error())
+		return
+	}
 	if events == nil {
 		events = []logs.NodeEvent{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"node_events": events, "count": len(events)})
+	total := len(events)
+	page := paginateSlice(events, limit, offset)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"node_events": page, "count": total, "meta": paginationMeta{Total: total, Limit: limit, Offset: offset}})
 }
 
 // AdminSystemDoctor handles POST /api/admin/v1/system/doctor

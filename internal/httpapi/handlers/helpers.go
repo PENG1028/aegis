@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"aegis/internal/core"
 )
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -47,6 +50,36 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]apiError{
 		"error": {Code: errorCodeFromStatus(status), Message: msg},
 	})
+}
+
+// writeServiceError maps a service-layer error (aegis/internal/core.APIError
+// or a wrapped one) to the correct HTTP status. Plain errors become 500.
+// Handlers previously collapsed Forbidden/NotFound into 400, which made the
+// UI misreport permission problems as bad input.
+func writeServiceError(w http.ResponseWriter, err error) {
+	var apiErr *core.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.Code {
+		case core.CodeResourceNotFound:
+			writeError(w, http.StatusNotFound, apiErr.Message)
+			return
+		case core.CodeForbidden:
+			writeError(w, http.StatusForbidden, apiErr.Message)
+			return
+		case core.CodeUnauthorized:
+			writeError(w, http.StatusUnauthorized, apiErr.Message)
+			return
+		case core.CodeConflict:
+			writeError(w, http.StatusConflict, apiErr.Message)
+			return
+		case core.CodeBadRequest, core.CodeValidationFailed, core.CodeStateTransitionInvalid:
+			writeError(w, http.StatusBadRequest, apiErr.Message)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, apiErr.Message)
+		return
+	}
+	writeError(w, http.StatusInternalServerError, err.Error())
 }
 
 func writeErrorCode(w http.ResponseWriter, status int, code, msg string) {

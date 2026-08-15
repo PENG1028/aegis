@@ -1,4 +1,4 @@
-package action
+﻿package action
 
 import (
 	"context"
@@ -39,7 +39,7 @@ func (s *ActionService) DeleteDomain(ctx context.Context, input DeleteDomainInpu
 			}, nil
 		}
 
-		s.logSvc.Log(ctx, "action.delete-domain", "route", rt.ID, "success",
+		s.logSvc.LogWithSpace(ctx, ac.SpaceID, "action.delete-domain", "route", rt.ID, "success",
 			fmt.Sprintf("deleted route for domain %s", input.Domain), ac.Actor)
 		s.reportCall(ctx, ac, "delete-domain")
 
@@ -71,7 +71,7 @@ func (s *ActionService) DeleteDomain(ctx context.Context, input DeleteDomainInpu
 			}, nil
 		}
 
-		s.logSvc.Log(ctx, "action.delete-domain", "edge_rule", rule.ID, "success",
+		s.logSvc.LogWithSpace(ctx, ac.SpaceID, "action.delete-domain", "edge_rule", rule.ID, "success",
 			fmt.Sprintf("deleted edge rule for SNI %s", input.Domain), ac.Actor)
 		s.reportCall(ctx, ac, "delete-domain")
 

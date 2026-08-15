@@ -19,10 +19,10 @@ func NewRepository(db *sql.DB) *Repository {
 // Create inserts a new operation log.
 func (r *Repository) Create(log *OperationLog) error {
 	_, err := r.DB.Exec(
-		`INSERT INTO operation_logs (id, action, target_type, target_id, result, message, actor, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO operation_logs (id, action, target_type, target_id, result, message, actor, space_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.ID, log.Action, log.TargetType, log.TargetID, log.Result, log.Message, log.Actor,
-		log.CreatedAt.Format(time.RFC3339),
+		log.SpaceID, log.CreatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
 		return fmt.Errorf("insert operation_log: %w", err)
@@ -36,10 +36,26 @@ func (r *Repository) FindAll(limit int) ([]OperationLog, error) {
 		limit = 100
 	}
 	rows, err := r.DB.Query(
-		`SELECT id, action, target_type, target_id, result, message, actor, created_at
+		`SELECT id, action, target_type, target_id, result, message, actor, space_id, created_at
 		 FROM operation_logs ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query operation_logs: %w", err)
+	}
+	defer rows.Close()
+	return scanLogs(rows)
+}
+
+// FindBySpace returns logs belonging to one action space (space isolation
+// for ListMyOperations).
+func (r *Repository) FindBySpace(spaceID string, limit int) ([]OperationLog, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.DB.Query(
+		`SELECT id, action, target_type, target_id, result, message, actor, space_id, created_at
+		 FROM operation_logs WHERE space_id = ? ORDER BY created_at DESC LIMIT ?`, spaceID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query operation_logs by space: %w", err)
 	}
 	defer rows.Close()
 	return scanLogs(rows)
@@ -80,14 +96,15 @@ func scanLogs(rows *sql.Rows) ([]OperationLog, error) {
 	for rows.Next() {
 		var l OperationLog
 		var createdAt string
-		var targetType, targetID, message, actor sql.NullString
-		if err := rows.Scan(&l.ID, &l.Action, &targetType, &targetID, &l.Result, &message, &actor, &createdAt); err != nil {
+		var targetType, targetID, message, actor, spaceID sql.NullString
+		if err := rows.Scan(&l.ID, &l.Action, &targetType, &targetID, &l.Result, &message, &actor, &spaceID, &createdAt); err != nil {
 			return nil, fmt.Errorf("scan operation_log: %w", err)
 		}
 		l.TargetType = targetType.String
 		l.TargetID = targetID.String
 		l.Message = message.String
 		l.Actor = actor.String
+		l.SpaceID = spaceID.String
 		l.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		logs = append(logs, l)
 	}

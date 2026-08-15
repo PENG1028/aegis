@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 
 	"aegis/internal/egress"
 )
@@ -184,6 +185,14 @@ func (h *Handlers) AdminEgressToggle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.Config.Egress.Enabled = body.Enabled
+
+	// Persist to disk — a master switch that only lives in memory silently
+	// reverts on restart.
+	configPath := filepath.Join(h.Config.Runtime.ConfigDir, "config.yaml")
+	if err := h.Config.Save(configPath); err != nil {
+		writeError(w, http.StatusInternalServerError, "save config: "+err.Error())
+		return
+	}
 
 	// When disabled, stop DNS and transparent proxy
 	if !body.Enabled {

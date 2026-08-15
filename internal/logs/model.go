@@ -11,6 +11,7 @@ type OperationLog struct {
 	Result     string    `json:"result"` // success | failed
 	Message    string    `json:"message"`
 	Actor      string    `json:"actor"` // cli | api | system
+	SpaceID    string    `json:"space_id,omitempty"` // owning space (action-space logs)
 	CreatedAt  time.Time `json:"created_at"`
 }
 

@@ -257,6 +257,11 @@ func AllMigrations() []Migration {
 			Name:    "flowbridge_instances",
 			UpSQL:   migration048,
 		},
+		{
+			Version: "049",
+			Name:    "operation_logs_space_id",
+			UpSQL:   migration049,
+		},
 	}
 }
 
@@ -1477,4 +1482,14 @@ WHEN EXISTS (
 BEGIN
   SELECT RAISE(ABORT, 'FLOWBRIDGE_REFERENCED');
 END;
+`
+
+// migration049 adds a space_id column to operation_logs. Action-space
+// isolation for ListMyOperations requires knowing which space an operation
+// belonged to; without it, a space token could read every action.* log in
+// the cluster.
+const migration049 = `
+ALTER TABLE operation_logs ADD COLUMN space_id TEXT NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_operation_logs_space_id ON operation_logs(space_id);
 `
