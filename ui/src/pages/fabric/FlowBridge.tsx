@@ -21,6 +21,8 @@ export default function FlowBridge() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<FlowBridgeInstance | null>(null);
   const [creating, setCreating] = useState(false);
+  // Deletion confirmation uses the app Modal (was native confirm()).
+  const [deleteTarget, setDeleteTarget] = useState<FlowBridgeInstance | null>(null);
   const [form, setForm] = useState({ name: '', machine_ip: '', data_plane_port: 8080, control_address: '' });
 
   const { data, isLoading } = useQuery({
@@ -141,7 +143,7 @@ export default function FlowBridge() {
                             inst.enabled ? 'border-[#e8b830]/30 text-[#e8b830] hover:bg-[#e8b830]/10' : 'border-[#4cd964]/30 text-[#4cd964] hover:bg-[#4cd964]/10')}>
                             {inst.enabled ? '禁用' : '启用'}
                           </button>
-                          <button onClick={() => { if (confirm(`删除实例 ${inst.name}？`)) remove.mutate(inst.id); }}
+                          <button onClick={() => setDeleteTarget(inst)}
                             className="text-[10px] px-2 py-0.5 rounded border border-[#ff5c72]/30 text-[#ff5c72] hover:bg-[#ff5c72]/10 cursor-pointer">删除</button>
                         </div>
                       </td>
@@ -173,6 +175,24 @@ export default function FlowBridge() {
               <label className="text-[10px] text-a-muted block mb-1.5 font-medium">数据面端口</label>
               <input type="number" value={editing.data_plane_port} onChange={e => setEditing({ ...editing, data_plane_port: Number(e.target.value) })} className={inputCls} />
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete confirmation (app Modal, consistent with other pages) */}
+      {deleteTarget && (
+        <Modal title="删除实例" onClose={() => setDeleteTarget(null)}
+          footer={
+            <>
+              <Btn onClick={() => setDeleteTarget(null)}>取消</Btn>
+              <Btn danger onClick={() => { remove.mutate(deleteTarget.id); setDeleteTarget(null); }} disabled={remove.isPending}>
+                {remove.isPending ? '删除中...' : '确认删除'}
+              </Btn>
+            </>
+          }>
+          <div className="space-y-2">
+            <p className="text-sm text-a-fg">确定要删除实例 <span className="font-semibold">{deleteTarget.name}</span> 吗？</p>
+            <p className="text-xs text-a-muted">被路由引用的实例无法删除（会返回 409），需先解除绑定。</p>
           </div>
         </Modal>
       )}

@@ -35,7 +35,7 @@ export default function NodeDetail() {
   });
   const updateMut = useMutation({
     mutationFn: () => nodeApi.triggerUpdate(nodeId!),
-    onSuccess: () => { toast('更新已触发'); },
+    onSuccess: () => { toast('已标记待更新 — 注意：节点侧自更新执行尚未实现，请使用部署脚本 make update-* 完成实际升级'); },
     onError: (e: any) => toast(e.message || '更新失败', 'error'),
   });
   const healthMut = useMutation({

@@ -10,8 +10,10 @@ import { normalizeExposureList } from '@/lib/exposure-list';
 import { cn } from '@/lib/utils';
 
 function HealthBadge({ status }: { status: string }) {
+  // unhealthy must be RED — the global StatusBadge convention; yellow is
+  // reserved for warnings/disabled states.
   const st = status === 'active' ? 'bg-[#4cd964]/10 text-[#4cd964] border-[#4cd964]/20'
-    : status === 'unhealthy' ? 'bg-[#e8b830]/10 text-[#e8b830] border-[#e8b830]/20'
+    : status === 'unhealthy' ? 'bg-[#ff5c72]/10 text-[#ff5c72] border-[#ff5c72]/20'
     : 'bg-a-border/10 text-a-muted border-a-border/20';
   const label = status === 'active' ? '活跃' : status === 'unhealthy' ? '不健康' : '禁用';
   return <span className={cn('px-2 py-0.5 rounded text-[10px] font-medium border', st)}>{label}</span>;
@@ -225,9 +227,12 @@ export default function EntryList() {
                       )}
                     </td>
                     <td className="py-2.5 px-3">
-                      {item._t === 'route'
-						? <span className="text-[10px] text-a-muted">系统编排</span>
-                        : <span className="text-[10px] text-a-muted/50">—</span>}
+                      {/* Manager column must reflect the computed scope, not
+                          a hardcoded "系统编排" (which contradicted the scope
+                          filter for space-owned routes). */}
+                      <span className="text-[10px] text-a-muted">
+                        {item.scope && item.scope !== 'all' ? item.scope : item._t === 'route' ? '系统' : '—'}
+                      </span>
                     </td>
                     <td className="py-2.5 px-3"><HealthBadge status={item.health} /></td>
                     <td className="py-2.5 px-3">

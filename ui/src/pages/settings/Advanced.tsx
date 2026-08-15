@@ -64,7 +64,7 @@ export default function AdvancedSettings() {
           </div>
           <div className="p-3 rounded-a-sm bg-a-bg border border-a-border">
             <p className="font-medium text-a-fg mb-1">API 密钥</p>
-            <p className="text-a-muted">bcrypt 哈希存储，支持 Scope 访问控制</p>
+            <p className="text-a-muted">单一静态 Bearer Token（无 Scope 机制），请妥善保管</p>
           </div>
           <div className="p-3 rounded-a-sm bg-a-bg border border-a-border">
             <p className="font-medium text-a-fg mb-1">凭据加密</p>

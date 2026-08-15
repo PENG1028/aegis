@@ -21,6 +21,9 @@ export default function AuthServices() {
   const [blockTarget, setBlockTarget] = useState<ServiceRecord | null>(null);
   const [blockReason, setBlockReason] = useState('');
   const [showBlockModal, setShowBlockModal] = useState(false);
+  // Regression fix: deletion had NO confirmation — the most destructive
+  // action (removes the service for every caller) ran on a single click.
+  const [deleteTarget, setDeleteTarget] = useState<ServiceRecord | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   // ── Data ──
@@ -90,13 +93,13 @@ export default function AuthServices() {
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="服务认证 · Service Auth" subtitle={`${activeCount} 在线 · ${blockedCount} 已封锁 · ${todayCalls} 调用/24h`} />
+      <PageHeader title="服务认证 · Service Auth" subtitle={`${activeCount} 在线 · ${blockedCount} 已封锁 · ${todayCalls} 调用/近1h`} />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="在线服务" value={activeCount} accent />
         <StatCard label="已封锁" value={blockedCount} danger={blockedCount > 0} />
-        <StatCard label="24h 调用" value={todayCalls} />
+        <StatCard label="近1h 调用" value={todayCalls} sub="上限 100 条" />
         <StatCard label="最高频" value={topEdge ? `${topEdge.caller}→${topEdge.target}` : '—'} />
       </div>
 
@@ -152,7 +155,7 @@ export default function AuthServices() {
                         <td className="py-2 px-3 font-mono text-[10px] text-a-muted max-w-[110px] truncate">
                           {first.public_key ? first.public_key.slice(0, 16) + '...' : '-'}
                         </td>
-                        <td className="py-2 px-3"><StatusBadge status={first.status === 'blocked' ? 'disabled' : 'active'} /></td>
+                        <td className="py-2 px-3"><StatusBadge status={first.status === 'blocked' ? 'blocked' : 'active'} /></td>
                         <td className="py-2 px-3 text-[10px] text-a-muted whitespace-nowrap">{fmtTimeShort(first.last_seen)}</td>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -175,7 +178,7 @@ export default function AuthServices() {
                             <td className="py-1.5 px-6 font-mono text-[10px] text-a-muted">{inst.instance_id ? inst.instance_id.slice(0, 14) + '...' : '-'}</td>
                             <td className="py-1.5 px-3 font-mono text-[10px] text-a-muted">{inst.host || '-'}</td>
                             <td className="py-1.5 px-3 font-mono text-[9px] text-a-muted break-all max-w-[110px] truncate">{inst.public_key ? inst.public_key.slice(0, 20) + '...' : '-'}</td>
-                            <td className="py-1.5 px-3"><StatusBadge status={inst.status === 'blocked' ? 'disabled' : 'active'} /></td>
+                            <td className="py-1.5 px-3"><StatusBadge status={inst.status === 'blocked' ? 'blocked' : 'active'} /></td>
                             <td className="py-1.5 px-3 text-[10px] text-a-muted">{fmtTimeShort(inst.last_seen)}</td>
                             <td className="py-1.5 px-3">
                               <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -210,7 +213,7 @@ export default function AuthServices() {
             topoEdges={topoEdges}
             onBlock={() => { setBlockTarget(selected); setShowBlockModal(true); }}
             onUnblock={() => unblockSvc.mutate(selected.id)}
-            onDelete={() => deleteSvc.mutate(selected.id)}
+            onDelete={() => setDeleteTarget(selected)}
           />
         )}
       </Drawer>
@@ -234,6 +237,27 @@ export default function AuthServices() {
             <input autoFocus type="text" placeholder="输入封锁原因" value={blockReason}
               onChange={(e) => setBlockReason(e.target.value)}
               className="w-full px-3 py-2 rounded-a-sm bg-a-bg border border-a-border/50 text-sm text-a-fg placeholder:text-a-muted/50 focus:outline-none focus:border-a-accent/50" />
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete confirmation modal — regression fix: deletion previously ran
+          without any confirmation (most destructive action in this page). */}
+      {deleteTarget && (
+        <Modal
+          onClose={() => setDeleteTarget(null)}
+          title="删除服务注册"
+          footer={
+            <div className="flex items-center gap-2 justify-end">
+              <Btn onClick={() => setDeleteTarget(null)} className="text-xs">取消</Btn>
+              <Btn onClick={() => { deleteSvc.mutate(deleteTarget.id); setDeleteTarget(null); }} danger className="text-xs" disabled={deleteSvc.isPending}>
+                {deleteSvc.isPending ? '删除中...' : '确认删除'}
+              </Btn>
+            </div>
+          }>
+          <div className="space-y-3">
+            <p className="text-sm text-a-fg">确定要删除 <span className="font-semibold">{deleteTarget.name}</span> 的注册吗？</p>
+            <p className="text-xs text-[#ff5c72]">该服务所有调用方将立即失去访问权限（403），此操作不可撤销。</p>
           </div>
         </Modal>
       )}
