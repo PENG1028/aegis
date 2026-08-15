@@ -34,6 +34,9 @@ export default function NewEntry() {
   const [nodeId, setNodeId] = useState('');
   const [targetHost, setTargetHost] = useState('127.0.0.1');
   const [targetPort, setTargetPort] = useState(3000);
+  // TCP/UDP entries expose a local port; without an entry port the backend
+  // port was passed as the entry port and the exposure could never activate.
+  const [entryPort, setEntryPort] = useState(8080);
   const [submitting, setSubmitting] = useState(false);
   const [certMode, setCertMode] = useState<'auto' | 'manual'>('auto');
   const [certId, setCertId] = useState('');
@@ -99,7 +102,17 @@ export default function NewEntry() {
           body: JSON.stringify(body) });
         if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error((e as any).error?.message||`HTTP ${res.status}`); }
       } else {
-        await exposureApi.create({ type: entryType(selected!), target_host: targetHost, target_port: targetPort });
+        // TCP/UDP: create the exposure with an explicit entry port, then
+        // activate it — creation alone leaves the record in "pending" and
+        // no proxy is ever started.
+        const created = await exposureApi.create({
+          type: entryType(selected!), host: '127.0.0.1', port: entryPort,
+          target_host: targetHost, target_port: targetPort,
+        });
+        const id = created?.id || created?.exposure?.id;
+        if (id) {
+          await exposureApi.activate(id).catch(() => { /* activation failure is surfaced below */ });
+        }
       }
       toast('入口创建成功，配置已自动 Apply'); nav('/exposure');
     } catch (e: any) { toast(e.message||'创建失败','error'); }
@@ -308,6 +321,15 @@ export default function NewEntry() {
         <div className="grid grid-cols-2 gap-4">
           {targetKind === 'backend' && (
             <>
+              {/* TCP/UDP entries need an entry (exposed) port distinct from
+                  the backend port. HTTP entries don't use this field. */}
+              {!isHTTP && (
+                <div>
+                  <label className="text-[10px] text-a-muted block mb-1.5 font-medium">入口端口</label>
+                  <input type="number" value={entryPort} onChange={e => setEntryPort(Number(e.target.value))} placeholder="8080"
+                    className="w-full px-3 py-2 rounded-a-sm border border-a-border/50 bg-a-bg text-xs outline-none focus:border-a-accent/50 font-mono" />
+                </div>
+              )}
               <div>
                 <label className="text-[10px] text-a-muted block mb-1.5 font-medium">后端地址</label>
                 <input value={targetHost} onChange={e => setTargetHost(e.target.value)} placeholder={selectedNode?.privateIP||'127.0.0.1'}

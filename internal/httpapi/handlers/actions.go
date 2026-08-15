@@ -19,7 +19,9 @@ func (h *Handlers) BindHTTPDomain(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "domain is required")
 		return
 	}
-	if input.TargetHost == "" {
+	// FlowBridge bindings have no host:port upstream — the data-plane port is
+	// resolved from the instance, so target_host must not be required there.
+	if input.TargetHost == "" && input.FlowBridgeID == "" {
 		writeError(w, http.StatusBadRequest, "target_host is required")
 		return
 	}

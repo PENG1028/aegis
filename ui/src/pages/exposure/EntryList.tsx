@@ -6,6 +6,7 @@ import { routeApi, exposureApi, runtimeModeApi, certApi } from '@/lib/api-bridge
 import { Card, Btn, Modal, useToast } from '@/components/shared';
 import { useView } from '@/lib/view-context';
 import { routeDisplay, certSourceLabel, certSourceMeta, tlsBadgeLabel } from '@/lib/route-display';
+import { normalizeExposureList } from '@/lib/exposure-list';
 import { cn } from '@/lib/utils';
 
 function HealthBadge({ status }: { status: string }) {
@@ -75,7 +76,10 @@ export default function EntryList() {
   });
 
   const routes = (rd as any)?.data || (rd as any)?.routes || [];
-  const exposures = (ed as any)?.data || (ed as any)?.exposures || [];
+  // GET /api/exposures returns a bare JSON array; normalizeExposureList also
+  // accepts the legacy {data|exposures} shapes so a mismatch can never
+  // silently render an empty list.
+  const exposures = normalizeExposureList(ed);
 
   // Fetch services for kind information
   const { data: sd } = useQuery({
