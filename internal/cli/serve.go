@@ -67,9 +67,12 @@ func newServeCommand(cfg *config.Config, svcs *httpapi.Services) *cobra.Command 
 			srv := &http.Server{
 				Addr:         addr,
 				Handler:      handler,
-				ReadTimeout:  10 * time.Second,
-				WriteTimeout: 10 * time.Second,
-				IdleTimeout:  30 * time.Second,
+				ReadTimeout:  15 * time.Second,
+				// Long tasks (ACME obtain with HTTP-01 validation, 50MB
+				// binary upload) take far longer than 10s; the old value cut
+				// them off mid-flight and cancelled the request context.
+				WriteTimeout: 5 * time.Minute,
+				IdleTimeout:  60 * time.Second,
 			}
 
 			// Graceful shutdown

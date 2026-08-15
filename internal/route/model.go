@@ -119,6 +119,39 @@ type SwitchRouteInput struct {
 	ServiceID string
 }
 
+// NormalizeDomain lowercases and validates a route domain.
+//
+// Rules:
+//   - Lowercase: an uppercase variant of an existing domain would render a
+//     second Caddy site block for the same hostname ("duplicate site
+//     address" — Caddy refuses to load).
+//   - No wildcard '*': HAProxy SNI matching is literal (its -i flag is not a
+//     glob), and Caddy wildcard certificates require DNS-01, which the
+//     control plane does not provision.
+//   - Only [a-z0-9.-_] characters, no empty labels, no leading/trailing dot.
+func NormalizeDomain(domain string) (string, error) {
+	d := strings.ToLower(strings.TrimSpace(domain))
+	d = strings.TrimSuffix(d, ".")
+	if d == "" {
+		return "", fmt.Errorf("empty domain")
+	}
+	if strings.ContainsAny(d, "*?# ") {
+		return "", fmt.Errorf("domain contains invalid characters (wildcards not supported)")
+	}
+	for _, r := range d {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == '_') {
+			return "", fmt.Errorf("domain contains invalid character %q", r)
+		}
+	}
+	if strings.HasPrefix(d, ".") || strings.HasSuffix(d, ".") {
+		return "", fmt.Errorf("domain cannot start or end with '.'")
+	}
+	if strings.Contains(d, "..") {
+		return "", fmt.Errorf("domain contains an empty label")
+	}
+	return d, nil
+}
+
 // ValidatePathPrefix checks path_prefix validity.
 func ValidatePathPrefix(path string) error {
 	if path == "" {

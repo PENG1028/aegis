@@ -45,15 +45,32 @@ func scanNode(scanner interface {
 	n.Capabilities = ParseCapabilities(capsStr)
 
 	if leaderAt != "" {
-		n.LeaderElectedAt, _ = time.Parse(time.RFC3339, leaderAt)
+		n.LeaderElectedAt = parseNodeTime(leaderAt)
 	}
 	if lastHBAt != "" {
-		n.LastHeartbeatAt, _ = time.Parse(time.RFC3339, lastHBAt)
+		n.LastHeartbeatAt = parseNodeTime(lastHBAt)
 	}
-	n.LastSeen, _ = time.Parse(time.RFC3339, lastSeen)
-	n.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	n.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	n.LastSeen = parseNodeTime(lastSeen)
+	n.CreatedAt = parseNodeTime(createdAt)
+	n.UpdatedAt = parseNodeTime(updatedAt)
 	return nil
+}
+
+// parseNodeTime parses timestamps written by both current code (RFC3339) and
+// legacy migrations (SQLite datetime('now') → "YYYY-MM-DD HH:MM:SS").
+// Ignoring the parse error used to silently zero the field; a wrong format
+// must degrade to a usable value, not a zero timestamp.
+func parseNodeTime(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
+		return t
+	}
+	return time.Time{}
 }
 
 // nodeRowValues returns the values for INSERT/UPDATE, excluding the auto-managed fields.

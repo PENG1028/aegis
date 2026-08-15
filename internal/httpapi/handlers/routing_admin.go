@@ -39,11 +39,12 @@ func (h *Handlers) AdminGenerateNodeRoutingTable(w http.ResponseWriter, r *http.
 
 	persistedRev := 0
 	if req.Persist && len(table.Entries) > 0 {
-		_, _ = (*struct{})(nil), fmt.Errorf("persist removed") //(nodeID, table, req.Reason)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("persist: %v", err))
-			return
-		}
+		// Desired-state persistence was removed with the /api/node/v1
+		// subsystem; returning "persisted: true" without writing anything
+		// would be a fake success. Be explicit instead.
+		writeError(w, http.StatusNotImplemented,
+			"persist is not implemented — routing tables are generated on demand (desired-state subsystem removed)")
+		return
 	}
 
 	resp := map[string]interface{}{

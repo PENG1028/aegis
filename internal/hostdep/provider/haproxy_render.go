@@ -62,10 +62,28 @@ func (p *HAProxyProvider) renderMainConfig(listeners []ListenerSpec, routes []Ro
 	buf.WriteString(fmt.Sprintf("    tcp-request inspect-delay %s\n", p.inspectDelay))
 	buf.WriteString("    tcp-request content accept if { req_ssl_hello_type 1 }\n\n")
 
-	// Sort SNI routes for stable output
+	// Sort SNI routes for stable output: highest priority first (so
+	// dedup below keeps the winner), then SNI for determinism.
 	sort.Slice(routes, func(i, j int) bool {
+		if routes[i].Priority != routes[j].Priority {
+			return routes[i].Priority > routes[j].Priority
+		}
 		return routes[i].Match.SNI < routes[j].Match.SNI
 	})
+
+	// HAProxy SNI routing cannot distinguish paths — several routes on the
+	// same host (different path_prefix) must collapse into ONE backend,
+	// otherwise duplicate `backend be_x` blocks make the config invalid.
+	seen := make(map[string]bool)
+	uniq := make([]RouteSpec, 0, len(routes))
+	for _, r := range routes {
+		if r.Match.SNI == "" || seen[r.Match.SNI] {
+			continue
+		}
+		seen[r.Match.SNI] = true
+		uniq = append(uniq, r)
+	}
+	routes = uniq
 
 	for _, r := range routes {
 		safeName := strings.NewReplacer(".", "_", "-", "_").Replace(r.Match.SNI)
@@ -78,7 +96,7 @@ func (p *HAProxyProvider) renderMainConfig(listeners []ListenerSpec, routes []Ro
 	}
 	buf.WriteString("\n    default_backend be_reject\n\n")
 
-	// Backend blocks for each SNI route
+	// Backend blocks for each SNI route (deduplicated above).
 	for _, r := range routes {
 		safeName := strings.NewReplacer(".", "_", "-", "_").Replace(r.Match.SNI)
 		backendName := fmt.Sprintf("be_%s", safeName)

@@ -302,12 +302,21 @@ func main() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			if !pendingState.Status().Pending {
-				continue
-			}
-			if _, err := applySvc.TryApply(context.Background()); err != nil && !strings.Contains(err.Error(), "APPLY_LOCKED") {
-				fmt.Fprintf(os.Stderr, "pending-apply: retry failed: %v\n", err)
-			}
+			func() {
+				// A panic inside provider code must not kill the whole
+				// process and silently stop pending-apply retries.
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Fprintf(os.Stderr, "pending-apply: panic in retry loop: %v\n", r)
+					}
+				}()
+				if !pendingState.Status().Pending {
+					return
+				}
+				if _, err := applySvc.TryApply(context.Background()); err != nil && !strings.Contains(err.Error(), "APPLY_LOCKED") {
+					fmt.Fprintf(os.Stderr, "pending-apply: retry failed: %v\n", err)
+				}
+			}()
 		}
 	}()
 	// Periodic flowbridge instance health checks. Enabled instances are probed

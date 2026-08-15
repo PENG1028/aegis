@@ -134,11 +134,34 @@ func (p *Proxy) handleConn(clientConn net.Conn) {
 	}
 	defer targetConn.Close()
 
-	// Bidirectional copy
+	// Bidirectional copy with half-close propagation. Waiting for only the
+	// first direction and then closing both sides truncated in-flight data
+	// (e.g. a client that CloseWrite's after its request still expects the
+	// full response). When one direction finishes, CloseWrite the other
+	// side's socket so the peer can finish delivering, then wait for both.
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(targetConn, clientConn); done <- struct{}{} }()
-	go func() { io.Copy(clientConn, targetConn); done <- struct{}{} }()
+	go func() {
+		io.Copy(targetConn, clientConn)
+		if cw, ok := targetConn.(interface{ CloseWrite() error }); ok {
+			cw.CloseWrite()
+		}
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(clientConn, targetConn)
+		if cw, ok := clientConn.(interface{ CloseWrite() error }); ok {
+			cw.CloseWrite()
+		}
+		done <- struct{}{}
+	}()
 	<-done
+	// The peer may legitimately keep the connection open after our write side
+	// closed (e.g. a backend that never responds). Bound the wait so a hung
+	// peer cannot leak the connection forever; defer Close then cleans up.
+	select {
+	case <-done:
+	case <-time.After(60 * time.Second):
+	}
 }
 
 // Stop stops the proxy and closes the listener.

@@ -43,6 +43,16 @@ func (s *AppService) CreateRoute(ctx context.Context, input CreateRouteInput) (*
 		return nil, fmt.Errorf("service is required")
 	}
 
+	// Normalize + validate the domain BEFORE the duplicate check: uppercase
+	// variants of the same domain would render duplicate Caddy site blocks
+	// ("duplicate site address" failure), and wildcard domains break HAProxy
+	// SNI matching (its -i flag is literal, not a glob).
+	normalized, err := NormalizeDomain(input.Domain)
+	if err != nil {
+		return nil, fmt.Errorf("invalid domain: %w", err)
+	}
+	input.Domain = normalized
+
 	// Validate path_prefix
 	if err := ValidatePathPrefix(input.PathPrefix); err != nil {
 		return nil, fmt.Errorf("invalid path_prefix: %w", err)
