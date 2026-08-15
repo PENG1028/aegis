@@ -262,6 +262,11 @@ func AllMigrations() []Migration {
 			Name:    "operation_logs_space_id",
 			UpSQL:   migration049,
 		},
+		{
+			Version: "050",
+			Name:    "drop_dead_tables",
+			UpSQL:   migration050,
+		},
 	}
 }
 
@@ -1492,4 +1497,25 @@ const migration049 = `
 ALTER TABLE operation_logs ADD COLUMN space_id TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_operation_logs_space_id ON operation_logs(space_id);
+`
+
+// migration050 drops 13 tables that have no read/write code anywhere in the
+// repo (verified by grep): they belonged to subsystems removed over the
+// v1.9 series (nodeagent heartbeats, desired/actual state, join tokens,
+// gateway inventory, deployment records, service-auth groups). Keeping dead
+// schema around lets the catalog drift from reality.
+const migration050 = `
+DROP TABLE IF EXISTS gateway_domains;
+DROP TABLE IF EXISTS gateway_routes;
+DROP TABLE IF EXISTS gateway_listeners;
+DROP TABLE IF EXISTS deployments;
+DROP TABLE IF EXISTS deployment_instances;
+DROP TABLE IF EXISTS node_join_tokens;
+DROP TABLE IF EXISTS node_credentials;
+DROP TABLE IF EXISTS node_desired_states;
+DROP TABLE IF EXISTS node_actual_states;
+DROP TABLE IF EXISTS svc_auth_groups;
+DROP TABLE IF EXISTS svc_auth_group_members;
+DROP TABLE IF EXISTS svc_auth_policies;
+DROP TABLE IF EXISTS upgrade_sessions;
 `

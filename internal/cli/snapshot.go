@@ -41,7 +41,10 @@ func newSnapshotCommand(
 			}
 
 			// Listeners
-			listeners, _ := listenerSvc.ListAll()
+			listeners, err := listenerSvc.ListAll()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: snapshot: listeners unavailable: %v\n", err)
+			}
 			for _, l := range listeners {
 				snap.Listeners = append(snap.Listeners, deployment.ListenerState{
 					ID: l.ID, Provider: l.Provider, Protocol: l.Protocol,
@@ -50,7 +53,10 @@ func newSnapshotCommand(
 			}
 
 			// Edge rules
-			rules, _ := edgeSvc.ListRules(ctx)
+			rules, err := edgeSvc.ListRules(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: snapshot: edge rules unavailable: %v\n", err)
+			}
 			for _, r := range rules {
 				snap.EdgeRules = append(snap.EdgeRules, deployment.EdgeRuleState{
 					ID: r.ID, SNIHost: r.SNIHost,
@@ -60,7 +66,10 @@ func newSnapshotCommand(
 			}
 
 			// Routes
-			routes, _ := routeSvc.ListRoutes(ctx)
+			routes, err := routeSvc.ListRoutes(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: snapshot: routes unavailable: %v\n", err)
+			}
 			for _, r := range routes {
 				snap.Routes = append(snap.Routes, deployment.RouteState{
 					ID: r.ID, Domain: r.Domain, Path: r.PathPrefix, Status: r.Status,
@@ -69,7 +78,9 @@ func newSnapshotCommand(
 
 			// Config hashes
 			plan, err := applySvc.DryRun(ctx)
-			if err == nil {
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: snapshot: config preview unavailable: %v\n", err)
+			} else {
 				snap.ConfigHash.CaddyConfigHash = deployment.Hash(plan.RenderedConfig)
 			}
 

@@ -8,7 +8,19 @@ import (
 	"net/http"
 	"strings"
 
+	"aegis/internal/action"
+	"aegis/internal/adminauth"
 	"aegis/internal/distnode"
+)
+
+// Header names carrying the caller's identity across the proxy boundary.
+// The transport layer (HMAC cluster secret) authenticates the *node*; these
+// headers carry the *caller* (admin user / service token / space) so the
+// target handler runs with the same identity context it would have locally.
+const (
+	proxyHeaderAdminID  = "X-Aegis-Proxy-Admin-ID"
+	proxyHeaderTokenTyp = "X-Aegis-Proxy-Token-Type"
+	proxyHeaderSpaceID  = "X-Aegis-Proxy-Space-ID"
 )
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -102,6 +114,27 @@ func newProxyHandler(h *Handlers) func(ctx context.Context, callerID string, arg
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
 
+		// Re-inject the caller identity that the origin node attached (see
+		// NewViewProxyHandler). Without this the target handler runs with an
+		// empty action/admin context: audit actors come out blank and
+		// identity-dependent handlers behave differently than locally.
+		if id := httpReq.Header.Get(proxyHeaderAdminID); id != "" {
+			httpReq = httpReq.WithContext(adminauth.WithAdminContext(httpReq.Context(), &adminauth.AdminContext{UserID: id}))
+		}
+		switch httpReq.Header.Get(proxyHeaderTokenTyp) {
+		case "admin":
+			httpReq = httpReq.WithContext(action.WithActionContext(httpReq.Context(), action.NewAdminContext()))
+		case "service":
+			// Mirrors token/middleware.go's service-ticket construction.
+			spaceID := httpReq.Header.Get(proxyHeaderSpaceID)
+			httpReq = httpReq.WithContext(action.WithActionContext(httpReq.Context(), &action.ActionContext{
+				SpaceID: spaceID, TokenType: "service", TokenID: spaceID, Actor: "service",
+			}))
+		case "space":
+			httpReq = httpReq.WithContext(action.WithActionContext(httpReq.Context(), action.NewSpaceContext(
+				httpReq.Header.Get(proxyHeaderSpaceID), "")))
+		}
+
 		// Execute against local mux
 		rw := &recordingWriter{code: 200}
 		h.proxyMux.ServeHTTP(rw, httpReq)
@@ -158,13 +191,22 @@ func NewViewProxyHandler(dn *distnode.DistNode) func(http.Handler) http.Handler 
 				bodyRaw = body
 			}
 
-			// Build proxy request (no headers needed — remote sets its own)
+			// Build proxy request, carrying the caller's identity so the
+			// target node can re-inject it (audit actors, space scoping).
+			headers := map[string]string{}
+			if adm := adminauth.GetAdminContext(r.Context()); adm != nil {
+				headers[proxyHeaderAdminID] = adm.UserID
+			}
+			if ac := action.GetActionContext(r.Context()); ac != nil {
+				headers[proxyHeaderTokenTyp] = ac.TokenType
+				headers[proxyHeaderSpaceID] = ac.SpaceID
+			}
 			req := ProxyRequest{
 				Method:  r.Method,
 				Path:    r.URL.Path,
 				Query:   r.URL.RawQuery,
 				Body:    bodyRaw,
-				Headers: nil,
+				Headers: headers,
 			}
 
 			// Forward to target node

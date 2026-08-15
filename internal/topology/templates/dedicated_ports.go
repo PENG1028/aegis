@@ -44,17 +44,34 @@ func (t *DedicatedPorts) BuildPlan(intents []topology.RouteIntent, available []p
 	var tcpRoutes []provider.RouteSpec
 	var httpListeners []provider.ListenerSpec
 	var tcpListeners []provider.ListenerSpec
+
+	// Ports already bound by the mode's providers (HTTP/HTTPS listeners etc.)
+	// — dedicated TCP allocation must never collide with them.
+	occupied := make(map[int]bool)
+	for _, pa := range mode.Providers {
+		for _, slots := range pa.Bindings {
+			for _, s := range slots {
+				if s.Port > 0 {
+					occupied[s.Port] = true
+				}
+			}
+		}
+	}
 	nextPort := 8080 // start of dedicated port range
 
 	for _, ri := range intents {
 		rs := topology.RouteIntentToRouteSpec(ri)
 		if ri.AppProtocol == "raw" || ri.TLSMode == "passthrough" {
-			// Raw TCP: assign a dedicated port
+			// Raw TCP: assign a dedicated port, skipping occupied ones.
+			for occupied[nextPort] {
+				nextPort++
+			}
 			rs.Match = provider.MatchSpec{Port: nextPort}
 			tcpRoutes = append(tcpRoutes, rs)
 			tcpListeners = append(tcpListeners, provider.ListenerSpec{
 				Port: nextPort, Protocol: "tcp", Purpose: "tcp_exposure",
 			})
+			occupied[nextPort] = true
 			nextPort++
 		} else if httpProvider != nil {
 			httpRoutes = append(httpRoutes, rs)

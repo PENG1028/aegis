@@ -43,17 +43,8 @@ func RunCleanup(db *sql.DB) (*CleanupStats, error) {
 		stats.TotalRemoved += int(n)
 	}
 
-	// 3. Cleanup old upgrade sessions (>30 days)
-	result, err = db.Exec(
-		`DELETE FROM upgrade_sessions WHERE start_time < ? AND status != 'running'`,
-		time.Now().Add(-30*24*time.Hour).Format(time.RFC3339))
-	if err != nil {
-		return stats, fmt.Errorf("cleanup old sessions: %w", err)
-	}
-	if n, _ := result.RowsAffected(); n > 0 {
-		stats.OldSessions = int(n)
-		stats.TotalRemoved += int(n)
-	}
+	// 3. upgrade_sessions was dropped in migration 050 (dead table, no
+	//    writers anywhere); the cleanup that referenced it is removed.
 
 	// 4. Cleanup health checks older than 30 days — the table is written on
 	// every periodic check and had no retention policy, so it grew unbounded.

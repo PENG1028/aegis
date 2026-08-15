@@ -364,9 +364,12 @@ function mapNode(raw: any): Node {
     agent_version: raw.agent_version || '',
     last_heartbeat_at: raw.last_heartbeat_at || null,
     capabilities: (raw.capabilities || {}) as NodeCapabilities,
-    desired_revision: raw.desired_revision || 0,
-    applied_revision: raw.applied_revision || 0,
-    sync_status: (raw.sync_status || 'unknown') as any,
+    // The backend NodeRecord has no desired/applied revision fields — the
+    // desired-state subsystem was removed. Report null (unavailable) instead
+    // of faking 0, which made the updates page claim "all nodes up to date".
+    desired_revision: raw.desired_revision ?? null,
+    applied_revision: raw.applied_revision ?? null,
+    sync_status: (raw.sync_status ?? null) as any,
     created_at: raw.created_at || '',
     updated_at: raw.updated_at || '',
   };
@@ -430,10 +433,11 @@ export async function fetchNodeDetail(nodeId: string): Promise<NodeDetail> {
   const node = mapNode(raw);
 
   // Sync detail: the dedicated /sync-status endpoint was never implemented on
-  // the backend (see C-block commit). Derive the visible sync state from the
-  // node's own desired/applied_revision fields.
+  // the backend (see C-block commit), and the desired-state subsystem was
+  // removed entirely — revision fields are null when the backend provides
+  // none, so the UI must report "unknown" rather than a fake "in_sync".
   const syncDetail: SyncStatusDetail = {
-    status: node.desired_revision === node.applied_revision ? 'in_sync' : 'outdated',
+    status: node.desired_revision != null && node.desired_revision === node.applied_revision ? 'in_sync' : 'unknown',
     desired_revision: node.desired_revision,
     applied_revision: node.applied_revision,
     desired_hash: '',
@@ -1603,9 +1607,9 @@ export interface ClusterNodeHealth {
   role: string;
   status: string;
   is_leader: boolean;
-  sync_status: string;
-  desired_revision: number;
-  applied_revision: number;
+  sync_status: string | null;
+  desired_revision: number | null;
+  applied_revision: number | null;
   heartbeat_age?: string;
 }
 

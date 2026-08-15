@@ -171,15 +171,24 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: node registration failed: %v\n", err)
 	}
+	// Root context for all background loops: cancelling it (graceful
+	// shutdown) stops every ticker goroutine instead of letting them write
+	// the DB during the drain window.
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	defer shutdownCancel()
 	if currentNode != nil {
 		go func(nodeID string) {
 			ticker := time.NewTicker(30 * time.Second)
 			defer ticker.Stop()
 			for {
+				select {
+				case <-shutdownCtx.Done():
+					return
+				case <-ticker.C:
+				}
 				if err := nodeRepo.TouchLiveness(nodeID, node.StatusOnline, "", time.Now()); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: current node heartbeat %s: %v\n", nodeID, err)
 				}
-				<-ticker.C
 			}
 		}(currentNode.NodeID)
 	}
@@ -301,7 +310,12 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
+		for {
+			select {
+			case <-shutdownCtx.Done():
+				return
+			case <-ticker.C:
+			}
 			func() {
 				// A panic inside provider code must not kill the whole
 				// process and silently stop pending-apply retries.
@@ -325,7 +339,12 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
+		for {
+			select {
+			case <-shutdownCtx.Done():
+				return
+			case <-ticker.C:
+			}
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -393,12 +412,21 @@ func main() {
 			}
 			initial := time.NewTimer(time.Minute)
 			defer initial.Stop()
-			<-initial.C
+			select {
+			case <-shutdownCtx.Done():
+				return
+			case <-initial.C:
+			}
 			run()
 			ticker := time.NewTicker(12 * time.Hour)
 			defer ticker.Stop()
-			for range ticker.C {
-				run()
+			for {
+				select {
+				case <-shutdownCtx.Done():
+					return
+				case <-ticker.C:
+					run()
+				}
 			}
 		}()
 	}
@@ -476,7 +504,7 @@ func main() {
 
 		// Aegis self-registration with persistent key
 		go func() {
-			ctx := context.Background()
+			ctx := shutdownCtx
 			const aegisName = "aegis-gateway"
 			instanceID := "aegis-" + core.NewID("id")[3:]
 
@@ -622,11 +650,16 @@ func main() {
 			}
 		})
 
-		go dn.Start(context.Background())
+		go dn.Start(shutdownCtx)
 		go func() {
 			ticker := time.NewTicker(30 * time.Second)
 			defer ticker.Stop()
 			for {
+				select {
+				case <-shutdownCtx.Done():
+					return
+				case <-ticker.C:
+				}
 				for _, peer := range dn.Membership.AlivePeers() {
 					if peer == nil || peer.Info.ID == "" {
 						continue
@@ -635,7 +668,6 @@ func main() {
 						fmt.Fprintf(os.Stderr, "warning: peer heartbeat %s: %v\n", peer.Info.ID, err)
 					}
 				}
-				<-ticker.C
 			}
 		}()
 		go syncClusterCatalogFromAlivePeers(context.Background(), dn, nodeRepo, serviceRepo, endpointRepo, dsHook, 5, 3*time.Second)
@@ -690,6 +722,9 @@ func main() {
 		DistNode:        dn,
 		OnShutdown: func() {
 			fmt.Fprintf(os.Stderr, "stopping subsystems...\n")
+			// Stop background loops first so they stop touching the DB
+			// during the drain window.
+			shutdownCancel()
 			tcpMgr.Shutdown()
 			udpMgr.Shutdown()
 			transparentMgr.Shutdown()

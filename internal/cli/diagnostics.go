@@ -56,6 +56,17 @@ func newDiagnosticsExportCommand(
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 
+			// Section load failures are collected here and surfaced in the
+			// export (and stderr) instead of being silently dropped.
+			var diagErrors []string
+			collect := func(err error, value interface{}) interface{} {
+				if err != nil {
+					diagErrors = append(diagErrors, err.Error())
+					return map[string]interface{}{"error": err.Error()}
+				}
+				return value
+			}
+
 			diag := map[string]interface{}{
 				"exported_at": time.Now().Format(time.RFC3339),
 			}
@@ -92,45 +103,54 @@ func newDiagnosticsExportCommand(
 			}
 
 			// Projects
-			projects, _ := projectSvc.ListProjects(ctx)
-			diag["projects"] = projects
+			projects, err := projectSvc.ListProjects(ctx)
+			diag["projects"] = collect(err, projects)
 
 			// Services
-			services, _ := serviceSvc.ListServices(ctx)
-			diag["services"] = services
+			services, err := serviceSvc.ListServices(ctx)
+			diag["services"] = collect(err, services)
 
 			// Routes
-			routes, _ := routeSvc.ListRoutes(ctx)
-			diag["routes"] = routes
+			routes, err := routeSvc.ListRoutes(ctx)
+			diag["routes"] = collect(err, routes)
 
 			// Managed Domains
-			mdDomains, _ := mdSvc.ListManagedDomains(ctx)
-			diag["managed_domains"] = mdDomains
+			mdDomains, err := mdSvc.ListManagedDomains(ctx)
+			diag["managed_domains"] = collect(err, mdDomains)
 
 			// Latest health checks
-			healthChecks, _ := healthSvc.GetLatestForAll(ctx)
-			diag["latest_health_checks"] = healthChecks
+			healthChecks, err := healthSvc.GetLatestForAll(ctx)
+			diag["latest_health_checks"] = collect(err, healthChecks)
 
 			// Apply history
-			applyHistory, _ := applySvc.History(ctx)
-			diag["apply_history"] = applyHistory
+			applyHistory, err := applySvc.History(ctx)
+			diag["apply_history"] = collect(err, applyHistory)
 
 			// Operation logs (latest 200)
-			logs, _ := logSvc.ListLogs(ctx, "", "")
-			if len(logs) > 200 {
-				logs = logs[:200]
+			logEntries, err := logSvc.ListLogs(ctx, "", "")
+			diag["operation_logs_latest_200"] = collect(err, logEntries)
+			if l, ok := diag["operation_logs_latest_200"].([]logs.OperationLog); ok && len(l) > 200 {
+				diag["operation_logs_latest_200"] = l[:200]
 			}
-			diag["operation_logs_latest_200"] = logs
 
 			// Current config
-			currentConfig, _ := applySvc.GetCurrentConfig()
-			diag["current_config"] = currentConfig
+			currentConfig, err := applySvc.GetCurrentConfig()
+			diag["current_config"] = collect(err, currentConfig)
 
 			// Preview config
 			plan, err := applySvc.DryRun(ctx)
-			if err == nil {
+			if err != nil {
+				diag["preview_config"] = map[string]interface{}{"error": err.Error()}
+			} else {
 				diag["preview_config"] = plan.RenderedConfig
 				diag["warnings"] = plan.Warnings
+			}
+
+			// Surface every section that failed so the exported JSON is
+			// honest instead of silently missing chunks.
+			if len(diagErrors) > 0 {
+				diag["section_errors"] = diagErrors
+				fmt.Fprintf(os.Stderr, "warning: diagnostics: %d section(s) failed to load (see section_errors)\n", len(diagErrors))
 			}
 
 			// Write to file

@@ -16,8 +16,11 @@ export default function Updates() {
 
   const nodeList: any[] = (nodes as any) || [];
   const outdated = nodeList.filter((n: any) =>
-    n.desired_revision && n.applied_revision && n.desired_revision !== n.applied_revision
+    n.desired_revision != null && n.applied_revision != null && n.desired_revision !== n.applied_revision
   );
+  // desired-state tracking was removed from the backend; when no node carries
+  // revision fields the page must say so instead of "all up to date".
+  const trackingAvailable = nodeList.some((n: any) => n.desired_revision != null);
 
   const updateMut = useMutation({
     mutationFn: (nodeId: string) => nodeApi.triggerUpdate(nodeId),
@@ -30,7 +33,19 @@ export default function Updates() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="更新管理" subtitle={outdated.length > 0 ? `${outdated.length} 个节点需要更新` : '所有节点已是最新'} />
+      <PageHeader title="更新管理" subtitle={
+        outdated.length > 0 ? `${outdated.length} 个节点需要更新`
+        : trackingAvailable ? '所有节点已是最新'
+        : '更新跟踪不可用 — desired-state 子系统已移除，节点版本以实际状态为准'
+      } />
+
+      {!trackingAvailable && outdated.length === 0 && (
+        <Card>
+          <div className="px-3 py-6 text-center text-xs text-a-muted">
+            后端不再提供期望/实际版本跟踪（desired-state 子系统已移除）。节点在线状态见节点列表，二进制更新请通过部署脚本（make update-*）执行。
+          </div>
+        </Card>
+      )}
 
       {outdated.length > 0 && (
         <Card title={`待更新 (${outdated.length})`}>
