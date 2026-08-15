@@ -26,6 +26,12 @@ func (m *Manager) StartProxy(id, entryHost string, entryPort int, targetHost str
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Reject re-activation of a proxy that is still running. Overwriting the
+	// map entry would orphan the old listener and leak the port forever.
+	if existing := m.proxies[id]; existing != nil && existing.IsRunning() {
+		return fmt.Errorf("proxy %s is already running", id)
+	}
+
 	// Check port conflict
 	for _, existing := range m.proxies {
 		if existing.EntryHost == entryHost && existing.EntryPort == entryPort && existing.IsRunning() {

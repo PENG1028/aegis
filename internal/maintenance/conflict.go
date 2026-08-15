@@ -2,6 +2,7 @@ package maintenance
 
 import (
 	"fmt"
+	"time"
 
 	"aegis/internal/cluster"
 	"aegis/internal/node"
@@ -21,9 +22,12 @@ func Check(nodeRepo *node.Repository, leaderSvc *cluster.LeaderService) *Conflic
 	report := &ConflictReport{}
 
 	// 1. Multiple leader detection
-	nodes, _ := nodeRepo.FindAll()
+	nodes, err := nodeRepo.FindAll()
+	if err != nil {
+		report.Issues = append(report.Issues, "node list unavailable: "+err.Error())
+		return report
+	}
 	leaders := []string{}
-	now := ""
 	for i := range nodes {
 		if nodes[i].IsLeader {
 			leaders = append(leaders, nodes[i].NodeID)
@@ -40,15 +44,18 @@ func Check(nodeRepo *node.Repository, leaderSvc *cluster.LeaderService) *Conflic
 		report.Issues = append(report.Issues, "no leader elected")
 	}
 
-	// 2. Stale node detection (last_seen > 60s ago)
+	// 2. Stale node detection: any node (except the current one) whose
+	// last_seen is older than 60s is stale.
+	now := time.Now()
 	for i := range nodes {
-		if nodes[i].IsCurrent && now == "" {
-			// Nodes with very old last_seen are stale
-			if nodes[i].LastSeen.IsZero() {
-				report.StaleNodes = append(report.StaleNodes, nodes[i].NodeID)
-				report.Issues = append(report.Issues,
-					fmt.Sprintf("STALE: node %s has zero last_seen", nodes[i].NodeID))
-			}
+		n := &nodes[i]
+		if n.IsCurrent {
+			continue
+		}
+		if n.LastSeen.IsZero() || now.Sub(n.LastSeen) > 60*time.Second {
+			report.StaleNodes = append(report.StaleNodes, n.NodeID)
+			report.Issues = append(report.Issues,
+				fmt.Sprintf("STALE: node %s last seen %s", n.NodeID, n.LastSeen.Format(time.RFC3339)))
 		}
 	}
 

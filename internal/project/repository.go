@@ -44,10 +44,12 @@ func (r *Repository) FindAll() ([]Project, error) {
 	var projects []Project
 	for rows.Next() {
 		var p Project
+		var desc sql.NullString // description may be NULL in legacy rows
 		var createdAt, updatedAt string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Status, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &desc, &p.Status, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
+		p.Description = desc.String
 		p.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		p.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 		projects = append(projects, p)
@@ -58,17 +60,19 @@ func (r *Repository) FindAll() ([]Project, error) {
 // FindByID returns a project by ID.
 func (r *Repository) FindByID(id string) (*Project, error) {
 	var p Project
+	var desc sql.NullString // description may be NULL in legacy rows
 	var createdAt, updatedAt string
 	err := r.DB.QueryRow(
 		`SELECT id, name, description, status, created_at, updated_at
 		 FROM projects WHERE id = ?`, id,
-	).Scan(&p.ID, &p.Name, &p.Description, &p.Status, &createdAt, &updatedAt)
+	).Scan(&p.ID, &p.Name, &desc, &p.Status, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("query project by id: %w", err)
 	}
+	p.Description = desc.String
 	p.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	p.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	return &p, nil
@@ -77,17 +81,19 @@ func (r *Repository) FindByID(id string) (*Project, error) {
 // FindByName returns a project by name.
 func (r *Repository) FindByName(name string) (*Project, error) {
 	var p Project
+	var desc sql.NullString // description may be NULL in legacy rows
 	var createdAt, updatedAt string
 	err := r.DB.QueryRow(
 		`SELECT id, name, description, status, created_at, updated_at
 		 FROM projects WHERE name = ?`, name,
-	).Scan(&p.ID, &p.Name, &p.Description, &p.Status, &createdAt, &updatedAt)
+	).Scan(&p.ID, &p.Name, &desc, &p.Status, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("query project by name: %w", err)
 	}
+	p.Description = desc.String
 	p.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	p.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 	return &p, nil

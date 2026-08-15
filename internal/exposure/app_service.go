@@ -67,6 +67,13 @@ func (s *AppService) CreateExposure(ctx context.Context, input CreateExposureInp
 		return nil, fmt.Errorf("invalid exposure type: %s", input.Type)
 	}
 
+	// Port must be within the valid range — port 0 would bind an ephemeral
+	// port while the exposure record keeps Port=0, permanently drifting the
+	// DB from the actual listener.
+	if input.Port <= 0 || input.Port > 65535 {
+		return nil, fmt.Errorf("invalid port: %d (must be 1-65535)", input.Port)
+	}
+
 	if input.Mode == "" {
 		input.Mode = ModePrivate
 	}
@@ -231,9 +238,14 @@ func (s *AppService) ActivateExposure(ctx context.Context, exposureID string, ca
 	e.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(e); err != nil {
-		// Clean up started proxy on DB failure
-		if e.Status == StatusActive && e.Type == TypeTCP && s.tcpMgr != nil {
-			s.tcpMgr.StopProxy(e.ID)
+		// Clean up started proxy on DB failure (both TCP and UDP paths)
+		if e.Status == StatusActive {
+			switch {
+			case e.Type == TypeTCP && s.tcpMgr != nil:
+				s.tcpMgr.StopProxy(e.ID)
+			case e.Type == TypeUDP && s.udpMgr != nil:
+				s.udpMgr.StopProxy(e.ID)
+			}
 		}
 		return nil, fmt.Errorf("activate exposure: %w", err)
 	}

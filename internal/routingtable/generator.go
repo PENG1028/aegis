@@ -2,9 +2,9 @@ package routingtable
 
 import (
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
-	"strings"
 )
 
 // Generator produces routing tables for nodes.
@@ -375,8 +375,10 @@ func findBestPublicGateway(nodeID string, gateways []GatewayInfo) *GatewayInfo {
 
 func findGatewayLink(fromNodeID, toNodeID string, links []GatewayLinkInfo) *GatewayLinkInfo {
 	for _, l := range links {
-		// Match by target_node_id; source_node_id is inferred from context
-		if l.TargetNodeID == toNodeID {
+		// A link is only usable from its source node — matching on target
+		// alone would make node B claim a link that only exists between
+		// A and C, reporting a reachable route that can never carry traffic.
+		if l.TargetNodeID == toNodeID && l.SourceNodeID == fromNodeID {
 			return &l
 		}
 	}
@@ -396,21 +398,16 @@ func parseEndpointAddress(address string) (host string, port int) {
 	if address == "" {
 		return "127.0.0.1", 0
 	}
-	host = address
-	port = 0
 
-	// Try to split host:port
-	idx := strings.LastIndex(address, ":")
-	if idx > 0 {
-		p, err := strconv.Atoi(address[idx+1:])
-		if err == nil && p > 0 && p < 65536 {
-			port = p
-			host = address[:idx]
-			// Handle IPv6: [::1]:port
-			if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
-				host = host[1 : len(host)-1]
-			}
+	// net.SplitHostPort handles both "host:port" and bracketed IPv6
+	// "[::1]:8080". A bare IPv6 literal ("::1") fails SplitHostPort with
+	// "too many colons" — fall back to treating the whole string as host
+	// instead of mis-parsing the last segment as a port.
+	if h, p, err := net.SplitHostPort(address); err == nil {
+		if n, perr := strconv.Atoi(p); perr == nil && n > 0 && n < 65536 {
+			return h, n
 		}
+		return h, 0
 	}
-	return host, port
+	return address, 0
 }

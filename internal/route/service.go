@@ -124,7 +124,10 @@ func (s *AppService) CreateRouteDirect(rt *Route) error {
 // as plain HTTP so Caddy does not attempt auto-TLS and block IP access.
 func (s *AppService) UpsertSystemRoute(ctx context.Context, domain string, tlsAvailable bool) error {
 	existing, err := s.repo.FindByDomain(domain)
-	if err == nil && existing != nil {
+	if err != nil {
+		return fmt.Errorf("look up system route %q: %w", domain, err)
+	}
+	if existing != nil {
 		if existing.TLSEnabled != tlsAvailable || existing.Composition != compositionForTLS(tlsAvailable) {
 			existing.TLSEnabled = tlsAvailable
 			existing.Composition = compositionForTLS(tlsAvailable)

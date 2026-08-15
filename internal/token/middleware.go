@@ -1,6 +1,7 @@
 package token
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"path"
@@ -176,6 +177,15 @@ func normalizeGuardPath(raw string) string {
 // Middleware returns an HTTP middleware that authenticates requests.
 func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// SSRF guard: /api/service-auth/v1/call proxies to any registered
+		// backend, so it requires a valid service ticket even though the SDK
+		// prefix is otherwise public. Without this, an unauthenticated client
+		// could drive gatewayed requests into every registered service.
+		if normalizeGuardPath(r.URL.Path) == "/api/service-auth/v1/call" {
+			m.authServiceTicket(w, r, next)
+			return
+		}
+
 		// Public paths: no auth required
 		if isPublicPath(r.URL.Path, r.Method) {
 			next.ServeHTTP(w, r)
@@ -199,7 +209,7 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 
 		// ③ Static admin Bearer token
 		token := extractBearerToken(r)
-		if token != "" && m.adminToken != "" && token == m.adminToken {
+		if token != "" && m.adminToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(m.adminToken)) == 1 {
 			ac := &action.ActionContext{
 				SpaceID:   "",
 				TokenType: "admin",
@@ -212,43 +222,58 @@ func (m *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 		}
 
 		// ② Service-to-service Ticket (via serviceauth bridge)
-		if serviceAuthChecker != nil {
-			ticket := r.Header.Get("X-Service-Ticket")
-			if ticket != "" {
-				serviceName, err := serviceAuthChecker.VerifyTicketAndGetSpace(ticket)
-				if err == nil {
-					// A valid ticket proves identity, not authority. Admin and
-					// unlisted business routes stay closed to service callers.
-					// Match on the cleaned path so dot segments cannot smuggle an
-					// admin route in behind an allowed prefix.
-					guardPath := normalizeGuardPath(r.URL.Path)
-					if isSystemRoute(guardPath) || !serviceTicketAllowed(guardPath) {
-						// actor_type matches the unauthorized_access call below and
-						// docs/design/failure-matrix.md §3.1 so audit queries on
-						// actor_type=service_key see both denial kinds.
-						// Log the cleaned path: it is what the decision used.
-						logAuditEvent("service_key", serviceName, "access_denied", r,
-							"route", guardPath, "failed", "SCOPE_DENIED")
-						writeAuthError(w, http.StatusForbidden, "SCOPE_DENIED",
-							"service tickets may only access the Action API and their own resources")
-						return
-					}
-					ac := &action.ActionContext{
-						SpaceID:   serviceName,
-						TokenType: "service",
-						TokenID:   serviceName,
-						Actor:     "service",
-					}
-					ctx := action.WithActionContext(r.Context(), ac)
-					next.ServeHTTP(w, r.WithContext(ctx))
-					return
-				}
-			}
+		if !m.authServiceTicket(w, r, next) {
+			return
 		}
+	})
+}
 
+// authServiceTicket authenticates a request via the X-Service-Ticket header
+// (Ed25519, verified by the serviceauth bridge) and enforces the service
+// allowlist. It writes the response itself; it returns false when the caller
+// must not continue.
+func (m *AuthMiddleware) authServiceTicket(w http.ResponseWriter, r *http.Request, next http.Handler) bool {
+	if serviceAuthChecker == nil {
 		logAuditEvent("service_key", "", "unauthorized_access", r, "", "missing_token", "failed", "UNAUTHORIZED")
 		writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid auth")
-	})
+		return false
+	}
+	ticket := r.Header.Get("X-Service-Ticket")
+	if ticket == "" {
+		logAuditEvent("service_key", "", "unauthorized_access", r, "", "missing_token", "failed", "UNAUTHORIZED")
+		writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "service ticket required")
+		return false
+	}
+	serviceName, err := serviceAuthChecker.VerifyTicketAndGetSpace(ticket)
+	if err != nil {
+		logAuditEvent("service_key", "", "unauthorized_access", r, "", "invalid_token", "failed", "UNAUTHORIZED")
+		writeAuthError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid or expired service ticket")
+		return false
+	}
+	// A valid ticket proves identity, not authority. Admin and unlisted
+	// business routes stay closed to service callers. Match on the cleaned
+	// path so dot segments cannot smuggle an admin route in behind an
+	// allowed prefix.
+	guardPath := normalizeGuardPath(r.URL.Path)
+	if isSystemRoute(guardPath) || !serviceTicketAllowed(guardPath) {
+		// actor_type matches the unauthorized_access call below and
+		// docs/design/failure-matrix.md §3.1 so audit queries on
+		// actor_type=service_key see both denial kinds.
+		logAuditEvent("service_key", serviceName, "access_denied", r,
+			"route", guardPath, "failed", "SCOPE_DENIED")
+		writeAuthError(w, http.StatusForbidden, "SCOPE_DENIED",
+			"service tickets may only access the Action API and their own resources")
+		return false
+	}
+	ac := &action.ActionContext{
+		SpaceID:   serviceName,
+		TokenType: "service",
+		TokenID:   serviceName,
+		Actor:     "service",
+	}
+	ctx := action.WithActionContext(r.Context(), ac)
+	next.ServeHTTP(w, r.WithContext(ctx))
+	return true
 }
 
 // extractBearerToken extracts the Bearer token from an Authorization header.

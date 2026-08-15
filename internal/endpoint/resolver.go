@@ -55,9 +55,27 @@ func (r *Resolver) ResolveWithResult(ctx context.Context, serviceID string) *Res
 
 	for i := range endpoints {
 		ep := &endpoints[i]
-		addr := NormalizeAddress(ep.Address)
 		start := time.Now()
 
+		// Unix socket endpoints: always usable, no TCP check possible.
+		// Must be detected on the raw address — NormalizeAddress below
+		// would mangle "unix:///path" into "http://unix:///path".
+		if strings.HasPrefix(ep.Address, "unix://") || strings.HasPrefix(ep.Address, "/") {
+			attempt := EndpointAttempt{
+				EndpointID: ep.ID,
+				Type:       ep.Type,
+				Address:    ep.Address,
+				Success:    true,
+				Message:    "Unix socket (skip TCP check)",
+				LatencyMS:  0,
+			}
+			result.Attempts = append(result.Attempts, attempt)
+			resolved := *ep
+			result.Endpoint = &resolved
+			return result
+		}
+
+		addr := NormalizeAddress(ep.Address)
 		reachable, msg := r.checkTCP(addr)
 		latency := time.Since(start).Milliseconds()
 

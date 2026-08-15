@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -417,6 +418,8 @@ func (w *Workflow) apply(ctx context.Context, email string) (*ApplyResult, error
 	result.Warnings = plan.Warnings
 
 	// 2. Render + Apply each provider
+	applied := make(map[string][]string) // provID → config paths applied
+	var renderedParts []string           // rendered content, for the version record
 	for provID, pPlan := range plan.Plans {
 		p := w.registry.Get(provID)
 		if p == nil {
@@ -442,6 +445,10 @@ func (w *Workflow) apply(ctx context.Context, email string) (*ApplyResult, error
 		}
 
 		result.Provider[provID] = "success"
+		for _, cf := range configs {
+			applied[provID] = append(applied[provID], cf.Path)
+			renderedParts = append(renderedParts, string(cf.Content))
+		}
 	}
 
 	// 3. Post-apply diagnostic verify
@@ -463,8 +470,68 @@ func (w *Workflow) apply(ctx context.Context, email string) (*ApplyResult, error
 		w.planApplied(plan)
 	}
 
+	// Record an ApplyVersion with real backup files so UI/CLI rollback and
+	// history work after applies issued through this workflow (the HTTP/UI
+	// main path previously never wrote apply_versions at all).
+	w.recordApplyVersion(ctx, applied, strings.Join(renderedParts, "\n"))
+
 	w.logApply(ctx, "all", "success", "")
 	return result, nil
+}
+
+// recordApplyVersion persists an ApplyVersion with real backup files. The
+// provider wrote <path>.bak just before replacing each live config; we copy
+// those pre-apply snapshots into the backup dir so every recorded BackupPath
+// actually exists on disk — the old code recorded paths that were never
+// written, making UI rollback fail with "backup file not found".
+func (w *Workflow) recordApplyVersion(ctx context.Context, applied map[string][]string, rendered string) {
+	if w.applyRepo == nil {
+		return
+	}
+	ts := time.Now().Format("20060102_150405")
+	backupDir := w.cfg.Proxy.BackupDir
+	backupPaths := make(map[string]string)
+	var legacyPath string
+	for provID, paths := range applied {
+		for _, cfgPath := range paths {
+			src := cfgPath + ".bak"
+			data, err := os.ReadFile(src)
+			if err != nil {
+				continue
+			}
+			if err := os.MkdirAll(backupDir, 0700); err != nil {
+				continue
+			}
+			dst := filepath.Join(backupDir, fmt.Sprintf("%s.%s.bak", filepath.Base(cfgPath), ts))
+			if err := os.WriteFile(dst, data, 0600); err != nil {
+				continue
+			}
+			backupPaths[provID] = dst
+			// The legacy single-provider BackupPath should point at the
+			// Caddy config when present — versioned rollback and the legacy
+			// rollback branch restore that file. The Caddy entry always wins
+			// over an earlier fallback from another provider.
+			if filepath.Clean(cfgPath) == filepath.Clean(w.cfg.Proxy.CaddyfilePath) {
+				legacyPath = dst
+			} else if legacyPath == "" {
+				legacyPath = dst
+			}
+		}
+	}
+	av := &ApplyVersion{
+		ID:             core.NewID("apply"),
+		Version:        fmt.Sprintf("v%s", ts),
+		ConfigPath:     w.cfg.Proxy.CaddyfilePath,
+		BackupPath:     legacyPath,
+		BackupPaths:    backupPaths,
+		RenderedConfig: rendered,
+		Status:         "success",
+		Message:        fmt.Sprintf("applied to %d providers", len(applied)),
+		CreatedAt:      time.Now(),
+	}
+	if err := w.applyRepo.Create(av); err != nil {
+		w.logApply(ctx, "all", "failed", fmt.Sprintf("record apply version: %v", err))
+	}
 }
 
 // ============================================================================
@@ -502,8 +569,14 @@ func (w *Workflow) Rollback(ctx context.Context) error {
 			if p == nil {
 				continue
 			}
-			// Restore config via Apply with the backed-up data
-			cf := provider.ConfigFile{Path: backupPath, Content: data}
+			// Restore config via Apply with the backed-up data. The target
+			// path must be the provider's live config path — using the
+			// backup path here would validate/write the backup file itself.
+			targetPath := p.State().ConfigPath
+			if targetPath == "" {
+				targetPath = backupPath
+			}
+			cf := provider.ConfigFile{Path: targetPath, Content: data}
 			if err := p.Apply([]provider.ConfigFile{cf}); err != nil {
 				return fmt.Errorf("restore config for %s: %w", provID, err)
 			}
@@ -525,15 +598,16 @@ func (w *Workflow) Rollback(ctx context.Context) error {
 		return fmt.Errorf("read backup: %w", err)
 	}
 
-	caddyPath := w.cfg.Proxy.CaddyfilePath
-	if err := os.WriteFile(caddyPath, data, 0640); err != nil {
-		return fmt.Errorf("write restored config: %w", err)
-	}
-
-	// Reload via the Caddy provider
+	// Legacy single-provider rollback: restore through the provider so the
+	// config is validated before it replaces the live file (a corrupt backup
+	// must not clobber the running config).
 	reloadProv := w.registry.FindByCapability(provider.CapHotReload)
 	if reloadProv == nil {
 		return fmt.Errorf("hot-reload provider not found for reload")
+	}
+	cf := provider.ConfigFile{Path: w.cfg.Proxy.CaddyfilePath, Content: data}
+	if err := reloadProv.Apply([]provider.ConfigFile{cf}); err != nil {
+		return fmt.Errorf("restore config: %w", err)
 	}
 	if reloadable, ok := reloadProv.(provider.ReloadableProvider); ok {
 		if err := reloadable.Reload(); err != nil {
@@ -547,6 +621,38 @@ func (w *Workflow) Rollback(ctx context.Context) error {
 		rollbackProvID = reloadProv.State().ID
 	}
 	w.logApply(ctx, rollbackProvID, "rollback", fmt.Sprintf("restored from %s", last.BackupPath))
+	return nil
+}
+
+// RestoreBackup validates and restores a backed-up config onto the
+// hot-reload provider, then reloads it. Used by versioned rollback
+// (rollback --version / API), which must never skip validation or leave the
+// running config out of sync with the file on disk.
+func (w *Workflow) RestoreBackup(ctx context.Context, backupPath string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	data, err := os.ReadFile(backupPath)
+	if err != nil {
+		return fmt.Errorf("read backup: %w", err)
+	}
+
+	prov := w.registry.FindByCapability(provider.CapHotReload)
+	if prov == nil {
+		return fmt.Errorf("hot-reload provider not found for restore")
+	}
+	// provider.Apply validates the temp config before replacing, so a
+	// corrupt backup can never clobber the live config.
+	cf := provider.ConfigFile{Path: w.cfg.Proxy.CaddyfilePath, Content: data}
+	if err := prov.Apply([]provider.ConfigFile{cf}); err != nil {
+		return fmt.Errorf("restore config: %w", err)
+	}
+	if reloadable, ok := prov.(provider.ReloadableProvider); ok {
+		if err := reloadable.Reload(); err != nil {
+			return fmt.Errorf("reload after restore: %w", err)
+		}
+	}
+	w.logApply(ctx, prov.State().ID, "rollback", fmt.Sprintf("restored from %s", backupPath))
 	return nil
 }
 

@@ -43,7 +43,9 @@ func scanRoute(scanner interface{ Scan(...interface{}) error }) (*Route, error) 
 	rt.TLSBindingMode = tlsBindingMode.String
 	rt.TLSProvider = tlsProvider.String
 	rt.GatewayLinkID = gatewayLinkID.String
-	if certID.Valid {
+	// cert_id is written as '' when unbound (see Create/Update); only treat a
+	// non-empty value as a binding so consumers checking != nil get clean data.
+	if certID.Valid && certID.String != "" {
 		id := certID.String
 		rt.CertID = &id
 	}

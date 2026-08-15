@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"aegis/internal/edgemux"
@@ -27,6 +28,12 @@ func (s *ActionService) UpdateTarget(ctx context.Context, input UpdateTargetInpu
 		return nil, err
 	}
 
+	// Validate target up front (mirrors BindHTTPDomain): an invalid target
+	// would silently break traffic through the resolver.
+	if err := validateTargetInput(input.TargetHost, input.TargetPort); err != nil {
+		return nil, err
+	}
+
 	switch input.ResourceType {
 	case "service":
 		return s.updateServiceTarget(ctx, ac, opID, input)
@@ -35,6 +42,16 @@ func (s *ActionService) UpdateTarget(ctx context.Context, input UpdateTargetInpu
 	default:
 		return nil, NewError(ErrCodeResourceNotFound, fmt.Sprintf("unknown resource_type: %s (must be 'service' or 'edge_rule')", input.ResourceType))
 	}
+}
+
+func validateTargetInput(host string, port int) error {
+	if strings.TrimSpace(host) == "" {
+		return NewError(ErrCodeTargetNotAllowed, "target_host is required")
+	}
+	if port <= 0 || port > 65535 {
+		return NewError(ErrCodeTargetNotAllowed, fmt.Sprintf("invalid target_port: %d (must be 1-65535)", port))
+	}
+	return nil
 }
 
 func (s *ActionService) updateServiceTarget(ctx context.Context, ac *ActionContext, opID string, input UpdateTargetInput) (*ActionResult, error) {

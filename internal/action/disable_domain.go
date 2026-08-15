@@ -26,9 +26,13 @@ func (s *ActionService) DisableDomain(ctx context.Context, input DisableDomainIn
 	case "edge_rule":
 		return s.disableEdgeRuleDomain(ctx, ac, opID, input.Domain)
 	default:
-		// Try route first, then edge rule
+		// Try route first, then edge rule. A route owned by another space is a
+		// hard denial — do not swallow it and fall through to a misleading
+		// "edge_rule not found".
 		if result, err := s.disableRouteDomain(ctx, ac, opID, input.Domain); err == nil {
 			return result, nil
+		} else if IsActionError(err, ErrCodeResourceNotOwned) || IsActionError(err, ErrCodeScopeDenied) {
+			return nil, err
 		}
 		return s.disableEdgeRuleDomain(ctx, ac, opID, input.Domain)
 	}

@@ -126,6 +126,18 @@ func (r *Repository) Update(inst *Instance) error {
 	return err
 }
 
+// UpdateHealth persists only the health fields. The periodic checker must not
+// write back a stale full-row snapshot — that would revert concurrent admin
+// edits (e.g. re-enabling a just-disabled instance).
+func (r *Repository) UpdateHealth(id, status string, latencyMS int64, message string, checkedAt time.Time) error {
+	_, err := r.db.Exec(
+		`UPDATE flowbridge_instances SET last_health_status=?, last_health_latency_ms=?,
+			last_health_message=?, last_checked_at=? WHERE id=?`,
+		status, latencyMS, message, fmtTime(checkedAt), id,
+	)
+	return err
+}
+
 // Delete removes an instance. Referenced instances are rejected by the
 // FLOWBRIDGE_REFERENCED trigger.
 func (r *Repository) Delete(id string) error {

@@ -76,19 +76,35 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest, clientIP st
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
+
+	// Security gate before upsert:
+	// 1. A blocked service must not resurrect itself — Register sets
+	//    status=active, which would defeat BlockService.
+	// 2. A name with an active key of a *different* public key must not
+	//    accept a new key: VerifyTicketAndGetSpace trusts every active key
+	//    under a name, so a second key would let the caller sign tickets as
+	//    the existing service (space takeover). Legitimate key rotation must
+	//    remove the old record first.
+	existing, err := s.deps.Repo.FindByName(req.ServiceName)
+	if err != nil {
+		return nil, fmt.Errorf("register: look up existing: %w", err)
+	}
+	for _, e := range existing {
+		switch e.Status {
+		case "blocked":
+			return nil, fmt.Errorf("service %q is blocked; unblock it before re-registering", req.ServiceName)
+		case "active":
+			if e.PublicKey != req.PublicKey {
+				return nil, fmt.Errorf("service %q is already registered with a different public key; remove the old record before rotating keys", req.ServiceName)
+			}
+		}
+	}
+
 	if err := s.deps.Repo.UpsertService(rec); err != nil {
 		return nil, fmt.Errorf("register: %w", err)
 	}
 
 	var warnings []string
-	existing, _ := s.deps.Repo.FindByName(req.ServiceName)
-	for _, e := range existing {
-		if e.PublicKey != req.PublicKey && e.Status == "active" {
-			warnings = append(warnings,
-				fmt.Sprintf("服务 %s 已有不同的公钥注册（可能是密钥轮换或多实例，请确认）", req.ServiceName))
-			break
-		}
-	}
 	keyUsers, _ := s.deps.Repo.FindByPublicKey(req.PublicKey)
 	for _, u := range keyUsers {
 		if u.Name != req.ServiceName {

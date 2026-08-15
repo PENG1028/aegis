@@ -211,9 +211,30 @@ func (r *Repository) UnsetCurrent() error {
 	return err
 }
 
+// ElectLeaderCAS atomically marks nodeID as leader, but only if no other node
+// is currently marked. Concurrent elections cannot produce two leaders.
+// Returns (false, nil) when another leader already exists.
+func (r *Repository) ElectLeaderCAS(nodeID string, now time.Time) (bool, error) {
+	nowStr := now.Format(time.RFC3339)
+	res, err := r.DB.Exec(
+		`UPDATE nodes SET is_leader=1, leader_elected_at=?, updated_at=?
+		 WHERE node_id=? AND NOT EXISTS (
+		     SELECT 1 FROM nodes WHERE is_leader=1 AND node_id != ?
+		 )`,
+		nowStr, nowStr, nodeID, nodeID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("cas elect leader: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("cas elect leader rows: %w", err)
+	}
+	return n > 0, nil
+}
+
 // Update updates a full node record.
-func (r *Repository) Update(n *NodeRecord) error {
-	vals := nodeRowValues(n)
+func (r *Repository) Update(n *NodeRecord) error {	vals := nodeRowValues(n)
 	vals = append(vals, n.ID) // for WHERE
 	_, err := r.DB.Exec(
 		`UPDATE nodes SET id=?, node_id=?, name=?, role=?, status=?, hostname=?, local_ip=?, private_ip=?, public_ip=?,

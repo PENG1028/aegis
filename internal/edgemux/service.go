@@ -76,7 +76,10 @@ func (s *AppService) EnsureRuleForHTTPRoute(ctx context.Context, domain, routeID
 	}
 
 	internalPort := internalHTTPSPort()
-	existing, _ := s.repo.FindBySNIHost(domain)
+	existing, err := s.repo.FindBySNIHost(domain)
+	if err != nil {
+		return nil, fmt.Errorf("look up edge rule for %s: %w", domain, err)
+	}
 	if existing != nil {
 		// Check ownership — only http_route-managed rules are auto-updated
 		if existing.ManagedBy != "http_route" && existing.ManagedBy != "" {

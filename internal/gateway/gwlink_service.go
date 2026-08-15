@@ -166,6 +166,14 @@ func (s *LinkService) VerifyRequest(authHeader string) bool {
 		return false
 	}
 
+	// The header carries the *sender's* gateway ID; signatures are computed
+	// over that ID, so verification must look the sender up by that ID.
+	// Verifying with our own ID would always fail (headerGWID != gatewayID).
+	headerGWID := gatewayIDFromAuthHeader(authHeader)
+	if headerGWID == "" {
+		return false
+	}
+
 	gateways, err := s.repo.FindByType(TypeDownstream)
 	if err != nil || len(gateways) == 0 {
 		return false
@@ -173,23 +181,23 @@ func (s *LinkService) VerifyRequest(authHeader string) bool {
 
 	// Check against all downstream gateways
 	for _, gw := range gateways {
+		if gw.ID != headerGWID {
+			continue
+		}
 		if gw.HasEncryptedSecret() {
 			if s.mk == nil {
 				// Encrypted data exists but no master key — fail closed
-				continue
+				return false
 			}
 			raw, err := gw.GetRawSecret(s.mk)
 			if err != nil {
-				continue
+				return false
 			}
-			if VerifyAuthHeader(authHeader, s.selfID, raw) {
-				return true
-			}
-		} else if gw.AuthValue != "" {
+			return VerifyAuthHeader(authHeader, headerGWID, raw)
+		}
+		if gw.AuthValue != "" {
 			// Legacy HMAC fallback (degraded mode allowed)
-			if VerifyAuthHeader(authHeader, s.selfID, gw.AuthValue) {
-				return true
-			}
+			return VerifyAuthHeader(authHeader, headerGWID, gw.AuthValue)
 		}
 	}
 	return false

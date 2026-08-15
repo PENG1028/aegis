@@ -24,7 +24,13 @@ type Manager struct {
 
 	mu     sync.Mutex
 	active bool
+
+	// dnsmasq change detection + failure backoff (refresh loop state)
+	lastDnsmasqHash  string
+	lastDnsmasqErrAt time.Time
 }
+
+const dnsmasqRetryBackoff = time.Minute
 
 // NewManager creates a DNS manager.
 // Does not start anything until Enable() is called.
@@ -97,29 +103,14 @@ func (m *Manager) Enable() error {
 				if err := m.Resolver.Refresh(); err != nil {
 					log.Printf("[dns] periodic refresh failed: %v", err)
 				}
-				// Re-render dnsmasq config on each refresh.
-				if m.Dnsmasq != nil && m.Dnsmasq.ConfigPath != "" {
-					if err := m.Dnsmasq.Render(m.Resolver.Table()); err != nil {
-						log.Printf("[dns] dnsmasq refresh: %v", err)
-					} else {
-						m.Dnsmasq.Reload()
-					}
-				}
+				// Re-render dnsmasq config only when the content changed.
+				m.refreshDnsmasq()
 			}
 		}
 	}()
 
 	// 4. Render dnsmasq config (if configured) — replaces in-process UDP server.
-	if m.Dnsmasq != nil && m.Dnsmasq.ConfigPath != "" {
-		entries := m.Resolver.Table()
-		if err := m.Dnsmasq.Render(entries); err != nil {
-			log.Printf("[dns] dnsmasq render: %v", err)
-		} else if err := m.Dnsmasq.Reload(); err != nil {
-			log.Printf("[dns] dnsmasq reload: %v (install: apt install dnsmasq)", err)
-		} else {
-			log.Printf("[dns] dnsmasq config written + reloaded: %s", m.Dnsmasq.ConfigPath)
-		}
-	}
+	m.refreshDnsmasq()
 
 	// 5. Start legacy UDP server as fallback.
 	if err := m.Server.Start(); err != nil {
@@ -129,6 +120,38 @@ func (m *Manager) Enable() error {
 	m.active = true
 	log.Printf("[dns] manager: enabled (listen=%s, upstream=%s)", m.cfgListen, m.cfgUpstream)
 	return nil
+}
+
+// refreshDnsmasq writes the dnsmasq config only when its content changed,
+// and backs off for a minute after a failure to avoid log spam.
+func (m *Manager) refreshDnsmasq() {
+	if m.Dnsmasq == nil || m.Dnsmasq.ConfigPath == "" {
+		return
+	}
+	if time.Since(m.lastDnsmasqErrAt) < dnsmasqRetryBackoff {
+		return
+	}
+	content, err := m.Dnsmasq.RenderString(m.Resolver.Table())
+	if err != nil {
+		m.lastDnsmasqErrAt = time.Now()
+		log.Printf("[dns] dnsmasq render: %v", err)
+		return
+	}
+	if content == m.lastDnsmasqHash {
+		return // unchanged — no write, no reload
+	}
+	if err := m.Dnsmasq.WriteConfig(content); err != nil {
+		m.lastDnsmasqErrAt = time.Now()
+		log.Printf("[dns] dnsmasq write: %v", err)
+		return
+	}
+	m.lastDnsmasqErrAt = time.Time{}
+	m.lastDnsmasqHash = content
+	if err := m.Dnsmasq.Reload(); err != nil {
+		log.Printf("[dns] dnsmasq reload: %v (install: apt install dnsmasq)", err)
+	} else {
+		log.Printf("[dns] dnsmasq config written + reloaded: %s", m.Dnsmasq.ConfigPath)
+	}
 }
 
 // Disable stops the DNS server and background goroutines.

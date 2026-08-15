@@ -164,6 +164,10 @@ func (s *AppService) recordCheck(serviceID, endpointID, status string, latency i
 		Message:    message,
 		CheckedAt:  time.Now(),
 	}
-	_ = s.repo.Create(h)
+	if err := s.repo.Create(h); err != nil {
+		// A lost health record must not fail the check itself, but it should
+		// not vanish silently either.
+		core.Error("health: persist check failed", "error", err, "service", serviceID)
+	}
 	return h
 }

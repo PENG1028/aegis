@@ -11,6 +11,7 @@ type CleanupStats struct {
 	OrphanEdgeRules int `json:"orphan_edge_rules"`
 	StaleNodes      int `json:"stale_nodes"`
 	OldSessions     int `json:"old_sessions"`
+	OldHealthChecks int `json:"old_health_checks"`
 	TotalRemoved    int `json:"total_removed"`
 }
 
@@ -51,6 +52,19 @@ func RunCleanup(db *sql.DB) (*CleanupStats, error) {
 	}
 	if n, _ := result.RowsAffected(); n > 0 {
 		stats.OldSessions = int(n)
+		stats.TotalRemoved += int(n)
+	}
+
+	// 4. Cleanup health checks older than 30 days — the table is written on
+	// every periodic check and had no retention policy, so it grew unbounded.
+	result, err = db.Exec(
+		`DELETE FROM health_checks WHERE checked_at < ?`,
+		time.Now().Add(-30*24*time.Hour).Format(time.RFC3339))
+	if err != nil {
+		return stats, fmt.Errorf("cleanup old health checks: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n > 0 {
+		stats.OldHealthChecks = int(n)
 		stats.TotalRemoved += int(n)
 	}
 

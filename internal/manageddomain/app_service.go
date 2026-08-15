@@ -16,7 +16,10 @@ var allowedTransitions = map[string][]string{
 	"verified":             {"active"},
 	"active":               {"disabled"},
 	"disabled":             {"active"},
-	"failed":               {"pending_verification"},
+	// failed → verified: VerifyDomain retry after the owner fixed the TXT
+	// record must be able to recover; failed → pending_verification is kept
+	// for any future re-verification flow.
+	"failed": {"pending_verification", "verified"},
 }
 
 // AppService defines the managed domain application service.

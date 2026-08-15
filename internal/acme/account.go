@@ -20,19 +20,27 @@ import (
 // LoadOrCreateAccountKey loads an existing ACME account key from disk,
 // or generates a new ECDSA P-256 key if none exists.
 // The key is stored with 0600 permissions.
+//
+// Only a missing file triggers generation. Any other read/parse error is
+// returned as-is — silently regenerating would orphan the existing
+// Let's Encrypt account and burn new-account rate limits.
 func LoadOrCreateAccountKey(dataDir string) (*ecdsa.PrivateKey, error) {
 	keyDir := filepath.Join(dataDir, "acme")
 	keyPath := filepath.Join(keyDir, "account.key")
 
-	if key, err := loadAccountKey(keyPath); err == nil {
+	key, err := loadAccountKey(keyPath)
+	if err == nil {
 		return key, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("load existing account key: %w", err)
 	}
 
 	if err := os.MkdirAll(keyDir, 0700); err != nil {
 		return nil, fmt.Errorf("create acme dir: %w", err)
 	}
 
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("generate account key: %w", err)
 	}

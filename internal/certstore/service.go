@@ -213,8 +213,12 @@ func (s *Service) Delete(id string) error {
 	}
 	// Files are removed after metadata so a DB failure never leaves a record
 	// pointing at deleted certificate material.
-	_ = os.Remove(cert.CertPath)
-	_ = os.Remove(cert.KeyPath)
+	if err := os.Remove(cert.CertPath); err != nil && !os.IsNotExist(err) {
+		core.Warn("certstore: cert file left on disk after delete", "path", cert.CertPath, "error", err)
+	}
+	if err := os.Remove(cert.KeyPath); err != nil && !os.IsNotExist(err) {
+		core.Warn("certstore: key file left on disk after delete", "path", cert.KeyPath, "error", err)
+	}
 	return nil
 }
 

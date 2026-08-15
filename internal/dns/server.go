@@ -80,6 +80,9 @@ func (s *Server) Start() error {
 	}
 
 	s.conn = conn
+	// Recreate the close channel: a previous Stop() closed it, and a closed
+	// channel would make the serve loop exit immediately on the next Start.
+	s.closeCh = make(chan struct{})
 
 	s.wg.Add(1)
 	go func() {
@@ -108,6 +111,12 @@ func (s *Server) Stop() error {
 
 	if s.conn != nil {
 		s.conn.Close()
+		// Unblock the serve loop if it is blocked in ReadFromUDP.
+		select {
+		case <-s.closeCh:
+		default:
+			close(s.closeCh)
+		}
 	}
 
 	s.running = false
@@ -139,8 +148,12 @@ func (s *Server) serve() {
 			case <-s.closeCh:
 				return
 			default:
-				log.Printf("[dns] read error: %v", err)
-				return
+				// Transient errors (e.g. EMFILE, ICMP-related) must not kill
+				// the DNS service for the process lifetime — back off briefly
+				// and keep serving.
+				log.Printf("[dns] read error: %v (retrying)", err)
+				time.Sleep(200 * time.Millisecond)
+				continue
 			}
 		}
 

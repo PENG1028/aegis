@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -19,7 +20,15 @@ func runProviderCommand(timeout time.Duration, runner providerCommandRunner, nam
 	defer cancel()
 	if runner == nil {
 		runner = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return exec.CommandContext(ctx, name, args...).CombinedOutput()
+			cmd := exec.CommandContext(ctx, name, args...)
+			// Caddy (and similar tools) need a home directory for config
+			// state. Under systemd neither $HOME nor $XDG_CONFIG_HOME is
+			// defined, which makes `caddy validate` fail with
+			// "neither $XDG_CONFIG_HOME nor $HOME are defined".
+			if os.Getenv("HOME") == "" && os.Getenv("XDG_CONFIG_HOME") == "" {
+				cmd.Env = append(os.Environ(), "HOME=/root", "XDG_CONFIG_HOME=/root/.config")
+			}
+			return cmd.CombinedOutput()
 		}
 	}
 	output, err := runner(ctx, name, args...)

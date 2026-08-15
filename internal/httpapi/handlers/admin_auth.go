@@ -23,7 +23,10 @@ func (h *Handlers) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := r.RemoteAddr
+	// Rate limiting must key on the bare IP, not RemoteAddr (host:port) —
+	// behind Caddy every new connection gets a fresh source port, so a
+	// host:port key would give each connection its own rate-limit bucket.
+	ip := clientIP(r)
 	userAgent := r.Header.Get("User-Agent")
 
 	result, err := h.AdminAuth.Login(input.Username, input.Password, ip, userAgent)

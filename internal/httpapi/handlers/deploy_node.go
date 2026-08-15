@@ -1315,7 +1315,7 @@ func renderNodeServeConfig(controlProxy config.ProxyConfig, nodeName, adminToken
 	}
 	cfg.Egress = config.EgressConfig{Enabled: false}
 	cfg.DistNode = config.DistNodeConfig{
-		Enabled: true,
+		Enabled: config.BoolPtr(true),
 		ID:      nodeID,
 		Name:    nodeName,
 		Addr:    "127.0.0.1:7380",

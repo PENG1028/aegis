@@ -2,14 +2,16 @@ package cli
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"aegis/internal/config"
-	"aegis/internal/listener"
 	"aegis/internal/hostdep/provider"
+	"aegis/internal/listener"
 
 	"github.com/spf13/cobra"
 )
@@ -216,8 +218,22 @@ func isPortListening(bindIP string, port int) bool {
 	// Try ss first
 	out, err := exec.Command("ss", "-ltnp").CombinedOutput()
 	if err == nil {
-		if strings.Contains(string(out), fmt.Sprintf(":%d", port)) {
-			return true
+		portStr := strconv.Itoa(port)
+		for _, line := range strings.Split(string(out), "\n") {
+			fields := strings.Fields(line)
+			// ss output: State Recv-Q Send-Q Local-Addr:Port Peer-Addr:Port ...
+			if len(fields) < 5 {
+				continue
+			}
+			local := fields[3]
+			// Handles "0.0.0.0:80", "[::]:80", "127.0.0.1:80", "*:80"
+			if _, p, err := net.SplitHostPort(local); err == nil {
+				if p == portStr {
+					return true
+				}
+			} else if idx := strings.LastIndex(local, ":"); idx >= 0 && local[idx+1:] == portStr {
+				return true
+			}
 		}
 	}
 	// Fallback: try connecting

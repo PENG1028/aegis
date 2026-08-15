@@ -33,7 +33,14 @@ func (s *LeaderService) GetLeader() (*node.NodeRecord, error) {
 
 // ElectLeader selects a leader from available nodes.
 // Strategy: picks the most recently seen node that is marked as current.
+// An existing leader is never re-elected; concurrent elections converge via
+// a conditional update so two nodes cannot both become leader.
 func (s *LeaderService) ElectLeader() (*node.NodeRecord, error) {
+	// Short-circuit: a leader already exists — do not disturb it.
+	if leader, err := s.GetLeader(); err == nil && leader != nil {
+		return leader, nil
+	}
+
 	nodes, err := s.nodeRepo.FindAll()
 	if err != nil {
 		return nil, fmt.Errorf("find nodes: %w", err)
@@ -43,16 +50,9 @@ func (s *LeaderService) ElectLeader() (*node.NodeRecord, error) {
 		return nil, fmt.Errorf("no nodes available for election")
 	}
 
-	// Clear existing leader flags
-	for i := range nodes {
-		if nodes[i].IsLeader {
-			nodes[i].IsLeader = false
-			nodes[i].UpdatedAt = time.Now()
-			_ = s.nodeRepo.Update(&nodes[i])
-		}
-	}
-
-	// Pick the current node with most recent last_seen
+	// Pick the current node with most recent last_seen. No flag clearing
+	// here: the CAS below refuses to overwrite an existing leader, so a
+	// racing election cannot wipe another node's leadership.
 	var best *node.NodeRecord
 	for i := range nodes {
 		n := &nodes[i]
@@ -68,13 +68,22 @@ func (s *LeaderService) ElectLeader() (*node.NodeRecord, error) {
 		return nil, fmt.Errorf("no current node found for election")
 	}
 
-	best.IsLeader = true
-	best.LeaderElectedAt = time.Now()
-	best.UpdatedAt = time.Now()
-	if err := s.nodeRepo.Update(best); err != nil {
-		return nil, fmt.Errorf("update leader: %w", err)
+	now := time.Now()
+	ok, err := s.nodeRepo.ElectLeaderCAS(best.NodeID, now)
+	if err != nil {
+		return nil, fmt.Errorf("elect leader: %w", err)
+	}
+	if !ok {
+		// Another node won the race — return the actual leader.
+		if leader, err := s.GetLeader(); err == nil && leader != nil {
+			return leader, nil
+		}
+		return nil, fmt.Errorf("leader elected by another node, but lookup failed")
 	}
 
+	best.IsLeader = true
+	best.LeaderElectedAt = now
+	best.UpdatedAt = now
 	return best, nil
 }
 

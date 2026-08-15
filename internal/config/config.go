@@ -69,11 +69,18 @@ type ManagedDomainConfig struct {
 	GatewayDomain string `yaml:"gateway_domain" json:"gateway_domain"`
 }
 
+// BoolPtr returns a pointer to b, for optional bool config fields where
+// "unset" (nil) must be distinguishable from an explicit value.
+func BoolPtr(b bool) *bool { return &b }
+
 // DistNodeConfig holds distributed node runtime settings (v1.9B).
 // When enabled, the node joins a cluster with its peers for cross-node
 // method calls, health monitoring, and transparent perspective switching.
+//
+// Enabled is a *bool so that "unset" (nil → default on) can be distinguished
+// from an explicit `enabled: false` (operator wants a standalone node).
 type DistNodeConfig struct {
-	Enabled bool           `yaml:"enabled"`
+	Enabled *bool          `yaml:"enabled"`
 	ID      string         `yaml:"id"`
 	Name    string         `yaml:"name"`
 	Addr    string         `yaml:"addr"`
@@ -257,13 +264,13 @@ func Load(path string) (*Config, error) {
 // native (a goroutine inside `aegis serve`, not a separate process); leaving it
 // off is why a joined node never appeared in the cluster. The generated cluster
 // secret is persisted back to the config file so peers keep matching across
-// restarts. An explicit `enabled: false` is intentionally overridden in Phase 0
-// (bool cannot distinguish "unset" from "false"); a dedicated opt-out can be
-// added later if a node must stay standalone.
+// restarts. An explicit `enabled: false` is respected: the node stays standalone.
 func applyDistNodeDefaults(cfg *Config, path string) {
 	changed := false
-	if !cfg.DistNode.Enabled {
-		cfg.DistNode.Enabled = true
+	if cfg.DistNode.Enabled == nil {
+		// Unset (or config predates distnode) → default on.
+		t := true
+		cfg.DistNode.Enabled = &t
 		changed = true
 	}
 	if cfg.DistNode.ID == "" {
@@ -308,7 +315,7 @@ func applyDistNodeDefaults(cfg *Config, path string) {
 	}
 }
 
-// Save writes the config to a YAML file.
+// Save writes the config to a YAML file (atomically: tmp file + rename).
 func (c *Config) Save(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -320,8 +327,30 @@ func (c *Config) Save(path string) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("write config file %s: %w", path, err)
+	tmp, err := os.CreateTemp(dir, "config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp config file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after successful rename
+
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("chmod temp config file: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp config file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync temp config file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp config file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("replace config file %s: %w", path, err)
 	}
 	return nil
 }

@@ -98,8 +98,12 @@ func newRestoreCommand(
 ) *cobra.Command {
 	return &cobra.Command{
 		Use:   "restore --from <deployment.json>",
-		Short: "Restore system state from a snapshot",
-		Long:  "Restores listeners, edge rules, routes, and applies configs from a deployment. Does NOT overwrite data that already matches.",
+		Short: "Compare current state against a snapshot (dry-run)",
+		Long: `Compares listeners, edge rules, and routes against a deployment
+snapshot and reports what is missing. This is a DRY RUN: nothing is created.
+The snapshot format does not carry enough fields (e.g. route → service
+binding) to safely recreate resources, so restore intentionally never
+writes — use the UI/API to recreate missing resources, then apply.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			from, _ := cmd.Flags().GetString("from")
 			if from == "" {
@@ -114,10 +118,11 @@ func newRestoreCommand(
 				return fmt.Errorf("load snapshot: %w", err)
 			}
 
-			fmt.Printf("Restoring from snapshot: %s\n", snap.ExportedAt)
+			fmt.Printf("Comparing against snapshot: %s\n", snap.ExportedAt)
 			fmt.Printf("  version: %s\n", snap.Version)
+			fmt.Println("  MODE: DRY RUN — no resources will be created or modified")
 
-			// Restore routes
+			// Compare routes
 			ctx := context.Background()
 			currentRoutes, _ := routeSvc.ListRoutes(ctx)
 			restored := 0
@@ -130,14 +135,14 @@ func newRestoreCommand(
 					}
 				}
 				if !found {
-					// Route doesn't exist — would need to be recreated
-					fmt.Printf("  route %s (%s) would be recreated\n", rs.Domain, trancate(rs.ID, 8))
+					// Route doesn't exist — report it, do not create.
+					fmt.Printf("  MISSING route %s (%s)\n", rs.Domain, trancate(rs.ID, 8))
 					restored++
 				}
 			}
 			fmt.Printf("  total routes in snapshot: %d, missing: %d\n", len(snap.Routes), restored)
 
-			// Restore edge rules
+			// Compare edge rules
 			currentRules, _ := edgeSvc.ListRules(ctx)
 			edgeRestored := 0
 			for _, es := range snap.EdgeRules {
@@ -149,21 +154,15 @@ func newRestoreCommand(
 					}
 				}
 				if !found {
-					fmt.Printf("  edge rule %s → %s would be recreated\n", es.SNIHost, es.Target)
+					fmt.Printf("  MISSING edge rule %s → %s\n", es.SNIHost, es.Target)
 					edgeRestored++
 				}
 			}
 			fmt.Printf("  total edge rules in snapshot: %d, missing: %d\n", len(snap.EdgeRules), edgeRestored)
 
-			// Apply configs
 			fmt.Println()
-			fmt.Println("Running apply --all to sync configs...")
-			_, err = applySvc.Apply(ctx)
-			if err != nil {
-				return fmt.Errorf("apply failed: %w (some state may have been restored)", err)
-			}
-
-			fmt.Println("Restore complete.")
+			fmt.Println("DRY RUN complete — no changes were made.")
+			fmt.Println("Recreate missing resources through the UI/API, then run apply.")
 			return nil
 		},
 	}

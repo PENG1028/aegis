@@ -1,460 +1,215 @@
 # Aegis
 
-**基础设施入口控制工具 — v1.7AD**
+**个人基础设施网关控制平面 — v1.9C-2**
 
-Aegis 管理多项目的基础设施入口：服务注册、域名路由、反向代理配置生成、健康检查、Apply / Rollback、受管域名、Endpoint 解析、Gateway Link（跨网关认证）、EdgeMux（SNI 透传）、TCP 代理、Provider 诊断。
+Aegis 是一个管理跨项目服务入口的控制面板：通过 Web UI / CLI / HTTP API 管理域名路由、TCP/UDP 端口转发、TLS 证书、分布式节点和服务间认证，并把配置安全地下发到 Caddy / HAProxy。
+
+Go + SQLite（嵌入式，无外部数据库）+ React 前端，单二进制部署。
+
+## 功能总览
+
+| 版本 | 功能 |
+|------|------|
+| v1.9A | **ServiceAuth** — 服务间认证（Ed25519 ticket）+ Egress 出站网关 |
+| v1.9B | **DistNode** — 分布式节点运行时（静态 peer + HMAC + Transport RPC），默认启用 |
+| v1.9C | **CertStore + ACME** — 证书存储 + 内嵌 lego ACME 客户端（替代 certbot） |
+| v1.9C-2 | **FlowBridge** — 数据面实例管理 + 域名绑定实例（Aegis 只做 TLS 终止 + 转发） |
+
+完整能力清单见 `docs/design/feature-catalog.md`。
 
 ## Aegis 是什么
 
-- 一个管理跨项目服务入口的 CLI / API 工具
-- 一个安全的配置下发器（校验 → 备份 → 替换 → 重载 → 审计）
-- 一个后端服务健康检查器
-- 一个受管域名 DNS 验证与生命周期管理工具
+- 一个管理跨项目服务入口的 **CLI / API / Web UI** 工具
+- 一个安全的**配置下发器**（校验 → 备份 → 替换 → 重载 → 审计，支持回滚）
+- Caddy（80 HTTP）+ HAProxy（443 TLS SNI）的**配置生成器**
+- 一个分布式节点运行时（静态 peer + HMAC 认证 + Transport RPC）
+- 一个服务间认证网关（Ed25519 ticket + 拓扑发现）
+- 内置 ACME 客户端（自动申请 / 续期证书）
 
-## Aegis 不是什么（暂不实现）
-
-- 完整 PaaS 平台
-- 认证 / 授权系统
-- 灰度 / 金丝雀发布平台
-- Service Mesh
-- 多节点分布式网关
-- Docker / 数据库部署管理
-- 开放代理平台
-
-## 架构
-
-```
-CLI (Cobra) ────────────┐
-                         ├── Application Services ── Domain Logic ── Repository ── SQLite
-HTTP API (130+ routes) ─┘        │
-                                 ├── EndpointResolver (local → private → public → fail)
-                                 ├── ProxyAdapter (Caddy, HAProxy, 预留 Nginx)
-                                 ├── EdgeMux (HAProxy SNI passthrough → Caddy TLS)
-                                 ├── Gateway Link (HMAC-SHA256 cross-gateway auth)
-                                 ├── AuthMiddleware (Bearer Token + Admin Session)
-                                 └── Rate Limiter (login brute-force protection)
-```
-
-- **CLI** 只解析参数、调用 AppService、格式化输出——不含业务逻辑
-- **HTTP API** 复用同一批 Application Services
-- **ProxyAdapter** 抽象代理后端——当前 Caddy，未来可接入 Nginx
-- **EndpointResolver** 固定解析规则：local → private → public → fail
+**Aegis 不在数据路径中** — Caddy/HAProxy 独立承载流量，Aegis 只负责配置管理与生命周期。
 
 ## 环境要求
 
-- Go 1.22+
-- Caddy（可选——`apply --dry-run` 和 `validate` 无 Caddy 也能工作）
-- SQLite（嵌入式，无需外部数据库）
+| 组件 | 要求 |
+|------|------|
+| Go | 1.25+（go.mod 声明 `go 1.25.0`；旧版本会自动下载 toolchain） |
+| Node.js | 20+（仅构建前端需要） |
+| 运行时 | 无需外部数据库；SQLite 嵌入式 |
+| 服务器 | 见 `docs/runbooks/install-runbook.md`（Ubuntu 22.04/24.04 + Caddy 2.x + HAProxy 2.x） |
 
-## 安装
+> **国内网络提示**：Go 会自动下载 toolchain 和依赖，若失败请配置镜像：
+> ```bash
+> go env -w GOPROXY=https://goproxy.cn,direct
+> go env -w GOSUMDB=sum.golang.org
+> ```
+
+## 快速开始（本地开发）
 
 ```bash
-git clone <repo-url> aegis
-cd aegis
-go build -o aegis ./cmd/aegis/
-```
+# 1. 构建（注意：必须走 make，前端产物会自动嵌入二进制）
+make build          # Windows 无 make 时：
+                    #   cd ui && npm install && npm run build
+                    #   xcopy /E /I /Y ui\dist internal\uiassets\dist
+                    #   go build -o aegis ./cmd/aegis/
 
-## 快速开始
-
-### 1. 初始化
-
-```bash
+# 2. 初始化（创建 .aegis/ 目录、SQLite 数据库、备份目录）
 ./aegis init
-```
 
-创建：
-- `.aegis/config.yaml` — 配置文件
-- `.aegis/aegis.db` — SQLite 数据库（20+ 张表）
-- `.aegis/backups/` — 配置备份目录
-- `.aegis/Caddyfile` — 被管理的 Caddy 配置
-
-### 2. 创建项目
-
-```bash
-./aegis project create policy-page --description "策略管理应用"
-```
-
-### 3. 添加服务
-
-```bash
-./aegis service add policy-web \
-  --project policy-page \
-  --env prod \
-  --kind http
-```
-
-注意：Service 不直接绑定 upstream 地址，地址通过 Endpoint 管理。
-
-### 4. 添加 Endpoint
-
-```bash
-# 本地端点
-./aegis endpoint add policy-web --type local --address http://127.0.0.1:3001
-
-# 内网端点
-./aegis endpoint add policy-web --type private --address http://10.0.0.5:3001
-
-# 公网端点
-./aegis endpoint add policy-web --type public --address http://1.2.3.4:3001
-
-# 查看端点列表
-./aegis endpoint list policy-web
-```
-
-### 5. 添加路由
-
-```bash
-./aegis route add policy.example.com --service policy-web
-```
-
-### 6. 预览配置（Dry-run）
-
-```bash
-./aegis apply --dry-run
-```
-
-输出：
-```caddyfile
-policy.example.com {
-    encode gzip
-    reverse_proxy http://127.0.0.1:3001
-}
-```
-
-### 7. 应用配置
-
-```bash
-./aegis apply
-```
-
-完整流程：
-1. 读取 active 路由和受管域名
-2. 通过 EndpointResolver 解析可用端点（local → private → public）
-3. 生成 GatewayConfig
-4. 渲染 Caddyfile
-5. 写入临时文件
-6. 校验（`caddy validate`）
-7. 备份当前配置
-8. 替换正式配置
-9. 重载 Caddy
-10. 记录 apply_versions 和 operation_logs
-
-### 8. 健康检查
-
-```bash
-# 查看最新健康状态
-./aegis health
-
-# 实时检查所有服务
-./aegis health --all
-
-# 检查指定服务
-./aegis health policy-web
-```
-
-### 9. 维护模式
-
-```bash
-# 开启维护模式
-./aegis maintenance on policy.example.com --message "系统维护中"
-./aegis apply --dry-run
-
-# 关闭维护模式
-./aegis maintenance off policy.example.com
-./aegis apply
-```
-
-### 10. 路由切换
-
-```bash
-# 创建新版本服务
-./aegis service add policy-web-v2 \
-  --project policy-page \
-  --env preview \
-  --kind http
-
-# 为新服务添加端点
-./aegis endpoint add policy-web-v2 --type local --address http://127.0.0.1:3002
-
-# 切换路由
-./aegis route switch policy.example.com --service policy-web-v2
-./aegis apply --dry-run
-```
-
-### 11. 受管域名
-
-```bash
-# 添加受管域名
-./aegis managed-domain add login.customer.com \
-  --service policy-web \
-  --owner tenant_123 \
-  --target-type auth_page \
-  --target-ref auth_page_456
-
-# 输出 DNS 验证信息：
-#   Type:  dns_txt
-#   Name:  _aegis.login.customer.com
-#   Value: aegis-verify-xxx
-#
-# 在 DNS 中添加 TXT 记录后执行验证：
-./aegis managed-domain verify login.customer.com
-
-# 验证通过后启用：
-./aegis managed-domain enable login.customer.com
-
-# 应用配置：
-./aegis apply
-```
-
-受管域名规则：
-- 只能绑定到 Aegis 已注册的 Service
-- 不允许传入任意 upstream
-- 必须 DNS 验证后才能 active
-- pending_verification / failed / disabled 状态不生成 Caddy 配置
-
-### 12. 回滚
-
-```bash
-./aegis rollback
-```
-
-恢复到最近一次成功的配置备份。
-
-### 13. 启动 HTTP API
-
-```bash
+# 3. 启动 API（默认监听 127.0.0.1:7380）
 ./aegis serve --addr 127.0.0.1:7380
+
+# 4. 首次启动会向 stderr 打印管理员凭据：
+#    === AEGIS FIRST-RUN ADMIN CREDENTIALS ===
+#      Username: admin
+#      Password: <随机生成>
+#    请立即保存并登录修改。
+
+# 5. 打开 Web UI
+#    二进制自带前端：浏览器访问 http://127.0.0.1:7380
+#    开发模式热更新：cd ui && npm run dev   → http://localhost:3000
 ```
 
-API 默认监听 `127.0.0.1`，需要 Bearer Token 认证。
+> 开发模式（`reload_command` / `validate_command` 为空）会跳过 Caddy 校验和重载，
+> 无需 root 权限即可试用完整 CRUD 和 Apply 流程。
+
+## 生产部署
+
+### 端口规则 ⚠️ 极其重要
+
+云安全组**只开放 80 (TCP) 和 443 (TCP+UDP)**。跨机测试只能用这两个端口。
+
+| 端口 | 服务 | 用途 |
+|------|------|------|
+| 80 | Caddy | HTTP 反向代理 + Let's Encrypt |
+| 443 | HAProxy | TLS SNI 直通 → Caddy TLS |
+| 7380 | Aegis | 内部 API（默认仅 localhost，从不暴露公网） |
+
+### 一键部署 / 更新
 
 ```bash
-# 无 Token → 401
-curl http://127.0.0.1:7380/api/system/status
+# 构建 Linux 版并部署到 Server A / Server B
+make deploy-server-a          # 参数: SERVER_A=<IP> SSH_USER=ubuntu
+make deploy-server-b
 
-# 带 Token → 200
-curl http://127.0.0.1:7380/api/system/status \
-  -H "Authorization: Bearer change-me"
+# 安全更新（健康检查 → 备份 → 优雅停服 → 原子替换 → 启动 → 验证，失败自动给回滚命令）
+make update-server-a
+make update-server-b
+make update-all               # 依次更新 B → A
+
+# 输出包含面板 URL 和管理员密码
 ```
 
-## CLI 命令参考
+手动安装流程（Caddy/HAProxy 安装、systemd 单元、生产配置）见 **`docs/runbooks/install-runbook.md`**。
 
-### 系统
+### 运维
+
+| 场景 | 文档 |
+|------|------|
+| 回滚 | `docs/runbooks/rollback-runbook.md` |
+| 重启安全 | `docs/runbooks/restart-safety-runbook.md` |
+| 部署模型 | `docs/runbooks/deployment-model.md` |
+| 接受验证 | `docs/runbooks/runtime-acceptance-runbook.md` |
+
+## Web UI 概览
+
+登录后按模块组织：
+
+| 页面分组 | 内容 |
+|----------|------|
+| Command Center | 系统状态、Apply/Rollback/变更历史 |
+| Access | 服务间认证拓扑、节点、凭证（credential）、证书（CertStore） |
+| Exposure | TCP/UDP 端口暴露、FlowBridge 实例、透明代理规则 |
+| Fabric | 项目 / 服务 / 端点 / 路由（含 flowbridge upstream）管理 |
+| Observe | 健康检查、日志、追踪（trace）、DNS 状态 |
+| Release | 部署记录、更新 |
+| Runtime | distnode 成员、网关策略路由、路由表、Provider 诊断 |
+| Settings | 管理配置、API Token、出站规则（egress） |
+
+## CLI 使用
+
 ```bash
-aegis init                              # 初始化
-aegis serve --addr 127.0.0.1:7380       # 启动 HTTP API
-aegis settings show                     # 查看配置
+aegis --help                 # 全部命令
+aegis init                   # 初始化
+aegis serve --addr 127.0.0.1:7380
+aegis doctor                 # 环境自检
+aegis diagnostics export     # 导出诊断包
 ```
 
-### 项目
-```bash
-aegis project create <name> [--description "..."]
-aegis project list
-aegis project show <name-or-id>
-aegis project archive <name-or-id>
-```
+常用命令族：
 
-### 服务
 ```bash
-aegis service add <name> --project <project> [--env prod] [--kind http]
-aegis service list
-aegis service show <name-or-id>
-aegis service enable <name-or-id>
-aegis service disable <name-or-id>
-aegis service update <name-or-id> [--kind <kind>] [--env <env>] [--note <note>]
-```
-
-### 端点
-```bash
+# 项目 / 服务 / 端点 / 路由
+aegis project create <name>
+aegis service add <name> --project <project>
 aegis endpoint add <service> --type local --address http://127.0.0.1:3001
-aegis endpoint add <service> --type private --address http://10.0.0.5:3001
-aegis endpoint add <service> --type public --address http://1.2.3.4:3001
-aegis endpoint list <service>
-aegis endpoint enable <endpoint-id>
-aegis endpoint disable <endpoint-id>
-```
-
-### 路由
-```bash
 aegis route add <domain> --service <service>
-aegis route list
-aegis route show <domain-or-id>
-aegis route enable <domain-or-id>
-aegis route disable <domain-or-id>
-aegis route switch <domain-or-id> --service <service>
-```
 
-### 受管域名
-```bash
-aegis managed-domain add <domain> --service <service> --owner <ref> --target-type <type> --target-ref <ref>
-aegis managed-domain verify <domain-or-id>
-aegis managed-domain enable <domain-or-id>
-aegis managed-domain disable <domain-or-id>
-aegis managed-domain list
-```
-
-### 配置下发
-```bash
-aegis apply                  # 完整下发
+# 配置下发（校验 → 备份 → 替换 → 重载，可回滚）
 aegis apply --dry-run        # 仅预览
-aegis validate               # 生成并校验
-aegis rollback               # 回滚
-aegis apply history          # 下发历史
+aegis apply                  # 执行
+aegis rollback               # 回滚最近一次成功版本
+aegis apply history
+
+# 其他
+aegis managed-domain add/verify/enable <domain>
+aegis exposure activate <exposure-id>
+aegis health [service]
+aegis maintenance on/off <domain>
+aegis logs
 ```
 
-### 维护模式
-```bash
-aegis maintenance on <domain> [--message "..."]
-aegis maintenance off <domain>
-aegis maintenance status
+## HTTP API
+
+**认证方式（4 种）：**
+
+| 认证 | 覆盖范围 |
+|------|----------|
+| Admin Session Cookie | `/api/` 全部（登录后），HttpOnly + SameSite=Strict |
+| Bearer Token | `/api/`（单一静态 admin token） |
+| DistNode HMAC | `/api/distnode/v1/call`（节点间 RPC） |
+| ServiceAuth Ed25519 ticket | `/api/service-auth/v1/`（服务间调用，白名单制） |
+
+**核心端点：**
+
+```
+GET  /api/system/status            # 系统状态 + 版本
+GET  /api/healthz                  # 存活探针
+POST /api/apply                    # 执行配置下发
+GET  /api/config/preview           # 预览 Caddyfile/HAProxy 配置
+
+# 业务 CRUD（projects / services / endpoints / routes / managed-domains）
+GET|POST|PATCH /api/{resource}
+
+# 管理后台（/api/admin/v1/）
+POST /api/admin/v1/auth/login
+GET  /api/admin/v1/distnode/status            # 分布式节点状态
+GET  /api/admin/v1/nodes                      # 节点列表
+GET  /api/admin/v1/certificates               # 证书管理
+POST /api/admin/v1/flowbridge                 # FlowBridge 实例
+GET  /api/admin/v1/service-auth/topology      # 服务调用拓扑
 ```
 
-### 健康检查
-```bash
-aegis health                  # 查看最新结果
-aegis health <service>        # 检查指定服务
-aegis health --all            # 检查所有服务
-```
-
-### 日志
-```bash
-aegis logs                    # 查看操作日志
-aegis logs --action apply     # 按操作过滤
-aegis logs --target <id>      # 按目标过滤
-```
-
-## HTTP API 参考
-
-所有 API 需要 `Authorization: Bearer <token>` 头。
-
-### 系统
-```
-GET  /api/system/status
-```
-
-### 项目
-```
-GET    /api/projects
-POST   /api/projects
-GET    /api/projects/:id
-PATCH  /api/projects/:id
-POST   /api/projects/:id/archive
-```
-
-### 服务
-```
-GET    /api/services
-POST   /api/services
-GET    /api/services/:id
-PATCH  /api/services/:id
-POST   /api/services/:id/enable
-POST   /api/services/:id/disable
-```
-
-### 端点
-```
-GET    /api/services/:id/endpoints
-POST   /api/services/:id/endpoints
-PATCH  /api/endpoints/:id
-POST   /api/endpoints/:id/enable
-POST   /api/endpoints/:id/disable
-DELETE /api/endpoints/:id
-```
-
-### 路由
-```
-GET    /api/routes
-POST   /api/routes
-GET    /api/routes/:id
-PATCH  /api/routes/:id
-POST   /api/routes/:id/enable
-POST   /api/routes/:id/disable
-POST   /api/routes/:id/switch-service
-POST   /api/routes/:id/maintenance-on
-POST   /api/routes/:id/maintenance-off
-```
-
-### 受管域名
-```
-GET    /api/managed-domains
-POST   /api/managed-domains
-GET    /api/managed-domains/:id
-POST   /api/managed-domains/:id/verify
-POST   /api/managed-domains/:id/enable
-POST   /api/managed-domains/:id/disable
-DELETE /api/managed-domains/:id
-```
-
-### 配置 / 下发
-```
-GET  /api/config/preview
-GET  /api/config/diff
-POST /api/apply
-POST /api/apply/dry-run
-POST /api/rollback
-GET  /api/apply/history
-```
-
-### 健康 / 日志 / 设置
-```
-GET  /api/health
-POST /api/health/check-all
-GET  /api/health/services/:id
-GET  /api/logs
-GET  /api/settings
-PATCH /api/settings
-```
+对外 API 使用指南见 `docs/external-api-guide.md`（以 `internal/httpapi/routes.go` 为准）。
 
 ## 配置文件
 
-开发环境默认配置（`.aegis/config.yaml`）：
-
-```yaml
-proxy:
-  provider: caddy
-  caddyfile_path: ./.aegis/Caddyfile
-  caddy_binary: caddy
-  caddy_data_dir: ""
-  reload_command: ""
-  validate_command: ""
-  backup_dir: ./.aegis/backups
-  email: ""
-  acme_server: ""
-
-store:
-  sqlite_path: ./.aegis/aegis.db
-
-server:
-  addr: 127.0.0.1:7380
-  admin_token: change-me
-
-managed_domain:
-  gateway_domain: ""
-
-runtime:
-  config_dir: ./.aegis/config
-  data_dir: ./.aegis
-```
-
-### 生产环境配置
+默认路径 `.aegis/config.yaml`（0600 权限），生产环境 `/etc/aegis/config.yaml`：
 
 ```yaml
 proxy:
   provider: caddy
   caddyfile_path: /etc/caddy/Caddyfile
-  caddy_binary: caddy
-  caddy_data_dir: /var/lib/caddy/.local/share/caddy
   reload_command: systemctl reload caddy
   validate_command: caddy validate --config {{config_path}}
   backup_dir: /var/lib/aegis/backups
-  email: admin@example.com
-  acme_server: "" # 生产 CA；预发布测试时填写 Let's Encrypt staging directory
+  email: admin@example.com        # ACME 邮箱
+  acme_server: ""                 # 生产 CA；测试用 Let's Encrypt staging
 
 store:
   sqlite_path: /var/lib/aegis/aegis.db
 
 server:
-  addr: 127.0.0.1:7380
+  addr: 127.0.0.1:7380            # API 端口，代码中从不硬编码
   admin_token: "<强随机令牌>"
 
 managed_domain:
@@ -465,101 +220,33 @@ runtime:
   data_dir: /var/lib/aegis
 ```
 
-使用：
 ```bash
 aegis --config /etc/aegis/config.yaml apply
 ```
 
-### 开发模式
+## 核心概念
 
-- `reload_command: ""` 和 `validate_command: ""` 为空时跳过对应步骤
-- 使用当前目录下的 `.aegis/` 目录
-- 无需 root 权限
+- **Service** — 被管理的后端服务（http/tcp/file），不直接存 upstream，地址由 Endpoint 管理
+- **Endpoint** — 服务端点，解析顺序固定 `local → private → public → fail`（不做智能调度）
+- **Route** — 域名 → 服务映射；可绑定 FlowBridge 实例（数据面端口）
+- **ManagedDomain** — 外部接入的受管域名，必须 DNS TXT 验证后才能激活
+- **Exposure** — TCP/UDP 端口转发（`tcp://` / `udp://` / `unix://` 目标）
+- **Credential** — AES-256-GCM 加密的数据库凭据，Endpoint 可用 `credential://` 引用
+- **DistNode** — 跨节点抽象层：静态 peer + HMAC + Transport RPC，无 HTTP 心跳
+- **ServiceAuth** — Ed25519 ticket 服务间认证，按名字寻址调用
+- **FlowBridge** — 数据面实例（控制面 /health 探活），域名绑定后 Aegis 只做 TLS 终止 + 转发
 
-## 项目结构
+## 文档索引
 
-```
-aegis/
-  go.mod
-  README.md
-  cmd/aegis/main.go                    # 入口 & 全量装配
-  internal/
-    app/                               # 服务容器与接口定义
-    config/                            # YAML 配置加载
-    store/                             # SQLite 数据库 & 迁移
-    id/                                # ID 生成器
-    project/                           # 项目：模型 / 仓库 / 应用服务
-    service/                           # 服务：模型 / 仓库 / 应用服务
-    endpoint/                          # 端点：模型 / 仓库 / 解析器
-    route/                             # 路由：模型 / 仓库 / 应用服务
-    manageddomain/                     # 受管域名：模型 / 仓库 / 应用服务 / DNS检查
-    proxy/                             # 代理抽象层
-      adapter.go                       #   ProxyAdapter 接口 + GatewayConfig
-      caddy/                           #   Caddy 适配器（渲染 / 校验 / 重载）
-      nginx/                           #   Nginx 桩（未实现）
-    apply/                             # 配置下发：计划 / 执行 / 回滚 / diff
-    health/                            # 健康检查：TCP 连接检测
-    logs/                              # 操作日志：审计追踪
-    token/                             # API Token：模型 / 中间件 / 仓库
-    httpapi/                           # HTTP API 服务
-      handlers/                        #   21 个 REST 端点处理器
-    cli/                               # Cobra CLI 命令
-  templates/caddy/Caddyfile.tmpl
-  examples/simple/README.md
-```
-
-## 核心领域模型
-
-### Project
-项目是服务和路由的顶层分组单位。
-
-### Service
-代表一个被 Aegis 管理的后端服务。`Kind` 支持 `http` / `tcp` / `file`。不直接存储 upstream 地址——地址由 Endpoint 管理。
-
-### Endpoint
-服务的网络端点。按优先级 `local > private > public` 解析。每个 Endpoint 做 TCP 连接检查（2s 超时）。
-
-### Route
-管理员维护的内部路由。将域名映射到服务。
-
-### ManagedDomain
-外部业务方接入的受控域名。必须通过 DNS TXT 验证后才能激活。只能绑定 Aegis 已注册的 Service。
-
-### ApplyVersion
-每次配置下发的记录：版本号、备份路径、渲染配置、状态。
-
-### HealthCheck
-每端点健康检查结果：状态、延迟、消息。
-
-### OperationLog
-所有操作的审计日志：操作类型、目标、结果、执行者（cli / api / system）。
-
-### APIToken
-HTTP API 的 Bearer Token。第一版从 config 加载 admin token，数据库模型已预留。
-
-## 数据库表
-
-共 20+ 张表：`projects`, `services`, `endpoints`, `routes`, `managed_domains`, `health_checks`, `apply_versions`, `operation_logs`, `api_tokens`, `exposures`, `listeners`, `edge_mux_rules`, `nodes`, `upgrade_sessions`, `spaces`, `admin_users`, `admin_sessions`, `apply_logs`, `audit_logs`, `node_events`, `trusted_gateways`, `deployments`
-
-## 关键设计决策
-
-- **Endpoint Resolver** 不做智能调度——严格按 `local → private → public` 顺序尝试，第一个 TCP 可达即返回
-- **ManagedDomain** 不允许传入自定义 upstream——只能绑定已注册的 Service
-- **HTTP API** 默认只监听 127.0.0.1——不暴露公网
-- **所有危险操作可审计**——OperationLog 含 actor 追踪
-- **所有配置变更可回滚**——Apply 前自动备份，Rollback 恢复最近成功版本
-- **Caddyfile 语法不污染 domain model**——通过 GatewayConfig / RouteConfig 隔离
-
-## 后续路线图
-
-- [ ] Nginx Adapter 真实实现
-- [ ] Caddy Admin API 适配器
-- [ ] Web UI
-- [ ] 多 Gateway Node 管理
-- [ ] 流量灰度 / 百分比分流
-- [ ] Waiting Room
-- [ ] 完整 RBAC / 多租户
-- [ ] Workspace / Client 管理
+| 文档 | 内容 |
+|------|------|
+| `docs/external-api-guide.md` | 对外 API 使用指南（面向接入方） |
+| `docs/flowbridge-integration.md` | FlowBridge 实例接入 |
+| `docs/serviceauth.md` | ServiceAuth 使用说明 |
+| `docs/apply-safety.md` | Apply 安全机制 / 回滚 |
+| `docs/runbooks/` | 安装 / 回滚 / 重启 / 验收运维手册 |
+| `docs/design/` | 各项设计文档（能力边界、网关抽象等） |
+| `CLAUDE.md` | 项目全貌手册（面向 AI Agent / 贡献者） |
 
 ## License
 

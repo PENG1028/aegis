@@ -29,6 +29,12 @@ func ClassifyIP(host string, selfIPs []string) IPClassification {
 	if ip.IsPrivate() {
 		return IPPrivate
 	}
+	if ip.IsLinkLocalUnicast() {
+		// 169.254.x.x / fe80:: — non-routable, treated as internal (matches
+		// IsPrivateOrLinkLocal). Classifying them as IPInvalid made
+		// CheckRouteSafety silently skip routes pointing at link-local hosts.
+		return IPPrivate
+	}
 	if ip.IsGlobalUnicast() {
 		return IPPublic
 	}

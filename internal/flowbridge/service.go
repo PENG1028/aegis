@@ -31,7 +31,7 @@ func (s *Service) log(ctx context.Context, action, resource, id, status, message
 	if s.logSvc == nil {
 		return
 	}
-	s.log(ctx, action, resource, id, status, message, actor)
+	s.logSvc.Log(ctx, action, resource, id, status, message, actor)
 }
 
 // SetProbe overrides the health probe (used by tests).
@@ -175,7 +175,9 @@ func (s *Service) Check(ctx context.Context, id string) (*Instance, error) {
 	inst.LastHealthLatency = latency
 	inst.LastHealthMessage = message
 	inst.LastCheckedAt = time.Now()
-	if err := s.repo.Update(inst); err != nil {
+	// UpdateHealth only touches the health columns: a full-row Update here
+	// could overwrite concurrent admin edits made between Get and Update.
+	if err := s.repo.UpdateHealth(id, status, latency, message, inst.LastCheckedAt); err != nil {
 		return nil, fmt.Errorf("persist health: %w", err)
 	}
 	return inst, nil

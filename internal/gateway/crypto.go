@@ -39,6 +39,21 @@ func GenerateAuthHeader(gatewayID, secret string) string {
 // DefaultMaxAge is the default maximum age for a gateway link auth header.
 const DefaultMaxAge = 5 * time.Minute
 
+// gatewayIDFromAuthHeader extracts the gateway ID from an auth header
+// ("Aegis <id>:<ts>:<sig>", or legacy "Aegis <id>:<sig>"). Returns "" for
+// malformed headers.
+func gatewayIDFromAuthHeader(header string) string {
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) != 2 || parts[0] != "Aegis" {
+		return ""
+	}
+	payload := strings.Split(parts[1], ":")
+	if len(payload) == 0 || payload[0] == "" {
+		return ""
+	}
+	return payload[0]
+}
+
 // VerifyAuthHeader validates an auth header against the expected secret.
 // Uses DefaultMaxAge for replay protection.
 func VerifyAuthHeader(header, gatewayID, secret string) bool {

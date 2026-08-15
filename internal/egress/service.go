@@ -103,29 +103,39 @@ func (c *RuleChecker) Refresh() error {
 	return nil
 }
 
-// IsAllowlisted returns true if domain matches an active allow rule.
-// Allowlisted domains bypass internal DNS resolution → upstream only.
-func (c *RuleChecker) IsAllowlisted(domain string) bool {
+// Decide resolves allow/block for a domain: the highest-priority matching
+// rule wins (Priority 0 = highest); among equal priorities, allow wins.
+// Returns matched=false when no rule matches.
+func (c *RuleChecker) Decide(domain string) (allowed bool, matched bool) {
 	c.mu.RLock()
 	rules := c.cache
 	c.mu.RUnlock()
+
+	bestPriority := int(^uint(0) >> 1) // max int
+	bestAllow := false
+	matched = false
 	for _, r := range rules {
-		if r.Type == TypeAllow && r.MatchesDomain(domain) {
-			return true
+		if !r.MatchesDomain(domain) {
+			continue
+		}
+		if r.Priority < bestPriority || (r.Priority == bestPriority && r.Type == TypeAllow) {
+			bestPriority = r.Priority
+			bestAllow = r.Type == TypeAllow
+			matched = true
 		}
 	}
-	return false
+	return bestAllow, matched
+}
+
+// IsAllowlisted returns true if domain matches an active allow rule.
+// Allowlisted domains bypass internal DNS resolution → upstream only.
+func (c *RuleChecker) IsAllowlisted(domain string) bool {
+	allowed, matched := c.Decide(domain)
+	return matched && allowed
 }
 
 // IsBlocked returns true if domain matches an active block rule.
 func (c *RuleChecker) IsBlocked(domain string) bool {
-	c.mu.RLock()
-	rules := c.cache
-	c.mu.RUnlock()
-	for _, r := range rules {
-		if r.Type == TypeBlock && r.MatchesDomain(domain) {
-			return true
-		}
-	}
-	return false
+	allowed, matched := c.Decide(domain)
+	return matched && !allowed
 }

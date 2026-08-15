@@ -39,8 +39,10 @@ const (
 	loginLockDuration = 60 * time.Second
 )
 
-// loginRate tracks login attempts per IP.
+// loginRate tracks login attempts per IP. mu guards the mutable fields:
+// checkLoginRate is called from concurrent request goroutines.
 type loginRate struct {
+	mu          sync.Mutex
 	attempts    int
 	firstSeen   time.Time
 	lockedUntil time.Time
@@ -60,8 +62,11 @@ func init() {
 					loginRates.Delete(key)
 					return true
 				}
+				lr.mu.Lock()
+				expired := now.After(lr.lockedUntil) && now.Sub(lr.firstSeen) > 1*time.Hour
+				lr.mu.Unlock()
 				// Remove entries that are not locked and haven't been seen in 1 hour
-				if now.After(lr.lockedUntil) && now.Sub(lr.firstSeen) > 1*time.Hour {
+				if expired {
 					loginRates.Delete(key)
 				}
 				return true
@@ -79,6 +84,9 @@ func checkLoginRate(ip string) error {
 		loginRates.Store(ip, &loginRate{firstSeen: now, attempts: 1})
 		return nil
 	}
+
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
 
 	// Check if locked out
 	if now.Before(lr.lockedUntil) {

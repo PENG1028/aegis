@@ -28,15 +28,18 @@ func (h *Handlers) ListExposures(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) CreateExposure(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Type      string `json:"type"`
-		Mode      string `json:"mode"`
-		Host      string `json:"host"`
-		Port      int    `json:"port"`
-		Path      string `json:"path"`
-		ServiceID string `json:"service_id"`
-		NodeID    string `json:"node_id"`
-		OwnerRef  string `json:"owner_ref"`
-		TargetRef string `json:"target_ref"`
+		Type           string `json:"type"`
+		Mode           string `json:"mode"`
+		Host           string `json:"host"`
+		Port           int    `json:"port"`
+		Path           string `json:"path"`
+		TargetHost     string `json:"target_host"`
+		TargetPort     int    `json:"target_port"`
+		ServiceID      string `json:"service_id"`
+		NodeID         string `json:"node_id"`
+		OwnerRef       string `json:"owner_ref"`
+		TargetRef      string `json:"target_ref"`
+		AllowPublicTCP bool   `json:"allow_public_tcp"`
 	}
 	if err := decodeJSON(r, &input); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -46,6 +49,8 @@ func (h *Handlers) CreateExposure(w http.ResponseWriter, r *http.Request) {
 		Type: input.Type, Mode: input.Mode, Host: input.Host, Port: input.Port,
 		Path: input.Path, ServiceID: input.ServiceID, NodeID: input.NodeID,
 		OwnerRef: input.OwnerRef, TargetRef: input.TargetRef,
+		TargetHost: input.TargetHost, TargetPort: input.TargetPort,
+		AllowPublicTCP: input.AllowPublicTCP,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -133,6 +138,9 @@ func exposureToMap(e exposure.Exposure) map[string]interface{} {
 		"node_id":          e.NodeID,
 		"owner_ref":        e.OwnerRef,
 		"target_ref":       e.TargetRef,
+		"target_host":      e.TargetHost,
+		"target_port":      e.TargetPort,
+		"allow_public_tcp": e.AllowPublicTCP,
 		"status":           e.Status,
 		"message":          e.Message,
 		"generates_config": exposure.GeneratesConfig(e.Type),

@@ -116,7 +116,11 @@ func (a *Addr) IsUDP() bool {
 //	"unix:///run/app.sock"    → "unix//run/app.sock"
 func (a *Addr) CaddyTarget() string {
 	if a.IsUnix() {
-		return "unix/" + a.Path[1:] // Caddy uses unix//path (single slash after unix/)
+		// Caddy syntax is "unix//abs/path": "unix/" followed by the
+		// absolute path (which itself starts with "/"). Dropping the
+		// leading slash produced "unix/run/app.sock", which Caddy
+		// treats as a relative path and fails to dial.
+		return "unix/" + a.Path
 	}
 	return a.DialString()
 }

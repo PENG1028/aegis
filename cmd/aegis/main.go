@@ -46,7 +46,6 @@ import (
 	serviceauthaegis "aegis/internal/serviceauth/aegis"
 	"aegis/internal/space"
 	"aegis/internal/store"
-	"aegis/internal/sync"
 	"aegis/internal/tcp"
 	"aegis/internal/tlslifecycle"
 	"aegis/internal/token"
@@ -193,9 +192,6 @@ func main() {
 		}
 	}
 	stateVer := cluster.NewStateVersion(db)
-	reconcileLoop := sync.NewReconcileLoop(nodeRepo, leaderSvc, stateVer)
-	reconcileLoop.Start()
-	defer reconcileLoop.Stop()
 	healthSvc := health.NewAppService(healthRepo, serviceRepo, endpointRepo, logSvc)
 	endpointResolver := endpoint.NewResolver(endpointRepo)
 	provRegistry := provider.NewRegistry()
@@ -316,26 +312,45 @@ func main() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			instances, err := flowbridgeSvc.List(context.Background())
-			if err != nil {
-				continue
-			}
-			for _, inst := range instances {
-				if !inst.Enabled {
-					continue
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Fprintf(os.Stderr, "flowbridge-health: panic in check loop: %v\n", r)
+					}
+				}()
+				instances, err := flowbridgeSvc.List(context.Background())
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "flowbridge-health: list instances failed: %v\n", err)
+					return
 				}
-				if _, err := flowbridgeSvc.Check(context.Background(), inst.ID); err != nil {
-					fmt.Fprintf(os.Stderr, "flowbridge-health: check %s failed: %v\n", inst.ID, err)
+				for _, inst := range instances {
+					if !inst.Enabled {
+						continue
+					}
+					if _, err := flowbridgeSvc.Check(context.Background(), inst.ID); err != nil {
+						fmt.Fprintf(os.Stderr, "flowbridge-health: check %s failed: %v\n", inst.ID, err)
+					}
 				}
-			}
+			}()
 		}
 	}()
 	if acmeClient != nil {
 		renewalChecker := certstore.NewCertRenewalChecker(certStoreSvc, acmeClient)
 		renewalChecker.SetRenewalCoordinator(applySvc)
 		go func() {
+			// run performs one renewal scan. A panic here must not kill the
+			// 12h renewal loop permanently (renewals would silently stop).
 			run := func() {
-				expiring, err := renewalChecker.Check(context.Background(), 30)
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Fprintf(os.Stderr, "cert-renewal: panic in renewal loop: %v\n", r)
+					}
+				}()
+				// Bound the whole scan: a stuck ACME request must not block
+				// renewals forever.
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				defer cancel()
+				expiring, err := renewalChecker.Check(ctx, 30)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "cert-renewal: scan failed: %v\n", err)
 					return
@@ -351,11 +366,11 @@ func main() {
 					return
 				}
 				// Applying first ensures the Caddy HTTP-01 proxy route exists.
-				if _, err := applySvc.ForceApply(context.Background()); err != nil {
+				if _, err := applySvc.ForceApply(ctx); err != nil {
 					fmt.Fprintf(os.Stderr, "cert-renewal: prepare challenge route: %v\n", err)
 					return
 				}
-				for _, result := range renewalChecker.RenewExpiring(context.Background(), 30) {
+				for _, result := range renewalChecker.RenewExpiring(ctx, 30) {
 					if result.PendingApply {
 						_ = pendingState.MarkPending("certificate renewed but provider reload is pending: " + result.CertID)
 					}
@@ -549,7 +564,7 @@ func main() {
 
 	// v1.9B: Distributed Node Runtime
 	var dn *distnode.DistNode
-	if cfg.DistNode.Enabled {
+	if cfg.DistNode.Enabled != nil && *cfg.DistNode.Enabled {
 		distCfg := distnode.Config{
 			ID:           cfg.DistNode.ID,
 			Name:         cfg.DistNode.Name,
@@ -664,7 +679,6 @@ func main() {
 			tcpMgr.Shutdown()
 			udpMgr.Shutdown()
 			transparentMgr.Shutdown()
-			reconcileLoop.Stop()
 			if backupMgr != nil {
 				backupMgr.Stop()
 			}

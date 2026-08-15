@@ -72,19 +72,24 @@ func (rc *Reachability) checkAll() {
 
 	var wg sync.WaitGroup
 	results := make(map[string]bool, len(nodes))
+	var resultsMu sync.Mutex // guards results: written from probe goroutines and this loop
 
 	for i := range nodes {
 		n := &nodes[i]
 
 		// Skip self
 		if rc.currentID != "" && n.NodeID == rc.currentID {
+			resultsMu.Lock()
 			results[n.NodeID] = true // self is always reachable
+			resultsMu.Unlock()
 			continue
 		}
 
 		// Skip nodes with no private IP
 		if n.PrivateIP == "" {
+			resultsMu.Lock()
 			results[n.NodeID] = false
+			resultsMu.Unlock()
 			continue
 		}
 
@@ -92,7 +97,9 @@ func (rc *Reachability) checkAll() {
 		go func(nodeID, privateIP string) {
 			defer wg.Done()
 			reachable := rc.probe(privateIP)
+			resultsMu.Lock()
 			results[nodeID] = reachable
+			resultsMu.Unlock()
 			if !reachable {
 				log.Printf("[dns] reachability: node %s (%s) not reachable via private IP", nodeID, privateIP)
 			}

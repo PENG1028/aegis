@@ -7,7 +7,8 @@ import (
 
 func TestApplyDistNodeDefaultsCanonicalizesAegisNodeIDs(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.DistNode.Enabled = true
+	enabled := true
+	cfg.DistNode.Enabled = &enabled
 	cfg.DistNode.ID = "VM-0-11-ubuntu"
 	cfg.DistNode.Name = "VM-0-11-ubuntu"
 	cfg.DistNode.Secret = "test-secret"

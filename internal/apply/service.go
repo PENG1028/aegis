@@ -14,7 +14,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -152,7 +151,6 @@ func (s *AppService) apply(ctx context.Context, force bool) (*ApplyPlan, error) 
 	if s.pendingState != nil {
 		pendingRevision = s.pendingState.PendingRevision()
 	}
-	version := fmt.Sprintf("v%s", time.Now().Format("20060102_150405"))
 	opID := core.NewID("apply")
 	stateVersion := uint64(time.Now().Unix())
 
@@ -210,22 +208,9 @@ func (s *AppService) apply(ctx context.Context, force bool) (*ApplyPlan, error) 
 	s.clearPending(pendingRevision)
 	s.writeApplyLog(opID, stateVersion, s.cfg.Proxy.Provider, "success", stepLog, "")
 
-	// 5. Record apply version
-	backupPath := filepath.Join(s.cfg.Proxy.BackupDir, fmt.Sprintf("Caddyfile.%s.bak", time.Now().Format("20060102_150405")))
-	av := &ApplyVersion{
-		ID:             core.NewID("apply"),
-		Version:        version,
-		ConfigPath:     s.cfg.Proxy.CaddyfilePath,
-		BackupPath:     backupPath,
-		RenderedConfig: renderedStr,
-		Status:         "success",
-		Message:        fmt.Sprintf("applied to %d providers", len(applyResult.Provider)),
-		CreatedAt:      time.Now(),
-	}
-	if err := s.applyRepo.Create(av); err != nil {
-		s.logSvc.Log(ctx, "apply.record", "", "", "failed",
-			fmt.Sprintf("failed to record apply version: %v", err), "system")
-	}
+	// Note: the ApplyVersion record (with real backup files) is written by
+	// Workflow.apply — both the CLI and the HTTP/UI paths now share one
+	// record source, so history and rollback work identically everywhere.
 
 	return &ApplyPlan{
 		RenderedConfig: renderedStr,
@@ -248,6 +233,10 @@ func (s *AppService) History(ctx context.Context) ([]ApplyVersion, error) {
 
 // Rollback rolls back to the last successful apply or a specific version.
 func (s *AppService) Rollback(ctx context.Context, targetVersion string) error {
+	// Rollback mutates the same provider configs as apply — serialize it.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if targetVersion != "" {
 		versions, err := s.applyRepo.FindAll(200)
 		if err != nil {
@@ -274,12 +263,11 @@ func (s *AppService) Rollback(ctx context.Context, targetVersion string) error {
 			return fmt.Errorf("backup path %s is outside backup directory", backupPath)
 		}
 
-		data, err := os.ReadFile(backupPath)
-		if err != nil {
-			return fmt.Errorf("read backup: %w", err)
-		}
-		if err := os.WriteFile(s.cfg.Proxy.CaddyfilePath, data, 0640); err != nil {
-			return fmt.Errorf("restore: %w", err)
+		// Restore via the workflow: validate → write → reload, all under the
+		// workflow lock. The old code only wrote the file and reported
+		// success while the running config stayed untouched.
+		if err := s.workflow.RestoreBackup(ctx, backupPath); err != nil {
+			return err
 		}
 
 		now := time.Now()

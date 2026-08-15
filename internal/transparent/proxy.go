@@ -132,6 +132,9 @@ func (p *TransparentProxy) acceptLoop() {
 			case <-p.stopCh:
 				return
 			default:
+				// Transient accept errors (EMFILE etc.) must not spin at 100%
+				// CPU. Back off briefly, mirroring tcp.Proxy's deadline logic.
+				time.Sleep(100 * time.Millisecond)
 				continue
 			}
 		}

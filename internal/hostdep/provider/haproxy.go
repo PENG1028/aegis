@@ -237,7 +237,13 @@ func (p *HAProxyProvider) applyOne(cf ConfigFile) error {
 
 	// 4. Atomic replace
 	if err := os.Rename(tmpFile, configPath); err != nil {
-		data, _ := os.ReadFile(tmpFile)
+		// Fallback: read+write if rename fails (cross-filesystem).
+		// Never swallow the read error: writing nil data would replace the
+		// live config with an empty (but valid) file and wipe every site.
+		data, err := os.ReadFile(tmpFile)
+		if err != nil {
+			return fmt.Errorf("read temp config for fallback write: %w", err)
+		}
 		if err := os.WriteFile(configPath, data, 0644); err != nil {
 			return fmt.Errorf("write config: %w", err)
 		}
@@ -263,8 +269,17 @@ func (p *HAProxyProvider) reload() error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		errMsg := string(output)
-		// Fallback: haproxy -sf
-		cmd2 := exec.Command("haproxy", "-f", p.configPath, "-sf", "$(pidof haproxy)")
+		// Fallback: haproxy -sf <pid>. "$(pidof haproxy)" is a shell
+		// construct; exec.Command runs without a shell, so the literal string
+		// was passed as the PID and the fallback always failed. Resolve the
+		// PID first.
+		pidOut, pidErr := exec.Command("pidof", "haproxy").Output()
+		pid := strings.TrimSpace(string(pidOut))
+		if pidErr != nil || pid == "" {
+			return fmt.Errorf("haproxy reload failed (systemctl): %s\nstderr: %s\nfallback: pidof haproxy: %v",
+				err.Error(), errMsg, pidErr)
+		}
+		cmd2 := exec.Command("haproxy", "-f", p.configPath, "-sf", pid)
 		out2, err2 := cmd2.CombinedOutput()
 		if err2 != nil {
 			return fmt.Errorf("haproxy reload failed (systemctl): %s\nstderr: %s\nhaproxy -sf also failed: %s",

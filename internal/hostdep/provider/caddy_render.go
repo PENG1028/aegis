@@ -159,11 +159,15 @@ func renderSingleRoute(buf *bytes.Buffer, route RouteSpec, siteAddr string) {
 // ============================================================================
 
 // sanitizeCaddyValue strips characters that would break Caddyfile syntax.
+// A bare double quote inside a quoted Caddyfile string would terminate the
+// string early and corrupt the whole file (validate catches it, but only
+// after blocking the apply).
 func sanitizeCaddyValue(s string) string {
 	s = strings.ReplaceAll(s, "\n", "")
 	s = strings.ReplaceAll(s, "\r", "")
 	s = strings.ReplaceAll(s, "{", "")
 	s = strings.ReplaceAll(s, "}", "")
+	s = strings.ReplaceAll(s, `"`, "")
 	return s
 }
 

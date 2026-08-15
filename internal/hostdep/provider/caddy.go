@@ -229,8 +229,13 @@ func (p *CaddyProvider) stageOne(cf ConfigFile) (string, error) {
 
 	// 4. Atomic replace
 	if err := os.Rename(tmpFile, configPath); err != nil {
-		// Fallback: read+write if rename fails (cross-filesystem)
-		data, _ := os.ReadFile(tmpFile)
+		// Fallback: read+write if rename fails (cross-filesystem).
+		// Never swallow the read error: writing nil data would replace the
+		// live config with an empty (but valid) file and wipe every site.
+		data, err := os.ReadFile(tmpFile)
+		if err != nil {
+			return "", fmt.Errorf("read temp config for fallback write: %w", err)
+		}
 		if err := writeCaddyConfig(configPath, data); err != nil {
 			return "", fmt.Errorf("write config: %w", err)
 		}
