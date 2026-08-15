@@ -16,7 +16,7 @@
 | ACK quorum | ❌ fake_only | FakeCluster only |
 | ACK timeout detection | ❌ fake_only | FakeCluster only |
 | Drift detection | ❌ fake_only | FakeCluster.CheckDrift() |
-| Reconcile repair | ❌ fake_only | ReconcileLoop exists but untested |
+| Reconcile repair | ❌ removed | ReconcileLoop 已随 internal/sync 删除（v1.9C-3） |
 | Follower write protection | ❌ unsupported | Auth layer only; no cluster-level guard |
 | Multi-node production | ❌ unsupported | Beyond current scope |
 

@@ -28,12 +28,14 @@ Aegis 是一个**个人基础设施网关控制平面**（Go + SQLite + React UI
 - NOT 在数据路径中 — Caddy/HAProxy 独立服务流量
 - NOT PaaS, NOT Service Mesh, NOT Docker 管理平台
 
-**版本：** v1.9B | **Go 1.22+** | **SQLite（嵌入式）** | **React + TypeScript 前端**
+**版本：** v1.9C-3 | **Go 1.22+** | **SQLite（嵌入式）** | **React + TypeScript 前端**
 
 功能子版本（同一二进制内共存）：
 - **v1.9A** — ServiceAuth（服务间认证 + Egress 出站网关）
-- **v1.9B** — DistNode（分布式节点运行时，默认启用）
+- **v1.9B** — DistNode（分布式节点运行时，默认启用；显式 `enabled: false` 受尊重）
 - **v1.9C** — CertStore + ACME（证书存储 + 内嵌 lego ACME 客户端）
+- **v1.9C-2** — FlowBridge（数据面实例管理 + 域名绑定 flowbridge upstream）
+- **v1.9C-3** — 大修批次：回滚链路真实备份、/call 强制 ticket、服务名抢占/封禁自愈拦截、unix endpoint 修复等 38 项（见 git log 30bbc97）
 
 ---
 
@@ -142,7 +144,6 @@ internal/
   deployment/   # 部署记录 + 快照（model/repository/snapshot）
   maintenance/  # 清理 / 冲突检测 / 漂移检测
   addr/         # 统一地址类型（TCP/UDP/unix/unixgram）
-  sync/         # 同步循环
   smoke/        # 冒烟测试
   fake/         # 测试假数据
   uiassets/     # 嵌入式前端（go:embed ui/dist）
@@ -157,7 +158,8 @@ tests/e2e/      # E2E 测试脚本
 ```
 
 > **注意：已删除的包。** `internal/proxy/`（代理抽象层）、`internal/nodeagent/`、
-> `internal/noderuntime/`、`internal/nodestate/` 已全部删除。
+> `internal/noderuntime/`、`internal/nodestate/`、`internal/sync/`（空转的 reconcile
+> 子系统，v1.9C-3 删除）已全部删除。
 > - Caddy/HAProxy 的渲染/校验/重载全部收敛到 `internal/hostdep/provider/`，不再有独立的 proxy 抽象层。
 > - 跨节点通信全部收敛到 `internal/distnode/`，旧的 nodeagent/noderuntime/nodestate 三套心跳同步机制已废弃并移除。
 
@@ -349,7 +351,7 @@ UI 创建 Exposure {type:tcp/udp, entry_host, entry_port, target_host, target_po
 ```
 A 面板注册 handler：dn.Transport.Register("Aegis.ListRoutes", handler)
     → B 调用：dn.Transport.Call(ctx, "node_a", "Aegis.ListRoutes", args, &reply)
-    → 走 POST /api/distnode/v1/call（HMAC 认证，经 443 边缘入口）
+    → 走 POST /api/distnode/v1/call（HMAC 认证，经 80 边缘入口 — Caddy 控制面预留路由）
 前端聚合：GET /api/admin/v1/distnode/aggregate?path=/api/admin/v1/routes
     → 一次调用聚合所有节点的返回
 ```
@@ -520,7 +522,7 @@ v1.9B-2: 后续小修复
 ```
 
 版本号在 `cmd/aegis/main.go` 的 `var Version = "dev"` 中，release 构建时由 Makefile 注入。
-功能子版本（v1.9A/v1.9B/v1.9C）按模块划分，不代表独立发布。
+功能子版本（v1.9A/v1.9B/v1.9C/v1.9C-2/v1.9C-3）按模块划分，不代表独立发布。
 
 ---
 

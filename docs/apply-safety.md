@@ -62,11 +62,12 @@ Aegis 的配置下发（apply）是最高危操作——生成的配置错误可
       "severity": "critical"
     }
   ],
-  "route_count": 3,
-  "managed_domain_count": 1,
-  "skipped_count": 2
+  "route_count": 3
 }
 ```
+
+> 注：v1.9C-3 后 dry-run 返回 `rendered_config / warnings / route_count` 三个字段
+> （`managed_domain_count`、`skipped_count` 已不存在）。
 
 ## Rollback
 
@@ -85,21 +86,17 @@ Aegis 的配置下发（apply）是最高危操作——生成的配置错误可
 
 ### 回滚记录
 回滚成功后写入：
-- `apply_versions.status = rolled_back`
-- `operation_logs.action = rollback.success`
+- 默认回滚（`Workflow.Rollback`）：写 `operation_logs.action = rollback.success`（apply_versions 不更新）
+- 指定版本回滚（`--version` / `{"version": ...}`）：新建一条 `apply_versions.status = rolled_back` 记录 + `operation_logs`
 
 ## ApplyPlan 结构
 
 ```go
 type ApplyPlan struct {
-    Routes             []RouteConfig
-    Warnings           []ApplyWarning
-    RenderedConfig     string
-    TempPath           string
-    BackupPath         string
-    RouteCount         int
-    ManagedDomainCount int
-    SkippedCount       int
+    RenderedConfig string
+    ConfigPath     string
+    RouteCount     int
+    Warnings       []ApplyWarning
 }
 ```
 
@@ -112,10 +109,10 @@ type ApplyPlan struct {
 | ENDPOINT_UNREACHABLE | warning | 端点 TCP 不可达 |
 | ROUTE_SKIPPED | critical | 路由因配置问题被跳过 |
 
-## FakeProxyAdapter
+## FakeProvider
 
-测试环境使用 `FakeProxyAdapter`，支持：
-- `ValidateShouldFail` — 模拟校验失败
-- `ReloadShouldFail` — 模拟重载失败
+测试环境使用 `internal/fake` 的 `FakeProvider`，支持：
+- `ValidateFails` — 模拟校验失败
+- `ReloadFails` — 模拟重载失败
 
 不依赖真实 Caddy 即可验证 apply 安全性。

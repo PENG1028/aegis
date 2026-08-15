@@ -1,6 +1,6 @@
 # Aegis
 
-**个人基础设施网关控制平面 — v1.9C-2**
+**个人基础设施网关控制平面 — v1.9C-3**
 
 Aegis 是一个管理跨项目服务入口的控制面板：通过 Web UI / CLI / HTTP API 管理域名路由、TCP/UDP 端口转发、TLS 证书、分布式节点和服务间认证，并把配置安全地下发到 Caddy / HAProxy。
 
@@ -14,6 +14,7 @@ Go + SQLite（嵌入式，无外部数据库）+ React 前端，单二进制部�
 | v1.9B | **DistNode** — 分布式节点运行时（静态 peer + HMAC + Transport RPC），默认启用 |
 | v1.9C | **CertStore + ACME** — 证书存储 + 内嵌 lego ACME 客户端（替代 certbot） |
 | v1.9C-2 | **FlowBridge** — 数据面实例管理 + 域名绑定实例（Aegis 只做 TLS 终止 + 转发） |
+| v1.9C-3 | **大修批次** — 回滚链路真实备份、`/call` 强制 ticket、unix endpoint、服务名抢占/封禁自愈拦截等 38 项修复 |
 
 完整能力清单见 `docs/design/feature-catalog.md`。
 

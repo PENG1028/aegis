@@ -125,7 +125,7 @@
 | ACK quorum | v1.2 | code | **fake_only** | High |
 | ACK timeout | v1.2 | code | **fake_only** | High |
 | Drift detection | v1.2 | FakeCluster | **fake_only** | High |
-| Reconcile repair | v1.2 | code | **fake_only** | High |
+| Reconcile repair | v1.2 | — | **removed (v1.9C-3)** — 空转 sync 子系统已删除 | High |
 | Follower write protection | v1.2 | code (not cluster-level) | **unsupported** | High |
 | Real multi-node deploy | — | N/A | **unsupported** | High |
 

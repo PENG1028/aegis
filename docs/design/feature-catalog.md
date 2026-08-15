@@ -115,7 +115,7 @@
 | 64 | 查看节点期望状态 | ❌ | 📖 | — | `GET /api/admin/v1/nodes/{id}/desired-state` |
 | 65 | 创建节点期望状态 | ❌ | ✏️ | — | `POST /api/admin/v1/nodes/{id}/desired-state` |
 | 66 | 查看节点实际状态 | ❌ | 📖 | — | `GET /api/admin/v1/nodes/{id}/actual-state` |
-| 67 | 查看节点同步状态 | ✅ | 📖 | SyncStatus | `GET /api/admin/v1/nodes/{id}/sync-status` |
+| 67 | 查看节点同步状态 | ❌ | 📖 | — | ~~`GET /api/admin/v1/nodes/{id}/sync-status`~~ 端点不存在（sync 子系统 v1.9C-3 已删除） |
 
 ### 2.2 加入令牌 (Join Token)
 
@@ -265,7 +265,7 @@
 
 | # | 功能 | 状态 | 类型 | 页面 | API |
 |---|------|:--:|:--:|------|-----|
-| 133 | 查看节点同步状态 | ✅ | 📖 | SyncStatus | `GET /api/admin/v1/nodes/{id}/sync-status` (循环) |
+| 133 | 查看节点同步状态 | ❌ | 📖 | — | ~~`GET /api/admin/v1/nodes/{id}/sync-status`~~ 端点不存在（sync 子系统 v1.9C-3 已删除） |
 
 ---
 

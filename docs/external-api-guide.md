@@ -82,6 +82,10 @@ curl -H "X-Service-Ticket: <base64_ed25519_ticket>" http://host:7380/api/v1/acti
 
 > 这些端点通过 IP 检查（`isInCluster`）保护，**不经过 AuthMiddleware**。
 > 服务 SDK 自动调用，一般不需要手动调。
+>
+> ⚠️ **例外：`/api/service-auth/v1/call` 必须携带有效 `X-Service-Ticket`**
+> （v1.9C-3 起强制——它会把请求转发到集群内任意注册服务，无 ticket 直接 401；
+> 无效/过期 ticket 401，scope 不符 403）。SDK 的 `CallService` 自动签 ticket。
 
 | 端点 | 方法 | 用途 |
 |------|------|------|
@@ -89,6 +93,7 @@ curl -H "X-Service-Ticket: <base64_ed25519_ticket>" http://host:7380/api/v1/acti
 | `/api/service-auth/v1/sync` | GET | 拉取集群公钥/封禁列表变更 |
 | `/api/service-auth/v1/heartbeat` | POST | 更新最后在线时间 |
 | `/api/service-auth/v1/report` | POST | 上报服务间调用记录 |
+| `/api/service-auth/v1/call` | POST | 按名调用其他服务（网关代理转发，需 ticket） |
 
 **Register 请求体：**
 ```json

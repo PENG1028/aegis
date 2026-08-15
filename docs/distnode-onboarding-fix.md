@@ -48,7 +48,7 @@ A 的 distnode ──直拨──► B边缘:80/api/healthz ──► B 的 Cadd
 
 | # | 文件 | 改动 |
 |---|------|------|
-| 1 | `internal/config/config.go` `Load()` | distnode 默认 `enabled`;`id` 空→`os.Hostname()`;`addr` 空→由 `Server.Addr` 推;`secret` 空→`crypto/rand` 生成 hex 并 `Config.Save()` 持久化(重启不变)。**controlPort 一律 `safety.SplitHostPort(cfg.Server.Addr)`,无 7380 字面量。** 权衡:显式 `enabled:false` 也会被强开(Phase 0 可接受) |
+| 1 | `internal/config/config.go` `Load()` | distnode 默认 `enabled`（未设置时）；`id` 空→`os.Hostname()`；`addr` 空→由 `Server.Addr` 推；`secret` 空→`crypto/rand` 生成 hex 并 `Config.Save()` 持久化(重启不变)。**controlPort 一律 `safety.SplitHostPort(cfg.Server.Addr)`,无 7380 字面量。** v1.9C-3 起 `Enabled` 为 `*bool`：显式 `enabled:false` 被尊重（不再强开），仅"未设置"默认开 |
 | 2 | `internal/topology/planner.go` (`Dependencies`) + `cmd/aegis/main.go` 装配 | `Dependencies` 加 `ControlPort int`,main.go 从 `cfg.Server.Addr` 用 `safety.SplitHostPort` 填入 |
 | 3 | `internal/topology/planner.go`(build 后注入,**能力化**) | `tmpl.BuildPlan` 返回后,遍历 `best.Plans`,按能力(`CapRouteHost`+`CapUpstreamTCP`,从 `healthy` 里 `HasCapability` 选,**绝不按 provider 名**)选出 HTTP 路由 provider,向其 `Plan.Routes` 追加**一条控制面合成 RouteSpec**。**模板零改动、渲染器零改动。** |
 | 4 | `internal/httpapi/routes.go` | 挂 `POST /api/distnode/v1/call` = `h.DistNode.Transport.Handler()`(`h.DistNode!=nil` 时);**必须在 admin-token 中间件之外**,用 distnode 自己的 HMAC 鉴权 |

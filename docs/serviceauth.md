@@ -32,7 +32,10 @@ client.Register(ctx)
 //       启动 sync 每 30s 拉更新
 ```
 
-**注册只需要名字。** 不需要端口、不需要路径、不需要暴露的 API 列表。
+**注册需要名字 + Ed25519 公钥。** SDK 自动生成密钥对（`~/.aegis/keys/<name>.key`）并只上交公钥；裸调 API 时 `service_name` 和 `public_key` 都是必填的。
+不需要端口、不需要路径、不需要暴露的 API 列表。
+
+> **v1.9C-3 注册保护：** 被 block 的服务重新注册会被拒绝（防封禁自愈）；同名已有**不同**公钥的 active 记录时注册会被拒绝（防服务名抢占/空间接管，需要先移除旧记录再轮换密钥）。
 
 ---
 
@@ -335,22 +338,20 @@ C 重启 → 检测到无密钥 → 生成新密钥对
 ↓
 C 重新 Register({Name: "c-service", PublicKey: 新公钥})
 ↓
-服务器：INSERT 新行（c-service + 新公钥），旧行仍然在 DB
+⚠️ v1.9C-3 起：同名不同公钥注册被服务器**拒绝**
+   （"already registered with a different public key; remove the old record before rotating keys"）
 ↓
-其他服务 sync：ListPublicKeys 返回 name→pubkey map
-         → 新公钥覆盖旧公钥
-↓
-C 的新 ticket（新私钥签的）→ 其他服务验签通过 ✅
+恢复路径：管理员先移除 c-service 的旧记录（或停用旧实例），再让 C 注册
 ```
 
 ---
 
 ## 多公钥支持
 
-Guard 会遍历所有匹配 name 的公钥验签。同名多 key（灰度、密钥轮换、多实例）自动支持，不需要改代码。
+Guard 会遍历所有匹配 name 的公钥验签。**v1.9C-3 起新注册不允许同名不同公钥**（防空间接管）；同名多 key 仅限历史遗留数据，新注册同名必须使用同一公钥（多实例共用密钥）。
 
 ## 注册警告
 
 Register 返回 `Warnings` 字段：
-- 同名已有不同公钥 → "可能是密钥轮换或多实例"
 - 同公钥用于不同名字 → "两个服务共享同一私钥"
+- （v1.9C-3 起"同名不同公钥"已是拒绝条件，不再作为警告返回）

@@ -44,7 +44,7 @@ curl -s -X POST http://127.0.0.1:7380/api/admin/v1/providers/diagnose
 
 ### Scenario 2: Apply Failed (Config Broken)
 
-**Trigger:** `POST /api/system/apply` returns error, no config change applied.
+**Trigger:** `POST /api/apply` returns error, no config change applied.
 
 **Impact:** Desired state changed in DB, but provider config NOT updated. No traffic impact.
 
