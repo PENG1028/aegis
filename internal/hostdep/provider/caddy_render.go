@@ -82,7 +82,7 @@ func (p *CaddyProvider) renderCaddyfile(plan Plan) []byte {
 		if domainIdx > 0 {
 			buf.WriteString("\n")
 		}
-		siteAddr := caddySiteAddr(domain)
+		siteAddr := caddySiteAddr(domain, domainTLSMode(domainRoutes[domain]))
 		routes := domainRoutes[domain]
 
 		routes = SortRoutesForMatch(routes)
@@ -194,11 +194,26 @@ func writeReverseProxy(buf *bytes.Buffer, upstream string, headers map[string]st
 }
 
 // caddySiteAddr returns the Caddy site address for a domain.
-func caddySiteAddr(domain string) string {
-	if isInternalDomain(domain) {
+// Plain-HTTP routes (TLSMode "none") are rendered as an explicit http://
+// site: a bare public domain block would enable Caddy auto-HTTPS, which
+// redirects port 80 to 443 and breaks any domain that has no certificate.
+func caddySiteAddr(domain, tlsMode string) string {
+	if isInternalDomain(domain) || tlsMode == "" || tlsMode == "none" {
 		return "http://" + domain
 	}
 	return domain
+}
+
+// domainTLSMode returns the TLS mode for a domain's route group. Any route
+// that terminates or passes through TLS makes the site a TLS site; only when
+// every route is plain HTTP is the site treated as non-TLS.
+func domainTLSMode(routes []RouteSpec) string {
+	for _, r := range routes {
+		if r.TLSMode == "terminate" || r.TLSMode == "passthrough" {
+			return r.TLSMode
+		}
+	}
+	return "none"
 }
 
 // isInternalDomain returns true if the domain is an internal/local pattern.
