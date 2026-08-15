@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 )
 
 const (
@@ -107,6 +109,45 @@ func LoadMasterKeyFromFile(path string) (*MasterKey, error) {
 	return mk, nil
 }
 
+// EnsureMasterKey loads the master key from path (or the standard sources);
+// when none exists it generates one and persists it at path (0600). The
+// returned key is therefore STABLE across restarts — the exact property
+// required for AES-GCM encrypted credentials. Never return an ephemeral key:
+// a key that changes per boot permanently loses all previously encrypted data.
+func EnsureMasterKey(path string) (*MasterKey, error) {
+	// Prefer the explicit path (config dir / test dir), then env, then the
+	// standard file. LoadMasterKey(false) itself only knows the default
+	// path, so try the explicit file first.
+	mk, err := LoadMasterKeyFromFile(path)
+	if err == nil {
+		return mk, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, err // wrong perms or corrupt key — surface it, never overwrite
+	}
+
+	mk, err = LoadMasterKey(false)
+	if err == nil {
+		return mk, nil // env var or default file provided the key
+	}
+	if !errors.Is(err, ErrKeyNotFound) {
+		return nil, err
+	}
+
+	keyStr, err := GenerateKeyString()
+	if err != nil {
+		return nil, fmt.Errorf("generate master key: %w", err)
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, fmt.Errorf("create key dir %s: %w", dir, err)
+	}
+	if err := os.WriteFile(path, []byte(keyStr+"\n"), 0600); err != nil {
+		return nil, fmt.Errorf("persist master key %s: %w", path, err)
+	}
+	return LoadMasterKeyFromFile(path)
+}
+
 // generateEphemeralKey creates a temporary master key (for dev/test mode only).
 func generateEphemeralKey(source string) (*MasterKey, error) {
 	mk := &MasterKey{source: source}
@@ -126,14 +167,16 @@ func loadKeyFile(path string) ([]byte, error) {
 	}
 	defer f.Close()
 
-	// Check file permissions
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	perm := info.Mode().Perm()
-	if perm != 0600 && perm != 0640 {
-		return nil, fmt.Errorf("%w: got %o", ErrKeyFilePerms, perm)
+	// Check file permissions (POSIX only — Windows has no owner/group bits)
+	if runtime.GOOS != "windows" {
+		info, err := f.Stat()
+		if err != nil {
+			return nil, err
+		}
+		perm := info.Mode().Perm()
+		if perm != 0600 && perm != 0640 {
+			return nil, fmt.Errorf("%w: got %o", ErrKeyFilePerms, perm)
+		}
 	}
 
 	data, err := io.ReadAll(f)

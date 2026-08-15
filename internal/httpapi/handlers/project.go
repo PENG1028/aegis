@@ -48,7 +48,18 @@ func (h *Handlers) GetProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) UpdateProject(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented yet")
+	id := r.PathValue("id")
+	var input project.UpdateProjectInput
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	p, err := h.Project.UpdateProject(r.Context(), id, input)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, projectToMap(*p))
 }
 
 func (h *Handlers) ArchiveProject(w http.ResponseWriter, r *http.Request) {

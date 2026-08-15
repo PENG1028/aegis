@@ -47,8 +47,11 @@ func NewProxy(id, entryHost string, entryPort int, targetHost string, targetPort
 // resolveTarget constructs an Addr from host and port strings.
 // If host contains a scheme (tcp://, unix://), port is ignored.
 func resolveTarget(host string, port int) *addr.Addr {
-	// Try parsing as a full address first (handles tcp://, unix://, etc.)
-	if a, err := addr.Parse(host); err == nil && a.Port > 0 {
+	// Try parsing as a full address first (handles tcp://, unix://, etc.).
+	// unix addresses have Port==0, so accept any parsed Addr that is either
+	// a real port or a unix socket — requiring Port > 0 silently degraded
+	// every unix:// target to a TCP dial of the literal string.
+	if a, err := addr.Parse(host); err == nil && (a.Port > 0 || a.IsUnix()) {
 		return a
 	}
 	// If host is a Unix socket path (starts with /), parse as unix

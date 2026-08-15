@@ -88,7 +88,12 @@ func (h *Handlers) DisableManagedDomain(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handlers) DeleteManagedDomain(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented yet")
+	id := r.PathValue("id")
+	if err := h.ManagedDomain.DeleteDomain(r.Context(), id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func managedDomainToMap(md manageddomain.ManagedDomain) map[string]interface{} {

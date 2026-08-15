@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"aegis/internal/certstore"
 	"aegis/internal/endpoint"
 	"aegis/internal/hostdep/provider"
+	"aegis/internal/safety"
 	"aegis/internal/service"
 )
 
@@ -310,17 +313,24 @@ func (h *Handlers) ensurePanelService(ctx context.Context) error {
 	})
 }
 
-// ensurePanelEndpoint creates the panel endpoint (127.0.0.1:7380) if it doesn't exist.
+// ensurePanelEndpoint creates the panel endpoint if it doesn't exist.
 // The planner needs a real endpoint to determine the upstream address.
+// The address derives from cfg.Server.Addr — hardcoding 127.0.0.1:7380 here
+// would break the panel route the moment the API port is changed.
 func (h *Handlers) ensurePanelEndpoint(ctx context.Context) error {
 	eps, _ := h.EndpointRepo.FindByServiceID("__panel")
 	if len(eps) > 0 {
 		return nil
 	}
+	host, port := safety.SplitHostPort(h.Config.Server.Addr)
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	_, err := h.EndpointSvc.CreateEndpoint(ctx, endpoint.CreateEndpointInput{
 		ServiceID: "__panel",
 		Type:      "local",
-		Address:   "127.0.0.1:7380",
+		Address:   addr,
 	})
 	return err
 }

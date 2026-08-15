@@ -136,6 +136,12 @@ func ValidatePathPrefix(path string) error {
 	if strings.Contains(path, " ") {
 		return fmt.Errorf("path_prefix cannot contain spaces")
 	}
+	// '?' and '#' would be rendered verbatim into a `handle` matcher that can
+	// never match (query/fragment are not part of the path), silently killing
+	// the route while Caddy validate stays green.
+	if strings.ContainsAny(path, "?#") {
+		return fmt.Errorf("path_prefix cannot contain '?' or '#'")
+	}
 	return nil
 }
 

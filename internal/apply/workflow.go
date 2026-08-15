@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -418,8 +419,8 @@ func (w *Workflow) apply(ctx context.Context, email string) (*ApplyResult, error
 	result.Warnings = plan.Warnings
 
 	// 2. Render + Apply each provider
-	applied := make(map[string][]string) // provID → config paths applied
-	var renderedParts []string           // rendered content, for the version record
+	applied := make(map[string][]string)   // provID → config paths applied
+	renderedByPath := make(map[string]string) // path → rendered content, for the version record
 	for provID, pPlan := range plan.Plans {
 		p := w.registry.Get(provID)
 		if p == nil {
@@ -447,7 +448,7 @@ func (w *Workflow) apply(ctx context.Context, email string) (*ApplyResult, error
 		result.Provider[provID] = "success"
 		for _, cf := range configs {
 			applied[provID] = append(applied[provID], cf.Path)
-			renderedParts = append(renderedParts, string(cf.Content))
+			renderedByPath[cf.Path] = string(cf.Content)
 		}
 	}
 
@@ -473,6 +474,17 @@ func (w *Workflow) apply(ctx context.Context, email string) (*ApplyResult, error
 	// Record an ApplyVersion with real backup files so UI/CLI rollback and
 	// history work after applies issued through this workflow (the HTTP/UI
 	// main path previously never wrote apply_versions at all).
+	// Concatenate by sorted path so the recorded RenderedConfig is stable —
+	// AppService's hash-skip comparison concatenates the same way.
+	paths := make([]string, 0, len(renderedByPath))
+	for p := range renderedByPath {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	var renderedParts []string
+	for _, p := range paths {
+		renderedParts = append(renderedParts, renderedByPath[p])
+	}
 	w.recordApplyVersion(ctx, applied, strings.Join(renderedParts, "\n"))
 
 	w.logApply(ctx, "all", "success", "")

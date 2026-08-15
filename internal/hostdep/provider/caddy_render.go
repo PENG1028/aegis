@@ -30,6 +30,7 @@ package provider
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -184,8 +185,16 @@ func writeReverseProxy(buf *bytes.Buffer, upstream string, headers map[string]st
 	safeUpstream := sanitizeCaddyValue(upstream)
 	if len(headers) > 0 {
 		buf.WriteString(fmt.Sprintf("%sreverse_proxy %s {\n", indent, safeUpstream))
-		for k, v := range headers {
-			buf.WriteString(fmt.Sprintf("%s    header_up %s \"%s\"\n", indent, sanitizeCaddyValue(k), sanitizeCaddyValue(v)))
+		// Sort keys: map iteration order is random, and the apply layer
+		// compares rendered-config hashes to skip no-op applies — unstable
+		// bytes would defeat that mechanism.
+		keys := make([]string, 0, len(headers))
+		for k := range headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			buf.WriteString(fmt.Sprintf("%s    header_up %s \"%s\"\n", indent, sanitizeCaddyValue(k), sanitizeCaddyValue(headers[k])))
 		}
 		buf.WriteString(fmt.Sprintf("%s}\n", indent))
 	} else {

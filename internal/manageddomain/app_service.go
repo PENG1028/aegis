@@ -213,8 +213,7 @@ func (s *AppService) EnableDomain(ctx context.Context, idOrDomain string, force 
 }
 
 // DisableDomain disables a managed domain.
-func (s *AppService) DisableDomain(ctx context.Context, idOrDomain string) (*ManagedDomain, error) {
-	md, err := s.getDomain(ctx, idOrDomain)
+func (s *AppService) DisableDomain(ctx context.Context, idOrDomain string) (*ManagedDomain, error) {	md, err := s.getDomain(ctx, idOrDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +247,25 @@ func (s *AppService) ListManagedDomains(ctx context.Context) ([]ManagedDomain, e
 // GetManagedDomain finds a managed domain by ID or domain name.
 func (s *AppService) GetManagedDomain(ctx context.Context, idOrDomain string) (*ManagedDomain, error) {
 	return s.getDomain(ctx, idOrDomain)
+}
+
+// DeleteDomain removes a managed domain record entirely (not just disables
+// it). There is no state restriction: an operator may remove a domain in any
+// status, including failed or pending_verification.
+func (s *AppService) DeleteDomain(ctx context.Context, idOrDomain string) error {
+	md, err := s.getDomain(ctx, idOrDomain)
+	if err != nil {
+		return err
+	}
+	if md == nil {
+		return fmt.Errorf("managed domain not found")
+	}
+	if err := s.repo.Delete(md.ID); err != nil {
+		return fmt.Errorf("delete managed domain: %w", err)
+	}
+	s.logSvc.Log(ctx, "managed_domain.delete", "managed_domain", md.ID, "success",
+		fmt.Sprintf("deleted managed domain %q", md.Domain), "api")
+	return nil
 }
 
 // transitionStatus validates and applies a state transition.

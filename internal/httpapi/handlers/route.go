@@ -184,8 +184,63 @@ func (h *Handlers) AdminSetRouteTLSBinding(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "updated", "route": routeToMap(*rt)})
 }
 
+// UpdateRoute updates mutable route fields: service_id (switch), status
+// (enable/disable) and maintenance settings. Unsupported fields are rejected
+// so a client never gets a fake "updated" for an ignored field.
 func (h *Handlers) UpdateRoute(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented yet")
+	id := r.PathValue("id")
+	var input struct {
+		ServiceID          *string `json:"service_id"`
+		Status             *string `json:"status"`
+		MaintenanceEnabled *bool   `json:"maintenance_enabled"`
+		MaintenanceMessage *string `json:"maintenance_message"`
+	}
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if input.ServiceID == nil && input.Status == nil && input.MaintenanceEnabled == nil {
+		writeError(w, http.StatusBadRequest, "no updatable fields provided (service_id, status, maintenance_enabled)")
+		return
+	}
+
+	if input.ServiceID != nil {
+		if err := h.Route.SwitchRoute(r.Context(), id, *input.ServiceID); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if input.Status != nil {
+		var err error
+		switch *input.Status {
+		case "enabled":
+			err = h.Route.EnableRoute(r.Context(), id)
+		case "disabled":
+			err = h.Route.DisableRoute(r.Context(), id)
+		default:
+			writeError(w, http.StatusBadRequest, "invalid status: must be enabled or disabled")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if input.MaintenanceEnabled != nil {
+		msg := ""
+		if input.MaintenanceMessage != nil {
+			msg = *input.MaintenanceMessage
+		}
+		if err := h.Route.SetMaintenance(r.Context(), id, *input.MaintenanceEnabled, msg); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	if h.PendingState != nil {
+		h.PendingState.MarkPending("route updated: " + id)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
 func (h *Handlers) EnableRoute(w http.ResponseWriter, r *http.Request) {
@@ -281,6 +336,9 @@ func routeToMap(rt route.Route) map[string]interface{} {
 	}
 	if rt.CertID != nil && *rt.CertID != "" {
 		m["cert_id"] = *rt.CertID
+	}
+	if rt.FlowBridgeID != nil && *rt.FlowBridgeID != "" {
+		m["flowbridge_id"] = *rt.FlowBridgeID
 	}
 	return m
 }

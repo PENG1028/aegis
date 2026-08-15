@@ -3,6 +3,7 @@ package route
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -197,23 +198,27 @@ func (r *Repository) FindBySpaceID(spaceID string) ([]Route, error) {
 }
 
 // CheckDuplicatePath checks for duplicate path_prefix on same domain.
+// Trailing slashes are normalized: "/api" and "/api/" render to the same
+// Caddy matcher (`handle /api/*`), so the second route would silently shadow
+// the first.
 func (r *Repository) CheckDuplicatePath(domain, pathPrefix, excludeID string) error {
+	normalized := strings.TrimSuffix(pathPrefix, "/")
 	var count int
 	var err error
-	if pathPrefix == "" {
+	if normalized == "" {
 		err = r.DB.QueryRow(
-			`SELECT COUNT(*) FROM routes WHERE domain = ? AND (path_prefix IS NULL OR path_prefix = '') AND id != ?`,
+			`SELECT COUNT(*) FROM routes WHERE domain = ? AND (path_prefix IS NULL OR path_prefix = '' OR path_prefix = '/') AND id != ?`,
 			domain, excludeID).Scan(&count)
 	} else {
 		err = r.DB.QueryRow(
-			`SELECT COUNT(*) FROM routes WHERE domain = ? AND path_prefix = ? AND id != ?`,
-			domain, pathPrefix, excludeID).Scan(&count)
+			`SELECT COUNT(*) FROM routes WHERE domain = ? AND (path_prefix = ? OR path_prefix = ?) AND id != ?`,
+			domain, normalized, normalized+"/", excludeID).Scan(&count)
 	}
 	if err != nil {
 		return err
 	}
 	if count > 0 {
-		if pathPrefix == "" {
+		if normalized == "" {
 			return fmt.Errorf("domain %s already has a domain-only route", domain)
 		}
 		return fmt.Errorf("domain %s already has a route with path_prefix %s (duplicate path not allowed)", domain, pathPrefix)

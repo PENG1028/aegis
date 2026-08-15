@@ -66,7 +66,10 @@ func NewProxy(id, entryHost string, entryPort int, targetHost string, targetPort
 }
 
 func resolveUDPTarget(host string, port int) *addr.Addr {
-	if a, err := addr.Parse(host); err == nil && a.Port > 0 {
+	// unixgram addresses have Port==0, so accept any parsed Addr that is
+	// either a real port or a unix socket (the old Port>0 guard made the
+	// IsUnix branch dead code and degraded unixgram:// to a UDP dial).
+	if a, err := addr.Parse(host); err == nil && (a.Port > 0 || a.IsUnix()) {
 		if a.IsUnix() {
 			return a // unixgram:// already parsed
 		}

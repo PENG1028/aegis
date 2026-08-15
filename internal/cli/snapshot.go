@@ -96,7 +96,7 @@ func newRestoreCommand(
 	edgeSvc *edgemux.AppService,
 	listenerSvc *listener.Service,
 ) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "restore --from <deployment.json>",
 		Short: "Compare current state against a snapshot (dry-run)",
 		Long: `Compares listeners, edge rules, and routes against a deployment
@@ -166,6 +166,10 @@ writes — use the UI/API to recreate missing resources, then apply.`,
 			return nil
 		},
 	}
+	// The --from flag was read in RunE but never registered, making the
+	// command unusable ("unknown flag: --from"). Register it here.
+	cmd.Flags().String("from", "", "snapshot file to compare against (required)")
+	return cmd
 }
 
 func trancate(s string, n int) string {

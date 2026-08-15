@@ -87,9 +87,43 @@ func (s *AppService) GetProject(ctx context.Context, idOrName string) (*Project,
 	return p, nil
 }
 
-// ArchiveProject archives a project.
-func (s *AppService) ArchiveProject(ctx context.Context, idOrName string) error {
+// UpdateProjectInput is the input for updating a project.
+type UpdateProjectInput struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+}
+
+// UpdateProject updates the mutable fields of a project (name/description).
+// Status changes go through ArchiveProject.
+func (s *AppService) UpdateProject(ctx context.Context, idOrName string, input UpdateProjectInput) (*Project, error) {
 	p, err := s.GetProject(ctx, idOrName)
+	if err != nil {
+		return nil, err
+	}
+	if input.Name != nil && *input.Name != "" && *input.Name != p.Name {
+		existing, err := s.repo.FindByName(*input.Name)
+		if err != nil {
+			return nil, fmt.Errorf("check duplicate project name: %w", err)
+		}
+		if existing != nil && existing.ID != p.ID {
+			return nil, fmt.Errorf("project with name %q already exists", *input.Name)
+		}
+		p.Name = *input.Name
+	}
+	if input.Description != nil {
+		p.Description = *input.Description
+	}
+	p.UpdatedAt = time.Now()
+	if err := s.repo.Update(p); err != nil {
+		return nil, fmt.Errorf("update project: %w", err)
+	}
+	s.logSvc.Log(ctx, "project.update", "project", p.ID, "success",
+		fmt.Sprintf("updated project %q", p.Name), "api")
+	return p, nil
+}
+
+// ArchiveProject archives a project.
+func (s *AppService) ArchiveProject(ctx context.Context, idOrName string) error {	p, err := s.GetProject(ctx, idOrName)
 	if err != nil {
 		return err
 	}

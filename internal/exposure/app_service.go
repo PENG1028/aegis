@@ -307,10 +307,22 @@ func (s *AppService) UpdateExposure(ctx context.Context, exposureID string, inpu
 		return nil, aerrors.Forbidden("cannot modify exposure owned by " + e.OwnerRef)
 	}
 
+	// Status is lifecycle-owned: activation must go through ActivateExposure
+	// (provider availability check + proxy start) and deactivation through
+	// DisableExposure. Writing status directly here would let a client claim
+	// "active" while no proxy runs, and could drift from the real listener.
+	if input.Status != nil {
+		return nil, fmt.Errorf("status cannot be updated directly — use activate/disable endpoints")
+	}
+	// Port validation mirrors CreateExposure: port 0/out-of-range would bind
+	// an ephemeral listener while the DB record keeps the invalid value.
+	if input.Port != nil && (*input.Port <= 0 || *input.Port > 65535) {
+		return nil, fmt.Errorf("invalid port: %d (must be 1-65535)", *input.Port)
+	}
+
 	if input.Host != nil { e.Host = *input.Host }
 	if input.Port != nil { e.Port = *input.Port }
 	if input.Path != nil { e.Path = *input.Path }
-	if input.Status != nil { e.Status = *input.Status }
 	if input.Message != nil { e.Message = *input.Message }
 	e.UpdatedAt = time.Now()
 

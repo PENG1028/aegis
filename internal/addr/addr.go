@@ -16,7 +16,6 @@ package addr
 import (
 	"fmt"
 	"net"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -182,7 +181,12 @@ func parseUnix(raw string, network string) (*Addr, error) {
 	if raw == "" {
 		return nil, fmt.Errorf("empty unix socket path")
 	}
-	if !filepath.IsAbs(raw) {
+	// Unix socket paths are always POSIX-style absolute paths (leading "/"),
+	// independent of the host platform. filepath.IsAbs is wrong here: on
+	// Windows it rejects "/run/app.sock" (no drive letter / UNC backslash),
+	// which would make every unix:// target unparseable on Windows dev boxes
+	// and in cross-platform tests.
+	if !strings.HasPrefix(raw, "/") {
 		return nil, fmt.Errorf("unix socket path must be absolute: %s", raw)
 	}
 	return &Addr{Network: network, Path: raw}, nil

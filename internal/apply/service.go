@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -168,8 +169,16 @@ func (s *AppService) apply(ctx context.Context, force bool) (*ApplyPlan, error) 
 	}
 
 	var rendered strings.Builder
-	for _, content := range result.Rendered {
-		rendered.WriteString(content)
+	// Sort by config path: map iteration order is random, and this string
+	// feeds the config-hash comparison that skips no-op applies — unstable
+	// ordering would make every apply look "changed" (multi-provider setups).
+	paths := make([]string, 0, len(result.Rendered))
+	for p := range result.Rendered {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		rendered.WriteString(result.Rendered[p])
 	}
 	renderedStr := rendered.String()
 

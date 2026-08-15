@@ -24,12 +24,13 @@ func (r *Repository) Create(e *Exposure) error {
 	}
 	_, err := r.DB.Exec(
 		`INSERT INTO exposures
-		 (id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at, provider, listener_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.ProjectID, e.Type, e.Mode, e.Host, e.Port, e.Path, e.TargetHost, e.TargetPort,
 		e.ServiceID, e.NodeID, e.OwnerRef, e.TargetRef, allowPublic, e.Status, e.Message,
 		e.CreatedAt.Format(time.RFC3339),
 		e.UpdatedAt.Format(time.RFC3339),
+		e.Provider, e.ListenerID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert exposure: %w", err)
@@ -45,11 +46,11 @@ func (r *Repository) FindByID(id string) (*Exposure, error) {
 	var port, targetPort sql.NullInt64
 	var allowPublic int
 	err := r.DB.QueryRow(
-		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at
+		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at, provider, listener_id
 		 FROM exposures WHERE id = ?`, id,
 	).Scan(&e.ID, &projectID, &e.Type, &e.Mode, &e.Host, &port, &path,
 		&targetHost, &targetPort, &e.ServiceID, &nodeID, &e.OwnerRef, &targetRef, &allowPublic,
-		&e.Status, &message, &createdAt, &updatedAt)
+		&e.Status, &message, &createdAt, &updatedAt, &e.Provider, &e.ListenerID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -78,7 +79,7 @@ func (r *Repository) scanOne(row *sql.Row) (*Exposure, error) {
 	var allowPublic int
 	err := row.Scan(&e.ID, &projectID, &e.Type, &e.Mode, &e.Host, &port, &path,
 		&targetHost, &targetPort, &e.ServiceID, &nodeID, &e.OwnerRef, &targetRef, &allowPublic,
-		&e.Status, &message, &createdAt, &updatedAt)
+		&e.Status, &message, &createdAt, &updatedAt, &e.Provider, &e.ListenerID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -102,7 +103,7 @@ func (r *Repository) scanOne(row *sql.Row) (*Exposure, error) {
 // FindAll returns all exposures ordered by host.
 func (r *Repository) FindAll() ([]Exposure, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at
+		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at, provider, listener_id
 		 FROM exposures ORDER BY host`)
 	if err != nil {
 		return nil, fmt.Errorf("query exposures: %w", err)
@@ -114,7 +115,7 @@ func (r *Repository) FindAll() ([]Exposure, error) {
 // FindByOwnerRef returns exposures for a specific owner.
 func (r *Repository) FindByOwnerRef(ownerRef string) ([]Exposure, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at
+		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at, provider, listener_id
 		 FROM exposures WHERE owner_ref = ? ORDER BY host`, ownerRef)
 	if err != nil {
 		return nil, fmt.Errorf("query exposures by owner: %w", err)
@@ -126,7 +127,7 @@ func (r *Repository) FindByOwnerRef(ownerRef string) ([]Exposure, error) {
 // FindActiveHTTP returns all active HTTP exposures.
 func (r *Repository) FindActiveHTTP() ([]Exposure, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at
+		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at, provider, listener_id
 		 FROM exposures WHERE type = 'http' AND status = 'active' ORDER BY host`)
 	if err != nil {
 		return nil, fmt.Errorf("query active http exposures: %w", err)
@@ -138,7 +139,7 @@ func (r *Repository) FindActiveHTTP() ([]Exposure, error) {
 // FindActiveTCP returns all active TCP exposures (for TCP manager).
 func (r *Repository) FindActiveTCP() ([]Exposure, error) {
 	rows, err := r.DB.Query(
-		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at
+		`SELECT id, project_id, type, mode, host, port, path, target_host, target_port, service_id, node_id, owner_ref, target_ref, allow_public_tcp, status, message, created_at, updated_at, provider, listener_id
 		 FROM exposures WHERE type = 'tcp' AND status = 'active' ORDER BY host`)
 	if err != nil {
 		return nil, fmt.Errorf("query active tcp exposures: %w", err)
@@ -154,9 +155,9 @@ func (r *Repository) Update(e *Exposure) error {
 		allowPublic = 1
 	}
 	_, err := r.DB.Exec(
-		`UPDATE exposures SET type=?, mode=?, host=?, port=?, path=?, target_host=?, target_port=?, service_id=?, node_id=?, owner_ref=?, target_ref=?, allow_public_tcp=?, status=?, message=?, updated_at=? WHERE id=?`,
+		`UPDATE exposures SET type=?, mode=?, host=?, port=?, path=?, target_host=?, target_port=?, service_id=?, node_id=?, owner_ref=?, target_ref=?, allow_public_tcp=?, status=?, message=?, provider=?, listener_id=?, updated_at=? WHERE id=?`,
 		e.Type, e.Mode, e.Host, e.Port, e.Path, e.TargetHost, e.TargetPort, e.ServiceID, e.NodeID,
-		e.OwnerRef, e.TargetRef, allowPublic, e.Status, e.Message,
+		e.OwnerRef, e.TargetRef, allowPublic, e.Status, e.Message, e.Provider, e.ListenerID,
 		e.UpdatedAt.Format(time.RFC3339), e.ID,
 	)
 	if err != nil {
@@ -217,7 +218,7 @@ func scanExposures(rows *sql.Rows) ([]Exposure, error) {
 		var allowPublic int
 		if err := rows.Scan(&e.ID, &projectID, &e.Type, &e.Mode, &e.Host, &port, &path,
 			&targetHost, &targetPort, &e.ServiceID, &nodeID, &e.OwnerRef, &targetRef, &allowPublic,
-			&e.Status, &message, &createdAt, &updatedAt); err != nil {
+			&e.Status, &message, &createdAt, &updatedAt, &e.Provider, &e.ListenerID); err != nil {
 			return nil, fmt.Errorf("scan exposure: %w", err)
 		}
 		e.ProjectID = projectID.String

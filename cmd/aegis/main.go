@@ -208,7 +208,12 @@ func main() {
 
 	// --- Gateway Link (v1.7AB) ---
 	gwLinkRepo := gateway.NewLinkRepository(db)
-	masterKey, err := secrets.LoadMasterKey(true)
+	// Master key must be STABLE across restarts: credentials and gateway-link
+	// secrets are AES-256-GCM encrypted with it. A dev-mode ephemeral key
+	// would make every restart generate a new key and permanently lose the
+	// encrypted data. EnsureMasterKey generates and persists a key on first
+	// boot so all subsequent boots share the same key.
+	masterKey, err := secrets.EnsureMasterKey(secrets.DefaultKeyPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: master key not available — gateway link secrets will use legacy HMAC storage: %v\n", err)
 		masterKey = nil
