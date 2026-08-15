@@ -37,6 +37,9 @@ func (t *SingleHAProxy) BuildPlan(intents []topology.RouteIntent, available []pr
 
 	var routes []provider.RouteSpec
 	for _, ri := range intents {
+		if err := rejectRawIntents(t.Name(), []topology.RouteIntent{ri}); err != nil {
+			return nil, err
+		}
 		rs := topology.RouteIntentToRouteSpec(ri)
 		// HAProxy in single mode: all TLS traffic is SNI-passthrough
 		if ri.TLSMode == "" || ri.TLSMode == "none" {

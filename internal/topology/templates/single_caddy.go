@@ -35,6 +35,9 @@ func (t *SingleCaddy) BuildPlan(intents []topology.RouteIntent, available []prov
 	// Build routes for Caddy
 	var routes []provider.RouteSpec
 	for _, ri := range intents {
+		if err := rejectRawIntents(t.Name(), []topology.RouteIntent{ri}); err != nil {
+			return nil, err
+		}
 		rs := topology.RouteIntentToRouteSpec(ri)
 		// All routes go to Caddy — set TLS mode appropriately
 		if ri.TLSMode == "" && ri.Port == 443 {

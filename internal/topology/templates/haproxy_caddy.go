@@ -47,6 +47,9 @@ func (t *HAProxyCaddy) BuildPlan(intents []topology.RouteIntent, available []pro
 	var caddyRoutes []provider.RouteSpec
 
 	for _, ri := range intents {
+		if err := rejectRawIntents(t.Name(), []topology.RouteIntent{ri}); err != nil {
+			return nil, err
+		}
 		rs := topology.RouteIntentToRouteSpec(ri)
 		if ri.TLSMode == "passthrough" {
 			// HAProxy SNI passthrough: match by SNI, forward to target
