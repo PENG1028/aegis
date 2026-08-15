@@ -301,16 +301,14 @@ export async function fetchDashboard(): Promise<DashboardData> {
 
   const nodes = nodesRes.nodes || [];
   const nodesOnline = nodes.filter((n: any) => n.status === 'online').length;
-  // gateways endpoints were never implemented on the backend — see C-block
-  // commit. Gateways dashboard counts are reported as 0 until those endpoints
-  // are designed and added.
-  const gatewaysOnline = 0;
 
-  // Build pending capabilities from nodes with issues
+  // No backend data source exists for: gateways (endpoints never
+  // implemented), routing-table sync (generated on demand), relay acceptance
+  // (no relay telemetry) and pending capabilities (desired-state subsystem
+  // removed). These fields stay empty — the UI must not render fake 0/0
+  // "all ok" cards from them.
+  const gatewaysOnline = 0;
   const pendingCapabilities: string[] = [];
-  for (const n of nodes) {
-    if (n.last_error) pendingCapabilities.push(`${n.node_id}: ${n.last_error}`);
-  }
 
   return {
     nodes_online: nodesOnline,
@@ -322,9 +320,9 @@ export async function fetchDashboard(): Promise<DashboardData> {
     routing_tables_total: 0,
     local_gateway_online: 0,
     local_gateway_total: 0,
-    relay_acceptance: st?.version || '—',
+    relay_acceptance: '—',
     secret_runtime: '—',
-    pending_capabilities: pendingCapabilities.slice(0, 5),
+    pending_capabilities: pendingCapabilities,
     routes_unavailable: 0,
     missing_gateway_links: 0,
     outdated_nodes: 0,

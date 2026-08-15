@@ -42,7 +42,6 @@ export const WORKSPACE_NAV: Record<string, { path: string; label: string }[]> = 
     { path: '/runtime/cluster', label: '集群健康' },
     { path: '/runtime/deploy', label: '部署节点' },
     { path: '/runtime/updates', label: '更新' },
-    { path: '/runtime/sync', label: '同步状态' },
   ],
   release: [
     { path: '/release', label: '变更' },
@@ -101,7 +100,7 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/middleware': '/fabric',
   '/listeners': '/fabric',
   '/nodes': '/runtime',
-  '/sync': '/runtime/sync',
+  '/sync': '/runtime',
   '/join-tokens': '/runtime/deploy',
   '/apply': '/release',
   '/config': '/release',

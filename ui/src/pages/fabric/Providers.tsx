@@ -696,7 +696,7 @@ function BindingMatrix({ mode, providers, onCellClick }: {
                 Install HAProxy
               </Btn>
             )}
-            <Btn onClick={() => {}} className="text-[10px]">Switch to Legacy</Btn>
+            <Btn onClick={() => window.location.hash = '#/fabric/mode'} className="text-[10px]">切换模式</Btn>
           </div>
         </div>
       )}
@@ -780,11 +780,11 @@ function CellDrawer({ cell, open, onClose }: { cell: EvaluatedCell | null; open:
               )
             )}
             {cell.status === 'conflict' && (
-              <Btn onClick={() => {}} className="text-[10px]">Resolve Conflict</Btn>
+              <Btn onClick={() => { onClose(); window.location.hash = '#/fabric/mode'; }} className="text-[10px]">Resolve Conflict</Btn>
             )}
             {cell.status === 'missing' && (
-              <Btn onClick={() => {}} className="text-[10px]">
-                {cell.providerId === 'haproxy' ? 'Use Nginx fallback' : 'Switch Mode'}
+              <Btn onClick={() => { onClose(); window.location.hash = '#/fabric/mode'; }} className="text-[10px]">
+                {cell.providerId === 'haproxy' ? '切换模式以启用' : '切换模式'}
               </Btn>
             )}
             <Btn onClick={() => { setConfigProvider(cell.providerId); }} className="text-[10px]">

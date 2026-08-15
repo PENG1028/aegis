@@ -43,34 +43,7 @@ function deriveIssues(d: DashboardData | undefined): Issue[] {
     });
   }
 
-  // Unavailable routes
-  if (d.routes_unavailable) {
-    issues.push({
-      id: 'routes-down', title: `${d.routes_unavailable} 条路由不可用`,
-      description: '路由健康检查失败，流量可能受影响',
-      severity: 'critical', workspace: 'exposure', targetPath: '/exposure',
-    });
-  }
-
-  // Missing gateway links
-  if (d.missing_gateway_links) {
-    issues.push({
-      id: 'missing-links', title: `缺少 ${d.missing_gateway_links} 条 Gateway Link`,
-      description: '跨节点转发认证通道未建立',
-      severity: 'warning', workspace: 'fabric', targetPath: '/fabric/links',
-    });
-  }
-
-  // Outdated nodes
-  if (d.outdated_nodes) {
-    issues.push({
-      id: 'outdated-nodes', title: `${d.outdated_nodes} 个节点版本过旧`,
-      description: '节点需要更新二进制或配置',
-      severity: 'warning', workspace: 'runtime', targetPath: '/runtime/updates',
-    });
-  }
-
-  // Recent errors
+  // Recent errors (real data — from node last_error)
   if (d.recent_errors?.length) {
     d.recent_errors.forEach((e: any, i: number) => {
       issues.push({
@@ -82,14 +55,11 @@ function deriveIssues(d: DashboardData | undefined): Issue[] {
     });
   }
 
-  // Pending capabilities
-  if (d.pending_capabilities?.length) {
-    issues.push({
-      id: 'pending-caps', title: `${d.pending_capabilities.length} 项待发布变更`,
-      description: '配置已修改但未推送到节点',
-      severity: 'warning', workspace: 'release', targetPath: '/release',
-    });
-  }
+  // NOTE: routes_unavailable / missing_gateway_links / outdated_nodes /
+  // pending_capabilities have NO backend data source (gateway endpoints and
+  // the desired-state subsystem were never implemented/removed). Reporting
+  // them as 0 or as "pending" would be fake signals — they are intentionally
+  // not pushed here.
 
   return issues;
 }
@@ -151,20 +121,17 @@ export default function CommandCenter() {
         </Card>
       )}
 
-      {/* Status Cards */}
-      <div className="grid grid-cols-4 gap-3">
+      {/* Status Cards — only cards with REAL data sources are shown.
+          Gateways/routing-sync/pending-capabilities have no backend source
+          and are intentionally omitted (0/0 or "all ok" would be fake. */}
+      <div className="grid grid-cols-3 gap-3">
         <StatCard label="节点" value={`${d?.nodes_online || 0}/${d?.nodes_total || 0}`} sub="在线/总数"
           success={!!(d && d.nodes_online === d.nodes_total && d.nodes_total > 0)}
           warn={!!(d && d.nodes_online < d.nodes_total && d.nodes_online > 0)}
           danger={!!(d && d.nodes_online === 0)} />
-        <StatCard label="网关" value={`${d?.gateways_online || 0}/${d?.gateways_total || 0}`} sub="活跃/总数"
-          success={!!(d && d.gateways_online === d.gateways_total && d.gateways_total > 0)}
-          warn={!!(d && d.gateways_online < d.gateways_total && d.gateways_online > 0)} />
-        <StatCard label="路由" value={String(d?.managed_routes || 0)}
-          sub={d?.routes_unavailable ? `${d.routes_unavailable} 不可用` : '全部可用'}
-          danger={!!(d?.routes_unavailable)} />
-        <StatCard label="待发布" value={String(d?.pending_capabilities?.length || 0)} sub="项变更"
-          warn={!!(d?.pending_capabilities?.length)} />
+        <StatCard label="路由" value={String(d?.managed_routes || 0)} sub="已配置" />
+        <StatCard label="节点错误" value={String(d?.recent_errors?.length || 0)} sub="最近错误"
+          warn={!!(d?.recent_errors?.length)} />
       </div>
 
       {/* Issues / Anomalies */}

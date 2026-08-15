@@ -235,8 +235,8 @@ export default function EntryPointDetail() {
               <span className="font-medium w-24 shrink-0">后端</span>
               <span className="text-a-muted">
                 未配置端点 —
-                <Link to={`/exposure/service/${route.service_id}`} className="text-a-accent hover:underline ml-1">
-                  去服务页添加 →
+                <Link to="/exposure/new" className="text-a-accent hover:underline ml-1">
+                  去新建入口配置 →
                 </Link>
               </span>
             </div>

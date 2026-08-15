@@ -30,7 +30,6 @@ export default function NewEntry() {
   const toast = useToast(); const nav = useNavigate();
   const [comp, setComp] = useState('HTTPS Route');
   const [domain, setDomain] = useState('');
-  const [internalOnly, setInternalOnly] = useState(false);
   const [nodeId, setNodeId] = useState('');
   const [targetHost, setTargetHost] = useState('127.0.0.1');
   const [targetPort, setTargetPort] = useState(3000);
@@ -111,7 +110,9 @@ export default function NewEntry() {
         });
         const id = created?.id || created?.exposure?.id;
         if (id) {
-          await exposureApi.activate(id).catch(() => { /* activation failure is surfaced below */ });
+          // Activation failure must NOT be swallowed: the record would stay
+          // "pending" while the user saw a success toast.
+          await exposureApi.activate(id);
         }
       }
       toast('入口创建成功，配置已自动 Apply'); nav('/exposure');
@@ -181,10 +182,13 @@ export default function NewEntry() {
               </span>
             )}
           </div>
-          {/* Duplicate IP detected → force network label input */}
+          {/* Duplicate IP detected — informational only: the network label
+              has no backend field (bind-http-domain does not carry it), so
+              an input here would silently do nothing. */}
           {selectedNode && nodeLabels[selectedNode.id]?.forced && (
-            <input placeholder="请输入网络标识（如：阿里云-杭州）"
-              className="w-full mt-1.5 px-3 py-1.5 rounded-a-sm border border-[#e8b830]/50 bg-[#e8b830]/5 text-xs outline-none focus:border-[#e8b830]" />
+            <div className="mt-1.5 text-[10px] text-[#e8b830] bg-[#e8b830]/5 border border-[#e8b830]/20 rounded-a-sm px-2 py-1.5">
+              ⚠ 重复内网IP — 请确认目标节点，或在节点管理里为该节点标注网络标识
+            </div>
           )}
         </div>
 
@@ -193,9 +197,6 @@ export default function NewEntry() {
             <label className="text-[10px] text-a-muted block mb-1.5 font-medium">域名</label>
             <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="api.example.com"
               className="w-full px-3 py-2 rounded-a-sm border border-a-border/50 bg-a-bg text-xs outline-none focus:border-a-accent/50" />
-            <label className="flex items-center gap-1.5 mt-1.5 text-[10px] text-a-muted cursor-pointer">
-              <input type="checkbox" checked={internalOnly} onChange={e => setInternalOnly(e.target.checked)} className="w-3 h-3" />仅内部使用（集群内服务间调用）
-            </label>
           </div>
         )}
 

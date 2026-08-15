@@ -92,7 +92,7 @@ export default function Topology() {
         subtitle="节点间连通性"
         width="md"
         footer={
-          <Btn onClick={() => { toast('路径测试已触发'); }}>
+          <Btn onClick={() => toast('路径测试尚未实现 — 连通性以节点在线状态为准', 'error')}>
             测试路径
           </Btn>
         }

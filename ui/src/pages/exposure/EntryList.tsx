@@ -74,6 +74,11 @@ export default function EntryList() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['exposures'] }); toast('已禁用'); },
     onError: (e: any) => toast(e.message || '失败', 'error'),
   });
+  const enableExposure = useMutation({
+    mutationFn: (id: string) => exposureApi.activate(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['exposures'] }); toast('已启用'); },
+    onError: (e: any) => toast(e.message || '启用失败', 'error'),
+  });
 
   const routes = (rd as any)?.data || (rd as any)?.routes || [];
   // GET /api/exposures returns a bare JSON array; normalizeExposureList also
@@ -188,7 +193,7 @@ export default function EntryList() {
               <tbody>
                 {filtered.map(item => (
                   <tr key={item.key} className="border-b border-a-border/30 hover:bg-a-border/5 cursor-pointer"
-                    onClick={() => nav(`/exposure/entry/${item.key}`)}>
+                    onClick={() => item._t === 'route' ? nav(`/exposure/entry/${item.key}`) : undefined}>
                     <td className="py-2.5 px-3 font-mono text-[11px]">{item.name}</td>
                     <td className="py-2.5 px-3">
                       {item._t === 'route' && (
@@ -237,7 +242,7 @@ export default function EntryList() {
                         ) : (
                           item.status === 'active'
                             ? <button onClick={e => { e.stopPropagation(); disableExposure.mutate(item.key); }} className="text-[10px] px-2 py-0.5 rounded border border-[#e8b830]/30 text-[#e8b830] hover:bg-[#e8b830]/10 cursor-pointer">禁用</button>
-                            : <span className="text-[10px] text-a-muted/50">—</span>
+                            : <button onClick={e => { e.stopPropagation(); enableExposure.mutate(item.key); }} className="text-[10px] px-2 py-0.5 rounded border border-[#4cd964]/30 text-[#4cd964] hover:bg-[#4cd964]/10 cursor-pointer">启用</button>
                         )}
                       </div>
                     </td>

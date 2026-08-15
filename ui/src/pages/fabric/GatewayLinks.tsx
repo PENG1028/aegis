@@ -60,7 +60,7 @@ export default function GatewayLinks() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader title="网关链路" subtitle={`${links.length} 条跨节点认证通道`}
-        actions={<Btn primary onClick={() => toast('创建链路功能')}>创建链路</Btn>} />
+        actions={<Btn primary onClick={() => toast('创建链路功能尚未实现 — 请通过部署节点流程建立跨节点认证', 'error')}>创建链路</Btn>} />
 
       {/* Compact rows */}
       <div className="space-y-1">

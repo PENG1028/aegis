@@ -64,6 +64,11 @@ export function useRiskOperation(
       await fn();
       if (assessment.tier === 'low') {
         setState(s => ({ ...s, step: 'done', executing: false }));
+      } else {
+        // medium → done; high → the final step (verify). Previously only
+        // low tier advanced, so high-risk wizards never showed the
+        // execute/verify steps after a successful push.
+        setState(s => ({ ...s, step: steps[steps.length - 1] as RiskStep, executing: false }));
       }
     } catch (e) {
       setState(s => ({
@@ -74,7 +79,7 @@ export function useRiskOperation(
       }));
       throw e;
     }
-  }, [assessment.tier]);
+  }, [assessment.tier, steps]);
 
   const reset = useCallback(() => {
     setState({

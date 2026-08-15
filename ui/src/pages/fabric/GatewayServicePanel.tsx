@@ -90,7 +90,10 @@ export default function GatewayServicePanel() {
     services.push({
       name: n.name,
       status: n.status,
-      lastSeen: '',
+      // Regression fix: lastSeen was hardcoded '' — every service card
+      // rendered "offline" and the online counter stayed 0. Use the real
+      // last-call timestamp from the topology edges.
+      lastSeen: edge?.last || '',
       instanceID: '',
       publicKey: '',
       callCount: edge?.count || 0,

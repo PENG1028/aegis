@@ -8,7 +8,6 @@ import { ReleaseDiffViewer } from '@/components/workspace/ReleaseDiffViewer';
 import { useDiff } from '@/hooks/useDiff';
 import { adminApi } from '@/lib/api-bridge';
 import type { WizardStep } from '@/components/shared/Wizard';
-import type { ImpactScope } from '@/types/impact';
 
 const APPLY_STEPS: WizardStep[] = [
   { key: 'review', title: '审核', description: '查看变更内容' },
@@ -26,17 +25,6 @@ export default function Apply() {
   const [wizardOpen, setWizardOpen] = useState(false);
 
   const op = useRiskOperation('apply_config', 'config', 'current', '当前配置');
-
-  const mockImpact: ImpactScope = {
-    target: { type: 'config', id: 'current', name: '当前配置' },
-    operation: 'apply_config',
-    affectedEntries: [{ type: 'route', id: 'route-docs', name: 'docs.proofnote.dev', status: 'healthy', impact: 'direct', description: '新增路由将生效' }],
-    affectedServices: [{ type: 'service', id: 'service-docs', name: 'docs-service', status: 'healthy', impact: 'direct', description: '服务配置将更新' }],
-    affectedGateways: [],
-    affectedNodes: [{ type: 'node', id: 'node-c', name: 'Server C', status: 'online', impact: 'indirect', description: '新端点将部署到此节点' }],
-    totalAffected: 3,
-    hasDownstreamFailures: false,
-  };
 
   const handleApply = async () => {
     try {
@@ -79,11 +67,18 @@ export default function Apply() {
         }
       >
         {op.step === 'review' && <ReleaseDiffViewer diff={diff || null} loading={diffLoading} />}
-        {op.step === 'impact' && <ImpactPanel impact={mockImpact} />}
+        {op.step === 'impact' && (
+          <ImpactPanel impact={null} loading={false} />
+        )}
+        {op.step === 'impact' && (
+          <div className="mt-2 px-3 py-2 rounded-a-sm bg-a-border/5 border border-a-border/20 text-[11px] text-a-muted">
+            影响分析依赖结构化的路由/服务依赖数据，当前后端不提供——此处不显示虚构的受影响对象。具体变更以"审核"步骤的配置 diff 为准。
+          </div>
+        )}
         {op.step === 'dryrun' && <div className="text-center py-6"><p className="text-sm text-a-muted">Dry-run 结果将在此显示</p><Btn primary className="mt-3" onClick={() => adminApi.dryRun().then(() => toast('Dry-run 通过')).catch(e => toast(e.message, 'error'))}>执行 Dry-run</Btn></div>}
         {op.step === 'confirm' && <div className="text-center py-6 space-y-3"><div className="text-4xl">⚠️</div><p className="text-sm text-a-fg2">此操作将修改生产配置，影响正在运行的网关</p><p className="text-xs text-[#ff5c72]">请输入 APPLY 确认推送</p></div>}
         {op.step === 'execute' && <div className="text-center py-6"><div className="text-3xl mb-3">🔄</div><p className="text-sm text-a-muted">正在推送配置到所有节点...</p></div>}
-        {op.step === 'verify' && <div className="text-center py-6"><div className="text-3xl mb-3">✅</div><p className="text-sm text-[#4cd964]">配置推送成功，所有节点已同步</p></div>}
+        {op.step === 'verify' && <div className="text-center py-6"><div className="text-3xl mb-3">✅</div><p className="text-sm text-[#4cd964]">配置推送成功</p><p className="text-xs text-a-muted mt-1">请到 Command Center 或日志页确认实际运行状态</p></div>}
         {op.step === 'error' && <div className="text-center py-6"><div className="text-3xl mb-3">❌</div><p className="text-sm text-[#ff5c72]">{op.error || '操作失败'}</p></div>}
       </Wizard>
     </div>
